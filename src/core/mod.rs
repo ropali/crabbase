@@ -1,1 +1,1 @@
-// Shared types and utilities
+pub mod errors;

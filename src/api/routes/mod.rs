@@ -1,22 +1,17 @@
-use axum::{Json, Router, routing::get};
-use serde_json::json;
+pub mod collections;
+pub mod files;
+pub mod records;
 
-#[derive(Debug, Clone)]
-pub struct AppState {}
+use axum::Router;
 
-fn router() -> Router<AppState> {
-    Router::new().route(
-        "/",
-        get(async || Json(json!({"message": "Hello, Crabbase"}))),
-    )
-}
+use crate::api::state::AppState;
 
-pub fn build_router(state: AppState) -> Router {
+pub fn get_app_routes(state: AppState) -> Router {
     let api = Router::new()
-        .nest("/collections", router())
-        .nest("/files", router())
-        .nest("/settings", router())
+        .nest("/collections", collections::get_routes(state.clone()))
         .with_state(state);
+    // .nest("/files", router())
+    // .nest("/settings", router())
 
     Router::new().nest("/api", api)
 }
