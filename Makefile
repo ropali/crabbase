@@ -15,3 +15,6 @@ build:
 
 test:
 	cargo test
+
+watch:
+	RUSTFLAGS=-Awarnings bacon run -- --quiet

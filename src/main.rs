@@ -10,10 +10,13 @@ use api::routes::get_app_routes;
 use tokio::net::TcpListener;
 
 use crate::api::state::AppState;
+use crate::api::store::CollectionStore;
 
 #[tokio::main]
 async fn main() {
-    let app_state = AppState {};
+    let app_state = AppState {
+        store: CollectionStore::new(),
+    };
 
     let api = get_app_routes(app_state);
 
