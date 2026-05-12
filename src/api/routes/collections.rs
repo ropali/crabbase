@@ -6,7 +6,10 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::api::{routes::records, state::AppState};
+use crate::{
+    api::{models::CollectionListResponse, routes::records, state::AppState},
+    core::repositories::collections::CollectionRepository,
+};
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
@@ -29,36 +32,38 @@ pub struct CreateCollectionRequest {
 async fn create(
     state: State<AppState>,
     Json(body): Json<CreateCollectionRequest>,
-) -> Result<(StatusCode, Json<CollectionResponse>), StatusCode> {
-    if state.store.collection_exists(&body.name) {
-        return Err(StatusCode::CONFLICT);
-    }
-    state.store.create_collection(body.name.clone());
-    Ok((StatusCode::CREATED, Json(CollectionResponse { name: body.name })))
+) -> Result<(), StatusCode> {
+    let repo = CollectionRepository::new(state.db.clone());
+
+    repo.create(body.name).await;
+
+    Ok(())
 }
 
-async fn list(_state: State<AppState>) -> Result<Json<Vec<String>>, StatusCode> {
-    // Return collection names - we need to add a method to store for this
-    Ok(Json(vec![]))
+async fn list(state: State<AppState>) -> Result<Json<CollectionListResponse>, StatusCode> {
+    let repo = CollectionRepository::new(state.db.clone());
+    let data = repo.list(1, 10).await.unwrap();
+    Ok(Json(data))
 }
 
-async fn get_one(Path(name): Path<String>, state: State<AppState>) -> Result<Json<CollectionResponse>, StatusCode> {
-    if state.store.collection_exists(&name) {
-        Ok(Json(CollectionResponse { name }))
-    } else {
-        Err(StatusCode::NOT_FOUND)
-    }
+async fn get_one(
+    Path(name): Path<String>,
+    state: State<AppState>,
+) -> Result<Json<CollectionResponse>, StatusCode> {
+    todo!()
 }
 
-async fn delete(Path(_name): Path<String>, _state: State<AppState>) -> Result<StatusCode, StatusCode> {
+async fn delete(
+    Path(_name): Path<String>,
+    _state: State<AppState>,
+) -> Result<StatusCode, StatusCode> {
     // Would need a delete_collection method on store
     Err(StatusCode::NOT_IMPLEMENTED)
 }
 
-async fn update(Path(name): Path<String>, state: State<AppState>) -> Result<Json<CollectionResponse>, StatusCode> {
-    if state.store.collection_exists(&name) {
-        Ok(Json(CollectionResponse { name }))
-    } else {
-        Err(StatusCode::NOT_FOUND)
-    }
+async fn update(
+    Path(name): Path<String>,
+    state: State<AppState>,
+) -> Result<Json<CollectionResponse>, StatusCode> {
+    Err(StatusCode::NOT_FOUND)
 }

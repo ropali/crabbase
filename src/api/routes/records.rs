@@ -30,20 +30,14 @@ async fn list_records(
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
 
-    match state.store.list_records(&name, page, per_page) {
-        Some(response) => Ok(Json(response)),
-        None => Err(StatusCode::NOT_FOUND),
-    }
+    todo!()
 }
 
 async fn get_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
 ) -> Result<Json<Record>, StatusCode> {
-    match state.store.get_record(&name, &id) {
-        Some(record) => Ok(Json(record)),
-        None => Err(StatusCode::NOT_FOUND),
-    }
+    todo!()
 }
 
 async fn create_record(
@@ -51,10 +45,7 @@ async fn create_record(
     state: axum::extract::State<AppState>,
     Json(body): Json<CreateRecordRequest>,
 ) -> Result<(StatusCode, Json<Record>), StatusCode> {
-    match state.store.create_record(&name, body.data) {
-        Some(record) => Ok((StatusCode::CREATED, Json(record))),
-        None => Err(StatusCode::NOT_FOUND),
-    }
+    todo!()
 }
 
 async fn update_record(
@@ -62,19 +53,12 @@ async fn update_record(
     state: axum::extract::State<AppState>,
     Json(body): Json<UpdateRecordRequest>,
 ) -> Result<Json<Record>, StatusCode> {
-    match state.store.update_record(&name, &id, body.data) {
-        Some(record) => Ok(Json(record)),
-        None => Err(StatusCode::NOT_FOUND),
-    }
+    todo!()
 }
 
 async fn delete_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
 ) -> Result<StatusCode, StatusCode> {
-    if state.store.delete_record(&name, &id) {
-        Ok(StatusCode::NO_CONTENT)
-    } else {
-        Err(StatusCode::NOT_FOUND)
-    }
+    todo!()
 }
