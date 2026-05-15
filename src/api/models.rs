@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Record {
@@ -38,10 +39,9 @@ pub struct PaginationParams {
 pub struct Collection {
     pub id: String,
     pub name: String,
-    pub description: String,
-    #[sqlx(rename = "created_at")]
+    pub fields: Json<Vec<serde_json::Value>>,
+    pub indexes: Json<Vec<serde_json::Value>>,
     pub created: String,
-    #[sqlx(rename = "updated_at")]
     pub updated: String,
 }
 
@@ -51,4 +51,17 @@ pub struct CollectionListResponse {
     pub total: u64,
     pub page: u64,
     pub per_page: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Column {
+    pub name: String,
+    pub data_type: String,
+    pub index: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateCollectionRequest {
+    pub name: String,
+    pub columns: Vec<Column>,
 }

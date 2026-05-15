@@ -7,7 +7,11 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    api::{models::CollectionListResponse, routes::records, state::AppState},
+    api::{
+        models::{Collection, CollectionListResponse, CreateCollectionRequest},
+        routes::records,
+        state::AppState,
+    },
     core::repositories::collections::CollectionRepository,
 };
 
@@ -19,25 +23,15 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
         .with_state(state)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CollectionResponse {
-    pub name: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CreateCollectionRequest {
-    pub name: String,
-}
-
 async fn create(
     state: State<AppState>,
     Json(body): Json<CreateCollectionRequest>,
-) -> Result<(), StatusCode> {
+) -> Result<Json<Collection>, StatusCode> {
     let repo = CollectionRepository::new(state.db.clone());
 
-    repo.create(body.name).await;
+    repo.create(body).await;
 
-    Ok(())
+    Err(StatusCode::NOT_IMPLEMENTED)
 }
 
 async fn list(state: State<AppState>) -> Result<Json<CollectionListResponse>, StatusCode> {
@@ -49,14 +43,18 @@ async fn list(state: State<AppState>) -> Result<Json<CollectionListResponse>, St
 async fn get_one(
     Path(name): Path<String>,
     state: State<AppState>,
-) -> Result<Json<CollectionResponse>, StatusCode> {
-    todo!()
+) -> Result<Json<Collection>, StatusCode> {
+    let repo = CollectionRepository::new(state.db.clone());
+    match repo.get_by_name(&name).await {
+        Ok(collection) => Ok(Json(collection)),
+        Err(_) => Err(StatusCode::NOT_FOUND),
+    }
 }
 
 async fn delete(
     Path(_name): Path<String>,
     _state: State<AppState>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Json<Collection>, StatusCode> {
     // Would need a delete_collection method on store
     Err(StatusCode::NOT_IMPLEMENTED)
 }
@@ -64,6 +62,6 @@ async fn delete(
 async fn update(
     Path(name): Path<String>,
     state: State<AppState>,
-) -> Result<Json<CollectionResponse>, StatusCode> {
+) -> Result<Json<Collection>, StatusCode> {
     Err(StatusCode::NOT_FOUND)
 }
