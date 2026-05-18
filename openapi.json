@@ -392,7 +392,7 @@
     "schemas": {
       "Collection": {
         "type": "object",
-        "required": ["id", "name", "created", "updated"],
+        "required": ["id", "name", "fields", "indexes", "created", "updated"],
         "properties": {
           "id": {
             "type": "string",
@@ -402,9 +402,15 @@
             "type": "string",
             "description": "Collection name (unique)"
           },
-          "description": {
-            "type": "string",
-            "description": "Optional collection description"
+          "fields": {
+            "type": "array",
+            "items": {},
+            "description": "Column definitions for the collection as JSON array"
+          },
+          "indexes": {
+            "type": "array",
+            "items": {},
+            "description": "Index definitions for the collection as JSON array"
           },
           "created": {
             "type": "string",
@@ -468,14 +474,31 @@
             "description": "Column name"
           },
           "data_type": {
-            "type": "string",
-            "description": "Column data type (e.g., text, integer, boolean, json)"
+            "$ref": "#/components/schemas/DataTypes",
+            "description": "Column data type"
           },
           "index": {
             "type": "boolean",
             "description": "Whether to create an index on this column"
           }
         }
+      },
+      "DataTypes": {
+        "type": "string",
+        "enum": [
+          "PlainText",
+          "RichText",
+          "Number",
+          "Bool",
+          "Email",
+          "URL",
+          "Datatime",
+          "File",
+          "Select",
+          "JSON",
+          "GeoPoint"
+        ],
+        "description": "Available column data types"
       },
       "Record": {
         "type": "object",

@@ -4,13 +4,14 @@ use axum::{
     http::StatusCode,
     routing::get,
 };
-use serde::{Deserialize, Serialize};
+use serde::de::Error;
+use serde_json::{Value, json};
 
 use crate::{
     api::{
         models::{Collection, CollectionListResponse, CreateCollectionRequest},
         routes::records,
-        state::AppState,
+        state::{self, AppState},
     },
     core::repositories::collections::CollectionRepository,
 };
@@ -29,15 +30,26 @@ async fn create(
 ) -> Result<Json<Collection>, StatusCode> {
     let repo = CollectionRepository::new(state.db.clone());
 
-    repo.create(body).await;
-
-    Err(StatusCode::NOT_IMPLEMENTED)
+    match repo.create(body).await {
+        Ok(val) => Ok(Json(val)),
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn list(state: State<AppState>) -> Result<Json<CollectionListResponse>, StatusCode> {
     let repo = CollectionRepository::new(state.db.clone());
-    let data = repo.list(1, 10).await.unwrap();
-    Ok(Json(data))
+    let resp = repo.list(1, 10).await;
+
+    match resp {
+        Ok(data) => Ok(Json(data)),
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn get_one(
@@ -53,10 +65,14 @@ async fn get_one(
 
 async fn delete(
     Path(_name): Path<String>,
-    _state: State<AppState>,
-) -> Result<Json<Collection>, StatusCode> {
-    // Would need a delete_collection method on store
-    Err(StatusCode::NOT_IMPLEMENTED)
+    state: State<AppState>,
+) -> Result<Json<Value>, StatusCode> {
+    let repo = CollectionRepository::new(state.db.clone());
+
+    match repo.delete(_name).await {
+        Ok(_) => Ok(Json(json!({"detail": "collection deleted successfully."}))),
+        Err(err) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
 }
 
 async fn update(
