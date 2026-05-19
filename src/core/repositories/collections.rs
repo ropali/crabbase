@@ -1,7 +1,8 @@
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
+use std::error::Error;
 use std::fmt;
-use std::{error::Error, result};
+use tracing::error;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -160,7 +161,7 @@ impl CollectionRepository {
         match res {
             Ok(c) => Ok(c),
             Err(err) => {
-                eprintln!("Error: {}", err);
+                error!("Error: {}", err);
                 Err(RepositoryError::Sqlx(err))
             }
         }

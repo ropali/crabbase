@@ -17,4 +17,4 @@ test:
 	cargo test
 
 watch:
-	RUSTFLAGS=-Awarnings bacon run -- --quiet
+	RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- --quiet

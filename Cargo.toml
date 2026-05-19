@@ -16,3 +16,7 @@ uuid = { version = "1.23.1", features = ["v4"] }
 chrono = "0.4.44"
 
 sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio", "migrate"] }
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-appender = "0.2"                                                    # optional, for file output

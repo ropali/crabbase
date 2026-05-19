@@ -1,7 +1,5 @@
-use sqlx::{
-    Pool, Sqlite, SqlitePool,
-    sqlite::SqliteConnectOptions,
-};
+use sqlx::{Pool, Sqlite, SqlitePool, sqlite::SqliteConnectOptions};
+use tracing::info;
 
 pub async fn pool() -> Result<Pool<Sqlite>, sqlx::Error> {
     let opts = SqliteConnectOptions::new()
@@ -11,7 +9,7 @@ pub async fn pool() -> Result<Pool<Sqlite>, sqlx::Error> {
 
     let pool = SqlitePool::connect_with(opts).await?;
 
-    eprintln!("Connected to SQLite!");
+    info!("Connected to SQLite!");
 
     Ok(pool)
 }

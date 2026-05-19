@@ -5,10 +5,13 @@ use axum::{
     routing::get,
 };
 use serde_json::{Value, json};
+use tracing::error;
 
 use crate::{
     api::{
-        models::{Collection, CollectionListResponse, CreateCollectionRequest, UpdateCollectionRequest},
+        models::{
+            Collection, CollectionListResponse, CreateCollectionRequest, UpdateCollectionRequest,
+        },
         routes::records,
         state::AppState,
     },
@@ -32,7 +35,7 @@ async fn create(
     match repo.create(body).await {
         Ok(val) => Ok(Json(val)),
         Err(err) => {
-            eprintln!("Error: {}", err);
+            error!("Error: {}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -45,7 +48,7 @@ async fn list(state: State<AppState>) -> Result<Json<CollectionListResponse>, St
     match resp {
         Ok(data) => Ok(Json(data)),
         Err(err) => {
-            eprintln!("Error: {}", err);
+            error!("Error: {}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
