@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
-use std::error::Error;
 use std::fmt;
+use std::{error::Error, result};
 use tracing::error;
 use uuid::Uuid;
 
@@ -254,8 +254,21 @@ impl CollectionRepository {
         match result {
             Ok(_) => Ok(true),
             Err(err) => {
-                eprintln!("Error: {}", err);
+                error!("Error: {}", err);
+                Err(RepositoryError::Sqlx(err))
+            }
+        }
+    }
 
+    pub async fn truncate(&self, name: String) -> Result<bool, RepositoryError> {
+        let sql = format!("DELETE FROM {};", name);
+
+        let result = sqlx::query(&sql).execute(&self.db).await;
+
+        match result {
+            Ok(_) => Ok(true),
+            Err(err) => {
+                error!("Error: {}", err);
                 Err(RepositoryError::Sqlx(err))
             }
         }

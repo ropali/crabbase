@@ -182,13 +182,55 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection"
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
           },
-          "501": {
-            "description": "Not implemented"
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
+    "/collections/{name}/truncate": {
+      "post": {
+        "tags": ["Collections"],
+        "summary": "Truncate a collection (delete all records)",
+        "operationId": "truncateCollection",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection truncated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
           }
         }
       }

@@ -2,7 +2,7 @@ use axum::{
     Json, Router,
     extract::{Path, State},
     http::StatusCode,
-    routing::get,
+    routing::{get, post},
 };
 use serde_json::{Value, json};
 use tracing::error;
@@ -22,6 +22,7 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .nest("/{name}/records", records::get_routes(state.clone()))
         .route("/", get(list).post(create))
+        .route("/{name}/truncate", post(truncate))
         .route("/{name}", get(get_one).patch(update).delete(delete))
         .with_state(state)
 }
@@ -90,6 +91,21 @@ async fn update(
         Err(RepositoryError::InvalidInput(_)) => Err(StatusCode::BAD_REQUEST),
         Err(err) => {
             eprintln!("Error: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+async fn truncate(
+    Path(name): Path<String>,
+    state: State<AppState>,
+) -> Result<Json<Value>, StatusCode> {
+    let repo = CollectionRepository::new(state.db.clone());
+
+    match repo.truncate(name).await {
+        Ok(v) => Ok(Json(json!({"detail": "collection truncated successfully"}))),
+        Err(err) => {
+            error!("Error: {}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

@@ -2,8 +2,8 @@ pub mod collections;
 pub mod files;
 pub mod records;
 
-use axum::{Router, routing::get, response::Html, Json};
 use axum::http::StatusCode;
+use axum::{Json, Router, response::Html, routing::get};
 
 use crate::api::state::AppState;
 
