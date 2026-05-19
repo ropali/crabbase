@@ -4,16 +4,15 @@ use axum::{
     http::StatusCode,
     routing::get,
 };
-use serde::de::Error;
 use serde_json::{Value, json};
 
 use crate::{
     api::{
-        models::{Collection, CollectionListResponse, CreateCollectionRequest},
+        models::{Collection, CollectionListResponse, CreateCollectionRequest, UpdateCollectionRequest},
         routes::records,
-        state::{self, AppState},
+        state::AppState,
     },
-    core::repositories::collections::CollectionRepository,
+    core::repositories::collections::{CollectionRepository, RepositoryError},
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -78,6 +77,17 @@ async fn delete(
 async fn update(
     Path(name): Path<String>,
     state: State<AppState>,
+    Json(body): Json<UpdateCollectionRequest>,
 ) -> Result<Json<Collection>, StatusCode> {
-    Err(StatusCode::NOT_FOUND)
+    let repo = CollectionRepository::new(state.db.clone());
+
+    match repo.update(name, body).await {
+        Ok(collection) => Ok(Json(collection)),
+        Err(RepositoryError::NotFound) => Err(StatusCode::NOT_FOUND),
+        Err(RepositoryError::InvalidInput(_)) => Err(StatusCode::BAD_REQUEST),
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }

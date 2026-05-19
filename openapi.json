@@ -130,6 +130,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCollectionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Collection updated",
@@ -141,8 +151,14 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid input"
+          },
           "404": {
             "description": "Collection not found"
+          },
+          "500": {
+            "description": "Internal server error"
           }
         }
       },
@@ -459,6 +475,22 @@
           "columns": {
             "type": "array",
             "description": "Column definitions for the collection",
+            "items": {
+              "$ref": "#/components/schemas/Column"
+            }
+          }
+        }
+      },
+      "UpdateCollectionRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New collection name (optional)"
+          },
+          "columns": {
+            "type": "array",
+            "description": "New column definitions for the collection (optional)",
             "items": {
               "$ref": "#/components/schemas/Column"
             }
