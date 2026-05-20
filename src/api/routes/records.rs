@@ -1,15 +1,19 @@
 use axum::{
-    Json, Router,
+    Json, Router, body,
     extract::{Path, Query},
     http::StatusCode,
     routing::get,
 };
+use tracing::error;
 
-use crate::api::{
-    models::{
-        CreateRecordRequest, PaginationParams, Record, RecordListResponse, UpdateRecordRequest,
+use crate::{
+    api::{
+        models::{
+            CreateRecordRequest, PaginationParams, Record, RecordListResponse, UpdateRecordRequest,
+        },
+        state::AppState,
     },
-    state::AppState,
+    core::repositories::records::RecordsRepository,
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -44,8 +48,18 @@ async fn create_record(
     Path(name): Path<String>,
     state: axum::extract::State<AppState>,
     Json(body): Json<CreateRecordRequest>,
-) -> Result<(StatusCode, Json<Record>), StatusCode> {
-    todo!()
+) -> Result<Json<Record>, StatusCode> {
+    eprintln!("{:?}", body);
+
+    let repo = RecordsRepository::new(state.db.clone());
+
+    match repo.create_record(name, body).await {
+        Ok(res) => Ok(Json(res)),
+        Err(err) => {
+            error!("Error: {}", err);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 async fn update_record(

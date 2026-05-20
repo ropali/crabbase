@@ -4,11 +4,9 @@ use sqlx::{FromRow, Row};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Record {
-    pub id: String,
+    pub id: i64,
     pub data: serde_json::Value,
-    #[sqlx(rename = "created_at")]
     pub created: String,
-    #[sqlx(rename = "updated_at")]
     pub updated: String,
 }
 
@@ -20,7 +18,7 @@ pub struct RecordListResponse {
     pub per_page: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateRecordRequest {
     pub data: serde_json::Value,
 }

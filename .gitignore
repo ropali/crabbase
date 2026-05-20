@@ -2,3 +2,5 @@
 .qoder
 
 app.db*
+
+logs/*
