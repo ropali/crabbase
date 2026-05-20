@@ -49,8 +49,6 @@ async fn create_record(
     state: axum::extract::State<AppState>,
     Json(body): Json<CreateRecordRequest>,
 ) -> Result<Json<Record>, StatusCode> {
-    eprintln!("{:?}", body);
-
     let repo = RecordsRepository::new(state.db.clone());
 
     match repo.create_record(name, body).await {

@@ -1,5 +1,5 @@
 use serde_json::Value;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Row, Sqlite};
 use tracing::error;
 
 use crate::{
@@ -67,13 +67,6 @@ impl RecordsRepository {
         collection: String,
         body: CreateRecordRequest,
     ) -> Result<Record, RepositoryError> {
-        #[derive(sqlx::FromRow)]
-        struct InsertedMeta {
-            id: i64,
-            created: String,
-            updated: String,
-        }
-
         let obj = body.data.as_object().ok_or(RepositoryError::InvalidInput(
             "Invalid input data".to_string(),
         ));
@@ -82,6 +75,18 @@ impl RecordsRepository {
 
         if obj.is_empty() {
             return Err(RepositoryError::InvalidInput("Empty Input".to_string()));
+        }
+
+        let exist = sqlx::query("SELECT * FROM information_schema.tables WHERE table_name = $1;")
+            .bind(&collection)
+            .execute(&self.db)
+            .await
+            .is_ok();
+
+        if !exist {
+            return Err(RepositoryError::InvalidInput(
+                "Collection does not exist".to_string(),
+            ));
         }
 
         let columns: Vec<&String> = obj.keys().collect();
@@ -112,7 +117,7 @@ impl RecordsRepository {
 
         match query.execute(&self.db).await {
             Ok(res) => {
-                let record = sqlx::query_as::<_, InsertedMeta>(&format!(
+                let row = sqlx::query(&format!(
                     "SELECT id, created, updated FROM {} WHERE id = ?;",
                     quote_ident(&collection)
                 ))
@@ -121,10 +126,10 @@ impl RecordsRepository {
                 .await?;
 
                 Ok(Record {
-                    id: record.id,
+                    id: row.try_get::<i64, _>("id")?,
                     data: body.data,
-                    created: record.created,
-                    updated: record.updated,
+                    created: row.try_get::<String, _>("created")?,
+                    updated: row.try_get::<String, _>("updated")?,
                 })
             }
             Err(err) => {
