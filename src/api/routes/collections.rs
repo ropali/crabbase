@@ -1,11 +1,9 @@
 use axum::{
-    Error, Json, Router,
+    Json, Router,
     extract::{Path, Query, State},
-    http::StatusCode,
     routing::{get, post},
 };
 use serde_json::{Value, json};
-use tracing::error;
 
 use crate::{
     api::{
@@ -16,10 +14,7 @@ use crate::{
         routes::records,
         state::AppState,
     },
-    core::{
-        errors::{APIError, RepositoryError},
-        repositories::collections::CollectionRepository,
-    },
+    core::{errors::APIError, repositories::collections::CollectionRepository},
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -39,20 +34,14 @@ async fn create(
 
     match repo.create(body).await {
         Ok(val) => Ok(Json(val)),
-        Err(err) => {
-            error!("Error: {:?}", err);
-            Err(APIError::Internal {
-                message: "something went wrong".to_string(),
-                details: serde_json::Value::String("".to_string()),
-            })
-        }
+        Err(err) => Err(err.into()),
     }
 }
 
 async fn list(
     state: State<AppState>,
     Query(params): Query<PaginationParams>,
-) -> Result<Json<CollectionListResponse>, StatusCode> {
+) -> Result<Json<CollectionListResponse>, APIError> {
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
 
@@ -61,33 +50,27 @@ async fn list(
 
     match resp {
         Ok(data) => Ok(Json(data)),
-        Err(err) => {
-            error!("Error: {:?}", err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Err(err) => Err(err.into()),
     }
 }
 
 async fn get_one(
     Path(name): Path<String>,
     state: State<AppState>,
-) -> Result<Json<Collection>, StatusCode> {
+) -> Result<Json<Collection>, APIError> {
     let repo = CollectionRepository::new(state.db.clone());
     match repo.get_by_name(&name).await {
         Ok(collection) => Ok(Json(collection)),
-        Err(_) => Err(StatusCode::NOT_FOUND),
+        Err(err) => Err(err.into()),
     }
 }
 
-async fn delete(
-    Path(_name): Path<String>,
-    state: State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
+async fn delete(Path(name): Path<String>, state: State<AppState>) -> Result<Json<Value>, APIError> {
     let repo = CollectionRepository::new(state.db.clone());
 
-    match repo.delete(_name).await {
+    match repo.delete(name).await {
         Ok(_) => Ok(Json(json!({"detail": "collection deleted successfully."}))),
-        Err(err) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -95,30 +78,23 @@ async fn update(
     Path(name): Path<String>,
     state: State<AppState>,
     Json(body): Json<UpdateCollectionRequest>,
-) -> Result<Json<Collection>, StatusCode> {
+) -> Result<Json<Collection>, APIError> {
     let repo = CollectionRepository::new(state.db.clone());
 
     match repo.update(name, body).await {
         Ok(collection) => Ok(Json(collection)),
-
-        Err(err) => {
-            eprintln!("Error: {:?}", err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Err(err) => Err(err.into()),
     }
 }
 
 async fn truncate(
     Path(name): Path<String>,
     state: State<AppState>,
-) -> Result<Json<Value>, StatusCode> {
+) -> Result<Json<Value>, APIError> {
     let repo = CollectionRepository::new(state.db.clone());
 
     match repo.truncate(name).await {
-        Ok(v) => Ok(Json(json!({"detail": "collection truncated successfully"}))),
-        Err(err) => {
-            error!("Error: {:?}", err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(_) => Ok(Json(json!({"detail": "collection truncated successfully"}))),
+        Err(err) => Err(err.into()),
     }
 }

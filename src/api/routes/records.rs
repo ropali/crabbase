@@ -1,10 +1,9 @@
 use axum::{
-    Json, Router, body,
+    Json, Router,
     extract::{Path, Query},
     http::StatusCode,
     routing::get,
 };
-use tracing::error;
 
 use crate::{
     api::{
@@ -14,7 +13,7 @@ use crate::{
         state::AppState,
     },
     core::{
-        errors::{APIError, RepositoryError},
+        errors::APIError,
         repositories::records::RecordsRepository,
     },
 };
@@ -41,10 +40,7 @@ async fn list_records(
 
     match repo.list(&name, page, per_page).await {
         Ok(values) => Ok(Json(values)),
-        Err(err) => Err(APIError::Internal {
-            message: "Something went wrong".to_string(),
-            details: serde_json::Value::String("".to_string()),
-        }),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -64,14 +60,7 @@ async fn create_record(
 
     match repo.create_record(name, body).await {
         Ok(res) => Ok(Json(res)),
-
-        Err(err) => {
-            error!("Error: {:?}", err);
-            Err(APIError::Internal {
-                message: "Something went wrong".to_string(),
-                details: serde_json::Value::String("".to_string()),
-            })
-        }
+        Err(err) => Err(err.into()),
     }
 }
 

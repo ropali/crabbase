@@ -1,5 +1,3 @@
-use std::fmt;
-
 use axum::{
     Json,
     http::StatusCode,
@@ -7,6 +5,7 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::Value;
+use tracing::error;
 
 #[derive(Debug, Serialize)]
 pub struct ErrorBody {
@@ -85,6 +84,9 @@ impl APIError {
 impl IntoResponse for APIError {
     fn into_response(self) -> Response {
         let (status, body) = self.to_status_and_body();
+        if status.is_server_error() {
+            error!(status = %status, error = ?self, "request failed with server error");
+        }
         (status, Json(body)).into_response()
     }
 }
@@ -102,7 +104,20 @@ impl From<sqlx::Error> for RepositoryError {
     fn from(err: sqlx::Error) -> Self {
         match err {
             sqlx::Error::RowNotFound => {
-                RepositoryError::NotFound("Row not found for this record".to_string())
+                RepositoryError::NotFound("Data not found for this collection".to_string())
+            }
+            sqlx::Error::Database(db_err) => {
+                let message = db_err.message().to_string();
+                if let Some((_, table)) = message.split_once("no such table:") {
+                    let table = table.trim();
+                    let resource = if table.is_empty() {
+                        "Collection".to_string()
+                    } else {
+                        format!("Collection `{table}`")
+                    };
+                    return RepositoryError::NotFound(resource);
+                }
+                RepositoryError::QueryFailed("Failed to execute the database query".to_string())
             }
             _ => RepositoryError::QueryFailed("Failed to execute the database query".to_string()),
         }

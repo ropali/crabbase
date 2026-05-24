@@ -124,15 +124,10 @@ impl CollectionRepository {
         let res = sqlx::query_as::<_, Collection>(sql)
             .bind(name)
             .fetch_one(&self.db)
-            .await;
+            .await
+            .map_err(|err| RepositoryError::NotFound(name.to_string()));
 
-        match res {
-            Ok(c) => Ok(c),
-            Err(err) => {
-                error!("Error: {}", err);
-                Err(RepositoryError::QueryFailed(err.to_string()))
-            }
-        }
+        res
     }
 
     pub async fn list(
@@ -218,7 +213,13 @@ impl CollectionRepository {
     pub async fn delete(&self, name: String) -> Result<bool, RepositoryError> {
         let sql = "DELETE FROM _collections WHERE name = $1";
 
-        sqlx::query(sql).bind(name).execute(&self.db).await?;
+        let tx = self.db.begin();
+
+        sqlx::query(sql).bind(&name).execute(&self.db).await?;
+
+        sqlx::query(&format!("DROP TABLE {name}"))
+            .execute(&self.db)
+            .await?;
 
         Ok(true)
     }
@@ -226,7 +227,7 @@ impl CollectionRepository {
     pub async fn truncate(&self, name: String) -> Result<bool, RepositoryError> {
         let sql = format!("DELETE FROM {};", name);
 
-        let result = sqlx::query(&sql).execute(&self.db).await;
+        sqlx::query(&sql).execute(&self.db).await?;
         Ok(true)
     }
 }

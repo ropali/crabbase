@@ -33,23 +33,12 @@ impl RecordsRepository {
             .bind(per_page as i64)
             .bind(offset as i64)
             .fetch_all(&self.db)
-            .await;
+            .await?;
 
-        let items = match result {
-            Ok(items) => items
-                .iter()
-                .filter_map(|r| Record::from_row(r).ok())
-                .collect::<Vec<Record>>(),
-            Err(e) => {
-                error!("Error: can't fetch records {:?}", e);
-                return Ok(RecordListResponse {
-                    items: vec![],
-                    total: 0,
-                    page,
-                    per_page,
-                });
-            }
-        };
+        let items = result
+            .iter()
+            .filter_map(|r| Record::from_row(r).ok())
+            .collect::<Vec<Record>>();
 
         let total = items.len();
 
