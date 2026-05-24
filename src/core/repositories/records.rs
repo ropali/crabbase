@@ -42,12 +42,12 @@ impl RecordsRepository {
 
         let total = items.len();
 
-        return Ok(RecordListResponse {
+        Ok(RecordListResponse {
             items,
             total: total as u64,
             page,
             per_page,
-        });
+        })
     }
 
     pub fn get_record(&self, collection: &str, id: &str) -> Option<Record> {

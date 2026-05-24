@@ -114,31 +114,31 @@ pub enum DataTypes {
     Number,
     Bool,
     Email,
-    URL,
+    Url,
     Datetime,
     AutoDatetime(String),
     File,
     Relation(String),
     Select,
-    JSON,
+    Json,
     GeoPoint,
 }
 
 impl DataTypes {
-    pub fn to_db_type(self) -> String {
+    pub fn to_db_type(&self) -> String {
         match self {
             Self::PlainText
             | Self::RichText
             | Self::Email
-            | Self::URL
+            | Self::Url
             | Self::File
             | Self::Datetime
             | Self::Select
-            | Self::JSON
+            | Self::Json
             | Self::GeoPoint => "TEXT".to_owned(),
             DataTypes::Number => "INTEGER".to_owned(),
             DataTypes::Bool => "INTEGER CHECK (is_active IN (0, 1))".to_owned(),
-            DataTypes::AutoDatetime(option) => "TEXT".to_owned(),
+            DataTypes::AutoDatetime(_) => "TEXT".to_owned(),
             DataTypes::Relation(field) => {
                 format!("FOREIGN KEY (id) REFERENCES {} (id)", field)
             }

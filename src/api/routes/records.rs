@@ -12,10 +12,7 @@ use crate::{
         },
         state::AppState,
     },
-    core::{
-        errors::APIError,
-        repositories::records::RecordsRepository,
-    },
+    core::{errors::APIError, repositories::records::RecordsRepository},
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -34,7 +31,7 @@ async fn list_records(
     state: axum::extract::State<AppState>,
 ) -> Result<Json<RecordListResponse>, APIError> {
     let page = params.page.unwrap_or(1).max(1);
-    let per_page = params.per_page.unwrap_or(20).max(1).min(100);
+    let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
 
     let repo = RecordsRepository::new(state.db.clone());
 

@@ -121,13 +121,11 @@ impl CollectionRepository {
     pub async fn get_by_name(&self, name: &str) -> Result<Collection, RepositoryError> {
         let sql = "SELECT * FROM _collections WHERE name = $1;";
 
-        let res = sqlx::query_as::<_, Collection>(sql)
+        sqlx::query_as::<_, Collection>(sql)
             .bind(name)
             .fetch_one(&self.db)
             .await
-            .map_err(|err| RepositoryError::NotFound(name.to_string()));
-
-        res
+            .map_err(|_| RepositoryError::NotFound(name.to_string()))
     }
 
     pub async fn list(
