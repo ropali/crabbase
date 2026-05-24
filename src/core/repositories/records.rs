@@ -2,7 +2,7 @@ use std::vec;
 
 use axum::Json;
 use serde_json::Value;
-use sqlx::{Pool, Row, Sqlite};
+use sqlx::{Execute, Pool, Row, Sqlite};
 use tracing::{error, info};
 
 use crate::{
@@ -110,7 +110,29 @@ impl RecordsRepository {
         // Add values as bound parameters; QueryBuilder writes `?` placeholders for SQLite.
         let mut separated_values = query_builder.separated(",");
         for v in values {
-            separated_values.push_bind(v);
+            match v {
+                Value::String(s) => {
+                    separated_values.push_bind(s.clone());
+                }
+                Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        separated_values.push_bind(i);
+                    } else if let Some(f) = n.as_f64() {
+                        separated_values.push_bind(f);
+                    } else {
+                        separated_values.push_bind(n.to_string());
+                    }
+                }
+                Value::Bool(b) => {
+                    separated_values.push_bind(*b);
+                }
+                Value::Null => {
+                    separated_values.push_bind(Option::<String>::None);
+                }
+                other => {
+                    separated_values.push_bind(other.to_string());
+                }
+            }
         }
         separated_values.push_unseparated(")");
 

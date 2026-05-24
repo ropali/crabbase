@@ -1,7 +1,8 @@
 use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Column as _, Row};
+use tracing::info;
 
 pub type RecordData = serde_json::Map<String, Value>;
 
@@ -18,25 +19,17 @@ impl Record {
         let mut data = RecordData::new();
 
         for c in row.columns() {
-            let key = c.name();
+            let col = c.name();
 
-            if matches!(key, "id" | "created" | "updated") {
+            if matches!(col, "id" | "created" | "updated") {
                 continue;
             }
 
-            let value = if let Ok(v) = row.try_get::<Option<i64>, _>(key) {
-                v.map(Value::from).unwrap_or(Value::Null)
-            } else if let Ok(v) = row.try_get::<Option<f64>, _>(key) {
-                v.map(Value::from).unwrap_or(Value::Null)
-            } else if let Ok(v) = row.try_get::<Option<bool>, _>(key) {
-                v.map(Value::from).unwrap_or(Value::Null)
-            } else if let Ok(v) = row.try_get::<Option<String>, _>(key) {
-                v.map(Value::from).unwrap_or(Value::Null)
-            } else {
-                Value::Null
-            };
+            let value = Self::column_to_value(row, col);
 
-            data.insert(key.to_string(), value);
+            info!("Value: {}", value);
+
+            data.insert(col.to_string(), value);
         }
 
         Ok(Record {
@@ -45,6 +38,26 @@ impl Record {
             created: row.try_get("created")?,
             updated: row.try_get("updated")?,
         })
+    }
+
+    pub fn column_to_value(row: &SqliteRow, col_name: &str) -> Value {
+        if let Ok(v) = row.try_get::<i64, _>(col_name) {
+            return Value::Number(Number::from(v));
+        }
+
+        if let Ok(v) = row.try_get::<f64, _>(col_name) {
+            return serde_json::json!(v);
+        }
+
+        if let Ok(v) = row.try_get::<bool, _>(col_name) {
+            return Value::Bool(v);
+        }
+
+        if let Ok(v) = row.try_get::<String, _>(col_name) {
+            return Value::String(v);
+        }
+
+        Value::Null
     }
 }
 
