@@ -1,6 +1,6 @@
 use axum::{
     Error, Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -10,7 +10,8 @@ use tracing::error;
 use crate::{
     api::{
         models::{
-            Collection, CollectionListResponse, CreateCollectionRequest, UpdateCollectionRequest,
+            Collection, CollectionListResponse, CreateCollectionRequest, PaginationParams,
+            UpdateCollectionRequest,
         },
         routes::records,
         state::AppState,
@@ -48,9 +49,15 @@ async fn create(
     }
 }
 
-async fn list(state: State<AppState>) -> Result<Json<CollectionListResponse>, StatusCode> {
+async fn list(
+    state: State<AppState>,
+    Query(params): Query<PaginationParams>,
+) -> Result<Json<CollectionListResponse>, StatusCode> {
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params.per_page.unwrap_or(20).max(1).min(100);
+
     let repo = CollectionRepository::new(state.db.clone());
-    let resp = repo.list(1, 10).await;
+    let resp = repo.list(page, per_page).await;
 
     match resp {
         Ok(data) => Ok(Json(data)),
