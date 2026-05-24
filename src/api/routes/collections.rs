@@ -1,5 +1,5 @@
 use axum::{
-    Json, Router,
+    Error, Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
@@ -15,7 +15,10 @@ use crate::{
         routes::records,
         state::AppState,
     },
-    core::repositories::collections::{CollectionRepository, RepositoryError},
+    core::{
+        errors::{APIError, RepositoryError},
+        repositories::collections::CollectionRepository,
+    },
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -30,14 +33,17 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
 async fn create(
     state: State<AppState>,
     Json(body): Json<CreateCollectionRequest>,
-) -> Result<Json<Collection>, StatusCode> {
+) -> Result<Json<Collection>, APIError> {
     let repo = CollectionRepository::new(state.db.clone());
 
     match repo.create(body).await {
         Ok(val) => Ok(Json(val)),
         Err(err) => {
-            error!("Error: {}", err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            error!("Error: {:?}", err);
+            Err(APIError::Internal {
+                message: "something went wrong".to_string(),
+                details: serde_json::Value::String("".to_string()),
+            })
         }
     }
 }
@@ -49,7 +55,7 @@ async fn list(state: State<AppState>) -> Result<Json<CollectionListResponse>, St
     match resp {
         Ok(data) => Ok(Json(data)),
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {:?}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -87,10 +93,9 @@ async fn update(
 
     match repo.update(name, body).await {
         Ok(collection) => Ok(Json(collection)),
-        Err(RepositoryError::NotFound) => Err(StatusCode::NOT_FOUND),
-        Err(RepositoryError::InvalidInput(_)) => Err(StatusCode::BAD_REQUEST),
+
         Err(err) => {
-            eprintln!("Error: {}", err);
+            eprintln!("Error: {:?}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -105,7 +110,7 @@ async fn truncate(
     match repo.truncate(name).await {
         Ok(v) => Ok(Json(json!({"detail": "collection truncated successfully"}))),
         Err(err) => {
-            error!("Error: {}", err);
+            error!("Error: {:?}", err);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

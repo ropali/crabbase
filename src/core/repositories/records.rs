@@ -1,10 +1,13 @@
+use std::vec;
+
+use axum::Json;
 use serde_json::Value;
 use sqlx::{Pool, Row, Sqlite};
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
-    api::models::{CreateRecordRequest, Record, RecordListResponse},
-    core::repositories::collections::RepositoryError,
+    api::models::{CreateRecordRequest, Record, RecordData, RecordListResponse},
+    core::errors::RepositoryError,
 };
 
 #[derive(Debug, Clone)]
@@ -17,29 +20,29 @@ impl RecordsRepository {
         Self { db }
     }
 
-    pub async fn create(&self, name: String, body: CreateRecordRequest) {}
-
     pub async fn list(
         &self,
         collection: &str,
         page: u64,
         per_page: u64,
-    ) -> Option<RecordListResponse> {
-        let q = r#"SELECT id, collection_id, data, created_at, updated_at FROM records WHERE collection_id = ? LIMIT ? OFFSET ?"#;
+    ) -> Result<RecordListResponse, RepositoryError> {
+        let q = format!("SELECT * FROM {} LIMIT ? OFFSET ?", collection);
 
         let offset = (page - 1) * per_page;
-        let result = sqlx::query_as::<_, Record>(q)
-            .bind(collection)
+        let result = sqlx::query(&q)
             .bind(per_page as i64)
             .bind(offset as i64)
             .fetch_all(&self.db)
             .await;
 
         let items = match result {
-            Ok(items) => items,
+            Ok(items) => items
+                .iter()
+                .filter_map(|r| Record::from_row(r).ok())
+                .collect::<Vec<Record>>(),
             Err(e) => {
-                eprintln!("Error: can't fetch records {:?}", e);
-                return Some(RecordListResponse {
+                error!("Error: can't fetch records {:?}", e);
+                return Ok(RecordListResponse {
                     items: vec![],
                     total: 0,
                     page,
@@ -50,7 +53,7 @@ impl RecordsRepository {
 
         let total = items.len();
 
-        return Some(RecordListResponse {
+        return Ok(RecordListResponse {
             items,
             total: total as u64,
             page,
@@ -67,24 +70,22 @@ impl RecordsRepository {
         collection: String,
         body: CreateRecordRequest,
     ) -> Result<Record, RepositoryError> {
-        let obj = body.data.as_object().ok_or(RepositoryError::InvalidInput(
-            "Invalid input data".to_string(),
-        ));
-
-        let obj = obj.unwrap();
+        let obj = &body.data;
 
         if obj.is_empty() {
-            return Err(RepositoryError::InvalidInput("Empty Input".to_string()));
+            return Err(RepositoryError::NotFound("Empty Input".to_string()));
         }
 
-        let exist = sqlx::query("SELECT * FROM information_schema.tables WHERE table_name = $1;")
+        let exist = sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name=$1")
             .bind(&collection)
             .execute(&self.db)
             .await
             .is_ok();
 
+        info!("TABLE EXIST {}: {}", collection, exist);
+
         if !exist {
-            return Err(RepositoryError::InvalidInput(
+            return Err(RepositoryError::NotFound(
                 "Collection does not exist".to_string(),
             ));
         }
@@ -101,7 +102,7 @@ impl RecordsRepository {
         let mut separated = query_builder.separated(",");
 
         for col in &columns {
-            separated.push(quote_ident(col));
+            separated.push(col);
         }
 
         separated.push_unseparated(") VALUES (");
@@ -134,7 +135,7 @@ impl RecordsRepository {
             }
             Err(err) => {
                 error!("Error: {}", err);
-                Err(RepositoryError::Sqlx(err))
+                Err(RepositoryError::QueryFailed(err.to_string()))
             }
         }
     }

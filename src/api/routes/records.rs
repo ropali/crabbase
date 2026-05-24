@@ -13,7 +13,10 @@ use crate::{
         },
         state::AppState,
     },
-    core::repositories::records::RecordsRepository,
+    core::{
+        errors::{APIError, RepositoryError},
+        repositories::records::RecordsRepository,
+    },
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -30,11 +33,19 @@ async fn list_records(
     Path(name): Path<String>,
     Query(params): Query<PaginationParams>,
     state: axum::extract::State<AppState>,
-) -> Result<Json<RecordListResponse>, StatusCode> {
+) -> Result<Json<RecordListResponse>, APIError> {
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).max(1).min(100);
 
-    todo!()
+    let repo = RecordsRepository::new(state.db.clone());
+
+    match repo.list(&name, page, per_page).await {
+        Ok(values) => Ok(Json(values)),
+        Err(err) => Err(APIError::Internal {
+            message: "Something went wrong".to_string(),
+            details: serde_json::Value::String("".to_string()),
+        }),
+    }
 }
 
 async fn get_record(
@@ -48,14 +59,18 @@ async fn create_record(
     Path(name): Path<String>,
     state: axum::extract::State<AppState>,
     Json(body): Json<CreateRecordRequest>,
-) -> Result<Json<Record>, StatusCode> {
+) -> Result<Json<Record>, APIError> {
     let repo = RecordsRepository::new(state.db.clone());
 
     match repo.create_record(name, body).await {
         Ok(res) => Ok(Json(res)),
+
         Err(err) => {
-            error!("Error: {}", err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            error!("Error: {:?}", err);
+            Err(APIError::Internal {
+                message: "Something went wrong".to_string(),
+                details: serde_json::Value::String("".to_string()),
+            })
         }
     }
 }

@@ -1,46 +1,14 @@
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
-use std::fmt;
-use std::{error::Error, result};
 use tracing::error;
 use uuid::Uuid;
 
-#[derive(Debug)]
-pub enum RepositoryError {
-    Sqlx(sqlx::Error),
-    InvalidInput(String),
-    NotFound,
-    // TODO: add other specific errors here later, e.g., NotFound, InvalidInput
-}
-
-impl fmt::Display for RepositoryError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            RepositoryError::Sqlx(sql_err) => write!(f, "Database error: {}", sql_err),
-            RepositoryError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-            RepositoryError::NotFound => write!(f, "Resource not found"),
-        }
-    }
-}
-
-impl Error for RepositoryError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            RepositoryError::Sqlx(sql_err) => Some(sql_err),
-            RepositoryError::InvalidInput(_) | RepositoryError::NotFound => None,
-        }
-    }
-}
-
-// Conversion from sqlx::Error to RepositoryError allows using the `?` operator
-impl From<sqlx::Error> for RepositoryError {
-    fn from(err: sqlx::Error) -> Self {
-        RepositoryError::Sqlx(err)
-    }
-}
-
-use crate::api::models::{
-    Collection, CollectionListResponse, Column, CreateCollectionRequest, UpdateCollectionRequest,
+use crate::{
+    api::models::{
+        Collection, CollectionListResponse, Column, CreateCollectionRequest,
+        UpdateCollectionRequest,
+    },
+    core::errors::RepositoryError,
 };
 
 #[derive(Debug, Clone)]
@@ -162,7 +130,7 @@ impl CollectionRepository {
             Ok(c) => Ok(c),
             Err(err) => {
                 error!("Error: {}", err);
-                Err(RepositoryError::Sqlx(err))
+                Err(RepositoryError::QueryFailed(err.to_string()))
             }
         }
     }
@@ -203,7 +171,9 @@ impl CollectionRepository {
             .bind(&current_name)
             .fetch_optional(&mut *tx)
             .await?
-            .ok_or(RepositoryError::NotFound)?;
+            .ok_or(RepositoryError::NotFound(
+                "Table does not exist".to_string(),
+            ))?;
 
         let next_name = payload.name.unwrap_or_else(|| current.name.clone());
         validate_identifier(&next_name)?;
@@ -224,11 +194,10 @@ impl CollectionRepository {
             .await?;
         }
 
-        let next_fields_json = serde_json::to_string(&next_fields).map_err(|e| {
-            RepositoryError::InvalidInput(format!("unable to serialize fields: {e}"))
-        })?;
+        let next_fields_json = serde_json::to_string(&next_fields)
+            .map_err(|e| RepositoryError::OtherError(format!("unable to serialize fields: {e}")))?;
         let next_indexes_json = serde_json::to_string(&next_indexes).map_err(|e| {
-            RepositoryError::InvalidInput(format!("unable to serialize indexes: {e}"))
+            RepositoryError::OtherError(format!("unable to serialize indexes: {e}"))
         })?;
 
         sqlx::query(
@@ -249,48 +218,35 @@ impl CollectionRepository {
     pub async fn delete(&self, name: String) -> Result<bool, RepositoryError> {
         let sql = "DELETE FROM _collections WHERE name = $1";
 
-        let result = sqlx::query(sql).bind(name).execute(&self.db).await;
+        sqlx::query(sql).bind(name).execute(&self.db).await?;
 
-        match result {
-            Ok(_) => Ok(true),
-            Err(err) => {
-                error!("Error: {}", err);
-                Err(RepositoryError::Sqlx(err))
-            }
-        }
+        Ok(true)
     }
 
     pub async fn truncate(&self, name: String) -> Result<bool, RepositoryError> {
         let sql = format!("DELETE FROM {};", name);
 
         let result = sqlx::query(&sql).execute(&self.db).await;
-
-        match result {
-            Ok(_) => Ok(true),
-            Err(err) => {
-                error!("Error: {}", err);
-                Err(RepositoryError::Sqlx(err))
-            }
-        }
+        Ok(true)
     }
 }
 
 fn validate_identifier(identifier: &str) -> Result<(), RepositoryError> {
     let mut chars = identifier.chars();
     let Some(first) = chars.next() else {
-        return Err(RepositoryError::InvalidInput(
+        return Err(RepositoryError::OtherError(
             "identifier cannot be empty".to_string(),
         ));
     };
 
     if !(first.is_ascii_alphabetic() || first == '_') {
-        return Err(RepositoryError::InvalidInput(format!(
+        return Err(RepositoryError::OtherError(format!(
             "identifier '{identifier}' must start with a letter or underscore"
         )));
     }
 
     if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(RepositoryError::InvalidInput(format!(
+        return Err(RepositoryError::OtherError(format!(
             "identifier '{identifier}' can contain only letters, numbers, and underscores"
         )));
     }
@@ -300,7 +256,7 @@ fn validate_identifier(identifier: &str) -> Result<(), RepositoryError> {
 
 fn validate_columns(columns: &[Column]) -> Result<(), RepositoryError> {
     if columns.is_empty() {
-        return Err(RepositoryError::InvalidInput(
+        return Err(RepositoryError::OtherError(
             "at least one column is required".to_string(),
         ));
     }
@@ -311,14 +267,14 @@ fn validate_columns(columns: &[Column]) -> Result<(), RepositoryError> {
         validate_identifier(&column.name)?;
 
         if matches!(column.name.as_str(), "id" | "created" | "updated") {
-            return Err(RepositoryError::InvalidInput(format!(
+            return Err(RepositoryError::OtherError(format!(
                 "column '{}' is reserved",
                 column.name
             )));
         }
 
         if !seen.insert(column.name.clone()) {
-            return Err(RepositoryError::InvalidInput(format!(
+            return Err(RepositoryError::OtherError(format!(
                 "duplicate column '{}'",
                 column.name
             )));

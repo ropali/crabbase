@@ -1,13 +1,51 @@
 use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
-use sqlx::types::Json;
-use sqlx::{FromRow, Row};
+use serde_json::{Map, Value};
+use sqlx::sqlite::SqliteRow;
+use sqlx::{Column as _, Row};
+
+pub type RecordData = serde_json::Map<String, Value>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Record {
     pub id: i64,
-    pub data: serde_json::Value,
+    pub data: RecordData,
     pub created: String,
     pub updated: String,
+}
+
+impl Record {
+    pub fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
+        let mut data = RecordData::new();
+
+        for c in row.columns() {
+            let key = c.name();
+
+            if matches!(key, "id" | "created" | "updated") {
+                continue;
+            }
+
+            let value = if let Ok(v) = row.try_get::<Option<i64>, _>(key) {
+                v.map(Value::from).unwrap_or(Value::Null)
+            } else if let Ok(v) = row.try_get::<Option<f64>, _>(key) {
+                v.map(Value::from).unwrap_or(Value::Null)
+            } else if let Ok(v) = row.try_get::<Option<bool>, _>(key) {
+                v.map(Value::from).unwrap_or(Value::Null)
+            } else if let Ok(v) = row.try_get::<Option<String>, _>(key) {
+                v.map(Value::from).unwrap_or(Value::Null)
+            } else {
+                Value::Null
+            };
+
+            data.insert(key.to_string(), value);
+        }
+
+        Ok(Record {
+            id: row.try_get("id")?,
+            data: data,
+            created: row.try_get("created")?,
+            updated: row.try_get("updated")?,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -20,7 +58,7 @@ pub struct RecordListResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateRecordRequest {
-    pub data: serde_json::Value,
+    pub data: RecordData,
 }
 
 #[derive(Debug, Deserialize)]

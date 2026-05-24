@@ -1,32 +1,130 @@
+use std::fmt;
+
 use axum::{
     Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
-use serde_json::json;
+use serde::Serialize;
+use serde_json::Value;
+
+#[derive(Debug, Serialize)]
+pub struct ErrorBody {
+    pub code: &'static str,
+    pub message: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<Value>,
+}
 
 #[derive(Debug)]
 pub enum APIError {
-    NotFound(String),
-    Unauthorised(String),
-    BadRequest(String),
-    Internal(String),
+    Validation { message: String, details: Value },
+    NotFound { resource: String },
+    Unauthorized,
+    Forbidden,
+    Conflict { message: String },
+    Internal { message: String, details: Value },
+}
+
+impl APIError {
+    fn to_status_and_body(&self) -> (StatusCode, ErrorBody) {
+        match self {
+            APIError::Validation { message, details } => (
+                StatusCode::BAD_REQUEST,
+                ErrorBody {
+                    code: "VALIDATION_ERROR",
+                    message: message.clone(),
+                    details: Some(details.clone()),
+                },
+            ),
+            APIError::Unauthorized => (
+                StatusCode::UNAUTHORIZED,
+                ErrorBody {
+                    code: "UNAUTHORIZED",
+                    message: "Authentication required".to_string(),
+                    details: None,
+                },
+            ),
+            APIError::Forbidden => (
+                StatusCode::FORBIDDEN,
+                ErrorBody {
+                    code: "FORBIDDEN",
+                    message: "You are not allowed to perform this action".to_string(),
+                    details: None,
+                },
+            ),
+            APIError::NotFound { resource } => (
+                StatusCode::NOT_FOUND,
+                ErrorBody {
+                    code: "NOT_FOUND",
+                    message: format!("{resource} not found"),
+                    details: None,
+                },
+            ),
+            APIError::Conflict { message } => (
+                StatusCode::CONFLICT,
+                ErrorBody {
+                    code: "CONFLICT",
+                    message: message.clone(),
+                    details: None,
+                },
+            ),
+            APIError::Internal { message, details } => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ErrorBody {
+                    code: "INTERNAL_ERROR",
+                    message: message.to_string(),
+                    details: Some(details.to_owned()),
+                },
+            ),
+        }
+    }
 }
 
 impl IntoResponse for APIError {
     fn into_response(self) -> Response {
-        let (status, msg) = match self {
-            APIError::NotFound(msg) => (StatusCode::NOT_FOUND, msg),
-            APIError::Unauthorised(msg) => (StatusCode::FORBIDDEN, msg),
-            APIError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg),
-            APIError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-        };
+        let (status, body) = self.to_status_and_body();
+        (status, Json(body)).into_response()
+    }
+}
 
-        let body = Json(json!({
-            "status": status.as_u16(),
-            "message": msg,
-        }));
+#[derive(Debug)]
+pub enum RepositoryError {
+    NotFound(String),
+    DuplicateKey(String),
+    ConnectionFailed(String),
+    QueryFailed(String),
+    OtherError(String),
+}
 
-        (status, body).into_response()
+impl From<sqlx::Error> for RepositoryError {
+    fn from(err: sqlx::Error) -> Self {
+        match err {
+            sqlx::Error::RowNotFound => {
+                RepositoryError::NotFound("Row not found for this record".to_string())
+            }
+            _ => RepositoryError::QueryFailed("Failed to execute the database query".to_string()),
+        }
+    }
+}
+
+// Conversion from sqlx::Error to RepositoryError allows using the `?` operator
+impl From<RepositoryError> for APIError {
+    fn from(value: RepositoryError) -> Self {
+        match value {
+            RepositoryError::NotFound(msg) => APIError::NotFound { resource: msg },
+            RepositoryError::DuplicateKey(msg) => APIError::Conflict { message: msg },
+            RepositoryError::ConnectionFailed(msg) | RepositoryError::QueryFailed(msg) => {
+                APIError::Internal {
+                    message: "Something went wrong!".to_string(),
+                    details: serde_json::Value::String(msg),
+                }
+            }
+            RepositoryError::OtherError(msg) => APIError::Internal {
+                message: "Something went wrong".to_string(),
+                details: serde_json::Value::String(msg),
+            },
+        }
     }
 }
