@@ -4,7 +4,10 @@ use tracing::{error, info};
 
 use crate::{
     api::models::{CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
-    core::{errors::RepositoryError, repositories::collections::CollectionRepository},
+    core::{
+        errors::RepositoryError, repositories::collections::CollectionRepository,
+        utils::string_utils::quote_ident,
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -252,8 +255,4 @@ impl RecordsRepository {
 
         Ok(true)
     }
-}
-
-fn quote_ident(identifier: &str) -> String {
-    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
