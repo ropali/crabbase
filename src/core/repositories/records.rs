@@ -159,7 +159,10 @@ impl RecordsRepository {
             }
             Err(err) => {
                 error!("Error: {}", err);
-                Err(RepositoryError::QueryFailed(err.to_string()))
+                Err(RepositoryError::QueryFailed {
+                    message: "failed to update the record".to_string(),
+                    source: Some(err.to_string()),
+                })
             }
         }
     }

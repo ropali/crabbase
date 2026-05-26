@@ -96,30 +96,50 @@ pub enum RepositoryError {
     NotFound(String),
     DuplicateKey(String),
     ConnectionFailed(String),
-    QueryFailed(String),
+    QueryFailed {
+        message: String,
+        source: Option<String>,
+    },
+    Validation {
+        message: String,
+        field: Option<String>,
+    },
     OtherError(String),
 }
 
 impl From<sqlx::Error> for RepositoryError {
     fn from(err: sqlx::Error) -> Self {
         match err {
-            sqlx::Error::RowNotFound => {
-                RepositoryError::NotFound("Data not found for this collection".to_string())
-            }
+            sqlx::Error::RowNotFound => RepositoryError::NotFound("resource".to_string()),
+
             sqlx::Error::Database(db_err) => {
                 let message = db_err.message().to_string();
-                if let Some((_, table)) = message.split_once("no such table:") {
-                    let table = table.trim();
-                    let resource = if table.is_empty() {
-                        "Collection".to_string()
-                    } else {
-                        format!("Collection `{table}`")
-                    };
-                    return RepositoryError::NotFound(resource);
+
+                let lower = message.to_ascii_lowercase();
+
+                if lower.contains("unique constraint failed") {
+                    return RepositoryError::DuplicateKey(
+                        "Duplicate value violates unique constraint.".to_string(),
+                    );
                 }
-                RepositoryError::QueryFailed("Failed to execute the database query".to_string())
+
+                if lower.contains("foreign key constraint failed") {
+                    return RepositoryError::Validation {
+                        message: "Invalid relation reference".to_string(),
+                        field: None,
+                    };
+                }
+
+                RepositoryError::QueryFailed {
+                    message: "Database query failed".to_string(),
+                    source: Some(message),
+                }
             }
-            _ => RepositoryError::QueryFailed("Failed to execute the database query".to_string()),
+            sqlx::Error::Io(io) => RepositoryError::ConnectionFailed(io.to_string()),
+            other => RepositoryError::QueryFailed {
+                message: "datbase query failed".to_string(),
+                source: Some(other.to_string()),
+            },
         }
     }
 }
@@ -128,17 +148,23 @@ impl From<sqlx::Error> for RepositoryError {
 impl From<RepositoryError> for APIError {
     fn from(value: RepositoryError) -> Self {
         match value {
-            RepositoryError::NotFound(msg) => APIError::NotFound { resource: msg },
+            RepositoryError::NotFound(resource) => APIError::NotFound { resource },
             RepositoryError::DuplicateKey(msg) => APIError::Conflict { message: msg },
-            RepositoryError::ConnectionFailed(msg) | RepositoryError::QueryFailed(msg) => {
-                APIError::Internal {
-                    message: "Something went wrong!".to_string(),
-                    details: serde_json::Value::String(msg),
-                }
-            }
+            RepositoryError::Validation { message, field } => APIError::Validation {
+                message,
+                details: serde_json::json!({"field": field}),
+            },
+            RepositoryError::QueryFailed { message, source } => APIError::Internal {
+                message,
+                details: serde_json::json!({"source": source}),
+            },
             RepositoryError::OtherError(msg) => APIError::Internal {
                 message: "Something went wrong".to_string(),
                 details: serde_json::Value::String(msg),
+            },
+            RepositoryError::ConnectionFailed(message) => APIError::Internal {
+                message: "Database connection failure".to_string(),
+                details: serde_json::json!({"source": message}),
             },
         }
     }
