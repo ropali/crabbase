@@ -210,12 +210,16 @@ impl CollectionRepository {
     pub async fn delete(&self, name: String) -> Result<bool, RepositoryError> {
         let sql = "DELETE FROM _collections WHERE name = $1";
 
-        let tx = self.db.begin().await.unwrap();
+        let mut tx = self.db.begin().await.unwrap();
 
-        sqlx::query(sql).bind(&name).execute(&self.db).await?;
+        let affected = sqlx::query(sql).bind(&name).execute(&self.db).await?;
+
+        if affected.rows_affected() == 0 {
+            return Err(RepositoryError::NotFound(name));
+        }
 
         sqlx::query(&format!("DROP TABLE {name}"))
-            .execute(&self.db)
+            .execute(&mut *tx)
             .await?;
 
         tx.commit().await?;
