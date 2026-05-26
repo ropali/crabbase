@@ -1,13 +1,10 @@
-use std::vec;
-
-use axum::Json;
 use serde_json::Value;
-use sqlx::{Execute, Pool, Row, Sqlite};
+use sqlx::{Pool, Row, Sqlite};
 use tracing::{error, info};
 
 use crate::{
-    api::models::{CreateRecordRequest, Record, RecordData, RecordListResponse},
-    core::errors::RepositoryError,
+    api::models::{CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
+    core::{errors::RepositoryError, repositories::collections::CollectionRepository},
 };
 
 #[derive(Debug, Clone)]
@@ -50,8 +47,21 @@ impl RecordsRepository {
         })
     }
 
-    pub fn get_record(&self, collection: &str, id: &str) -> Option<Record> {
-        todo!()
+    pub async fn get_record(&self, collection: &str, id: &str) -> Result<Record, RepositoryError> {
+        let col_repo = CollectionRepository::new(self.db.clone());
+
+        let exist = col_repo.exists(collection).await;
+
+        if !exist {
+            return Err(RepositoryError::NotFound(collection.to_string()));
+        }
+
+        let row = sqlx::query(&format!("SELECT * FROM {collection} WHERE id = $1"))
+            .bind(id)
+            .fetch_one(&self.db)
+            .await?;
+
+        Ok(Record::from_row(&row)?)
     }
 
     pub async fn create_record(
@@ -151,17 +161,96 @@ impl RecordsRepository {
         }
     }
 
-    pub fn update_record(
+    pub async fn update_record(
         &self,
         collection: &str,
         id: &str,
-        data: serde_json::Value,
-    ) -> Option<Record> {
-        todo!()
+        payload: UpdateRecordRequest,
+    ) -> Result<Record, RepositoryError> {
+        let col_repo = CollectionRepository::new(self.db.clone());
+
+        let exist = col_repo.exists(collection).await;
+
+        if !exist {
+            return Err(RepositoryError::NotFound(collection.to_string()));
+        }
+
+        if payload.data.is_empty() {
+            return Err(RepositoryError::OtherError(
+                "empty update payload".to_string(),
+            ));
+        }
+
+        // Validate record existence and return NotFound before attempting update.
+        let _ = self.get_record(collection, id).await?;
+
+        let quoted_table = quote_ident(collection);
+        let mut query_builder =
+            sqlx::QueryBuilder::<Sqlite>::new(format!("UPDATE {} SET ", quoted_table));
+
+        let mut first = true;
+        for (k, v) in &payload.data {
+            if !first {
+                query_builder.push(", ");
+            }
+            first = false;
+
+            query_builder.push(quote_ident(k)).push(" = ");
+            match v {
+                Value::String(s) => {
+                    query_builder.push_bind(s.clone());
+                }
+                Value::Number(n) => {
+                    if let Some(i) = n.as_i64() {
+                        query_builder.push_bind(i);
+                    } else if let Some(f) = n.as_f64() {
+                        query_builder.push_bind(f);
+                    } else {
+                        query_builder.push_bind(n.to_string());
+                    }
+                }
+                Value::Bool(b) => {
+                    query_builder.push_bind(*b);
+                }
+                Value::Null => {
+                    query_builder.push_bind(Option::<String>::None);
+                }
+                other => {
+                    query_builder.push_bind(other.to_string());
+                }
+            }
+        }
+
+        query_builder.push(", updated = strftime('%Y-%m-%d %H:%M:%fZ')");
+
+        query_builder.push(" WHERE id = ").push_bind(id);
+
+        info!("SQL: {}", query_builder.sql());
+
+        let res = query_builder.build().execute(&self.db).await?;
+
+        if res.rows_affected() == 0 {
+            return Err(RepositoryError::NotFound(format!("record {id}")));
+        }
+
+        self.get_record(collection, id).await
     }
 
-    pub fn delete_record(&self, collection: &str, id: &str) -> bool {
-        todo!()
+    pub async fn delete_record(&self, collection: &str, id: &str) -> Result<bool, RepositoryError> {
+        let col_repo = CollectionRepository::new(self.db.clone());
+
+        let exist = col_repo.exists(collection).await;
+
+        if !exist {
+            return Err(RepositoryError::NotFound(collection.to_string()));
+        }
+
+        sqlx::query(&format!("DELETE FROM {collection} WHERE id = $1"))
+            .bind(id)
+            .execute(&self.db)
+            .await?;
+
+        Ok(true)
     }
 }
 

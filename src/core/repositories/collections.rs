@@ -1,6 +1,5 @@
 use chrono::Utc;
 use sqlx::{Pool, Sqlite};
-use tracing::error;
 use uuid::Uuid;
 
 use crate::{
@@ -21,13 +20,13 @@ impl CollectionRepository {
         Self { db }
     }
 
-    pub async fn exists(&self, name: &str) -> Result<bool, RepositoryError> {
-        let col = sqlx::query("SELECT name from collections WHERE name = $1")
+    pub async fn exists(&self, name: &str) -> bool {
+        sqlx::query("SELECT name from _collections WHERE name = $1")
             .bind(name)
-            .fetch_one(&self.db)
-            .await?;
-
-        Ok(true)
+            .fetch_optional(&self.db)
+            .await
+            .map(|row| row.is_some())
+            .unwrap_or(false)
     }
 
     pub async fn create(
@@ -211,13 +210,15 @@ impl CollectionRepository {
     pub async fn delete(&self, name: String) -> Result<bool, RepositoryError> {
         let sql = "DELETE FROM _collections WHERE name = $1";
 
-        let tx = self.db.begin();
+        let tx = self.db.begin().await.unwrap();
 
         sqlx::query(sql).bind(&name).execute(&self.db).await?;
 
         sqlx::query(&format!("DROP TABLE {name}"))
             .execute(&self.db)
             .await?;
+
+        tx.commit().await?;
 
         Ok(true)
     }

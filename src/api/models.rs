@@ -1,5 +1,5 @@
 use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
-use serde_json::{Map, Number, Value};
+use serde_json::{Number, Value};
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Column as _, Row};
 use tracing::info;
@@ -34,7 +34,7 @@ impl Record {
 
         Ok(Record {
             id: row.try_get("id")?,
-            data: data,
+            data,
             created: row.try_get("created")?,
             updated: row.try_get("updated")?,
         })
@@ -76,7 +76,7 @@ pub struct CreateRecordRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateRecordRequest {
-    pub data: serde_json::Value,
+    pub data: RecordData,
 }
 
 #[derive(Debug, Deserialize)]

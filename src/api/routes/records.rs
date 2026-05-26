@@ -1,9 +1,9 @@
 use axum::{
     Json, Router,
     extract::{Path, Query},
-    http::StatusCode,
     routing::get,
 };
+use serde_json::{Value, json};
 
 use crate::{
     api::{
@@ -44,8 +44,13 @@ async fn list_records(
 async fn get_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
-) -> Result<Json<Record>, StatusCode> {
-    todo!()
+) -> Result<Json<Record>, APIError> {
+    let repo = RecordsRepository::new(state.db.clone());
+
+    match repo.get_record(&name, &id).await {
+        Ok(res) => Ok(Json(res)),
+        Err(err) => Err(err.into()),
+    }
 }
 
 async fn create_record(
@@ -65,13 +70,23 @@ async fn update_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
     Json(body): Json<UpdateRecordRequest>,
-) -> Result<Json<Record>, StatusCode> {
-    todo!()
+) -> Result<Json<Value>, APIError> {
+    let repo = RecordsRepository::new(state.db.clone());
+
+    match repo.update_record(&name, &id, body).await {
+        Ok(_) => Ok(Json(json!({"details": "record updatedsuccessfully."}))),
+        Err(err) => Err(err.into()),
+    }
 }
 
 async fn delete_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
-) -> Result<StatusCode, StatusCode> {
-    todo!()
+) -> Result<Json<Value>, APIError> {
+    let repo = RecordsRepository::new(state.db.clone());
+
+    match repo.delete_record(&name, &id).await {
+        Ok(_) => Ok(Json(json!({"details": "record deleted successfully."}))),
+        Err(err) => Err(err.into()),
+    }
 }
