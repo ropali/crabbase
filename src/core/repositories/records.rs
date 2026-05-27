@@ -259,3 +259,208 @@ impl RecordsRepository {
         Ok(true)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::{
+        Column, CreateCollectionRequest, CreateRecordRequest, DataTypes, UpdateRecordRequest,
+    };
+    use crate::core::repositories::collections::CollectionRepository;
+    use serde_json::{Value, map::Map};
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_pool() -> sqlx::Pool<sqlx::Sqlite> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(":memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        // Remove seeded _collections row inserted by migrations to avoid deserialize errors in tests
+        sqlx::query("DELETE FROM _collections;")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_create_record() {
+        let pool = setup_pool().await;
+        let col_repo = CollectionRepository::new(pool.clone());
+        let columns = vec![
+            Column {
+                name: "title".into(),
+                data_type: DataTypes::PlainText,
+                index: false,
+            },
+            Column {
+                name: "views".into(),
+                data_type: DataTypes::Number,
+                index: false,
+            },
+        ];
+        let create_col = CreateCollectionRequest {
+            name: "articles".into(),
+            columns: columns.clone(),
+        };
+        col_repo.create(create_col).await.unwrap();
+
+        let repo = RecordsRepository::new(pool.clone());
+        let mut data = Map::new();
+        data.insert("title".to_string(), Value::String("hello".to_string()));
+        data.insert("views".to_string(), Value::Number(1.into()));
+        let create_req = CreateRecordRequest { data: data.clone() };
+        let created = repo
+            .create_record("articles".to_string(), create_req)
+            .await
+            .unwrap();
+        assert_eq!(
+            created.data.get("title").and_then(|v| v.as_str()),
+            Some("hello")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_record() {
+        let pool = setup_pool().await;
+        let col_repo = CollectionRepository::new(pool.clone());
+        let columns = vec![Column {
+            name: "title".into(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+        let create_col = CreateCollectionRequest {
+            name: "items".into(),
+            columns: columns.clone(),
+        };
+        col_repo.create(create_col).await.unwrap();
+
+        let repo = RecordsRepository::new(pool.clone());
+        let mut data = Map::new();
+        data.insert("title".to_string(), Value::String("hello".to_string()));
+        let create_req = CreateRecordRequest { data: data.clone() };
+        let created = repo
+            .create_record("items".to_string(), create_req)
+            .await
+            .unwrap();
+
+        let got = repo
+            .get_record("items", &created.id.to_string())
+            .await
+            .unwrap();
+        assert_eq!(got.id, created.id);
+    }
+
+    #[tokio::test]
+    async fn test_update_record() {
+        let pool = setup_pool().await;
+        let col_repo = CollectionRepository::new(pool.clone());
+        let columns = vec![Column {
+            name: "title".into(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+        let create_col = CreateCollectionRequest {
+            name: "items".into(),
+            columns: columns.clone(),
+        };
+        col_repo.create(create_col).await.unwrap();
+
+        let repo = RecordsRepository::new(pool.clone());
+        let mut data = Map::new();
+        data.insert("title".to_string(), Value::String("hello".to_string()));
+        let create_req = CreateRecordRequest { data: data.clone() };
+        let created = repo
+            .create_record("items".to_string(), create_req)
+            .await
+            .unwrap();
+
+        let mut upd_map = Map::new();
+        upd_map.insert("title".to_string(), Value::String("updated".to_string()));
+        let upd = UpdateRecordRequest { data: upd_map };
+        let updated = repo
+            .update_record("items", &created.id.to_string(), upd)
+            .await
+            .unwrap();
+        assert_eq!(
+            updated.data.get("title").and_then(|v| v.as_str()),
+            Some("updated")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_list_records() {
+        let pool = setup_pool().await;
+        let col_repo = CollectionRepository::new(pool.clone());
+        let columns = vec![
+            Column {
+                name: "title".into(),
+                data_type: DataTypes::PlainText,
+                index: false,
+            },
+            Column {
+                name: "views".into(),
+                data_type: DataTypes::Number,
+                index: false,
+            },
+        ];
+        let create_col = CreateCollectionRequest {
+            name: "blogs".into(),
+            columns: columns.clone(),
+        };
+        col_repo.create(create_col).await.unwrap();
+
+        let repo = RecordsRepository::new(pool.clone());
+        for i in 0..3 {
+            let mut data = Map::new();
+            data.insert("title".to_string(), Value::String(format!("t{}", i)));
+            data.insert("views".to_string(), Value::Number((i as i64).into()));
+            let create_req = CreateRecordRequest { data };
+            repo.create_record("blogs".to_string(), create_req)
+                .await
+                .unwrap();
+        }
+
+        let listed = repo.list("blogs", 1, 10).await.unwrap();
+        assert!(listed.items.len() >= 3);
+    }
+
+    #[tokio::test]
+    async fn test_delete_record() {
+        let pool = setup_pool().await;
+        let col_repo = CollectionRepository::new(pool.clone());
+        let columns = vec![Column {
+            name: "title".into(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+        let create_col = CreateCollectionRequest {
+            name: "trash".into(),
+            columns: columns.clone(),
+        };
+        col_repo.create(create_col).await.unwrap();
+
+        let repo = RecordsRepository::new(pool.clone());
+        let mut data = Map::new();
+        data.insert("title".to_string(), Value::String("bye".to_string()));
+        let create_req = CreateRecordRequest { data };
+        let created = repo
+            .create_record("trash".to_string(), create_req)
+            .await
+            .unwrap();
+
+        let deleted = repo
+            .delete_record("trash", &created.id.to_string())
+            .await
+            .unwrap();
+        assert!(deleted);
+
+        let res = repo.get_record("trash", &created.id.to_string()).await;
+        assert!(matches!(
+            res,
+            Err(crate::core::errors::RepositoryError::NotFound(_))
+        ));
+    }
+}

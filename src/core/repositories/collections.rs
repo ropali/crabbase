@@ -210,17 +210,21 @@ impl CollectionRepository {
     pub async fn delete(&self, name: String) -> Result<bool, RepositoryError> {
         let sql = "DELETE FROM _collections WHERE name = $1";
 
-        let mut tx = self.db.begin().await.unwrap();
+        // Begin a transaction and run all mutating queries within it using the same connection
+        let mut tx = self.db.begin().await?;
 
-        let affected = sqlx::query(sql).bind(&name).execute(&self.db).await?;
+        // Execute the delete within the transaction
+        let affected = sqlx::query(sql).bind(&name).execute(&mut *tx).await?;
 
         if affected.rows_affected() == 0 {
+            // rollback and return not found
+            tx.rollback().await.ok();
             return Err(RepositoryError::NotFound(name));
         }
 
-        sqlx::query(&format!("DROP TABLE {name}"))
-            .execute(&mut *tx)
-            .await?;
+        // Drop the collection table within the same transaction
+        let drop_sql = format!("DROP TABLE \"{}\"", name);
+        sqlx::query(&drop_sql).execute(&mut *tx).await?;
 
         tx.commit().await?;
 
@@ -356,4 +360,147 @@ async fn rebuild_collection_table(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::models::{Column, CreateCollectionRequest, DataTypes, UpdateCollectionRequest};
+    use crate::core::errors::RepositoryError;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_pool() -> sqlx::Pool<sqlx::Sqlite> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(":memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        // Clean seeded collections (migrations insert a default 'users' entry) to keep tests deterministic
+        sqlx::query("DELETE FROM _collections;")
+            .execute(&pool)
+            .await
+            .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn test_create_collection() {
+        let pool = setup_pool().await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        let columns = vec![Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+
+        let req = CreateCollectionRequest {
+            name: "testcol".to_string(),
+            columns: columns.clone(),
+        };
+
+        let created = repo.create(req).await.unwrap();
+        assert_eq!(created.name, "testcol");
+        assert_eq!(created.fields, columns);
+    }
+
+    #[tokio::test]
+    async fn test_get_by_name() {
+        let pool = setup_pool().await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        let columns = vec![Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+
+        let req = CreateCollectionRequest {
+            name: "getcol".to_string(),
+            columns: columns.clone(),
+        };
+
+        repo.create(req).await.unwrap();
+
+        let fetched = repo.get_by_name("getcol").await.unwrap();
+        assert_eq!(fetched.name, "getcol");
+    }
+
+    #[tokio::test]
+    async fn test_list_collections() {
+        let pool = setup_pool().await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        let columns = vec![Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+
+        let req = CreateCollectionRequest {
+            name: "listcol".to_string(),
+            columns: columns.clone(),
+        };
+
+        repo.create(req).await.unwrap();
+
+        let list = repo.list(1, 10).await.unwrap();
+        assert!(list.items.iter().any(|c| c.name == "listcol"));
+    }
+
+    #[tokio::test]
+    async fn test_update_collection_rename() {
+        let pool = setup_pool().await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        let columns = vec![Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+
+        let req = CreateCollectionRequest {
+            name: "oldname".to_string(),
+            columns: columns.clone(),
+        };
+
+        repo.create(req).await.unwrap();
+
+        let update_req = UpdateCollectionRequest {
+            name: Some("newname".to_string()),
+            columns: None,
+        };
+
+        let updated = repo
+            .update("oldname".to_string(), update_req)
+            .await
+            .unwrap();
+        assert_eq!(updated.name, "newname");
+    }
+
+    #[tokio::test]
+    async fn test_delete_collection() {
+        let pool = setup_pool().await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        let columns = vec![Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            index: false,
+        }];
+
+        let req = CreateCollectionRequest {
+            name: "todelete".to_string(),
+            columns: columns.clone(),
+        };
+
+        repo.create(req).await.unwrap();
+
+        let deleted = repo.delete("todelete".to_string()).await.unwrap();
+        assert!(deleted);
+
+        let res = repo.get_by_name("todelete").await;
+        assert!(matches!(res, Err(RepositoryError::NotFound(_))));
+    }
 }
