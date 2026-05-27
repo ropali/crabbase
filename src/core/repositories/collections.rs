@@ -238,21 +238,26 @@ impl CollectionRepository {
 fn validate_identifier(identifier: &str) -> Result<(), RepositoryError> {
     let mut chars = identifier.chars();
     let Some(first) = chars.next() else {
-        return Err(RepositoryError::OtherError(
-            "identifier cannot be empty".to_string(),
-        ));
+        return Err(RepositoryError::Validation {
+            message: "identifier cannot be empty".to_string(),
+            field: Some("some".to_string()),
+        });
     };
 
     if !(first.is_ascii_alphabetic() || first == '_') {
-        return Err(RepositoryError::OtherError(format!(
-            "identifier '{identifier}' must start with a letter or underscore"
-        )));
+        return Err(RepositoryError::Validation {
+            message: format!("identifier '{identifier}' must start with a letter or underscore"),
+            field: Some("name".to_string()),
+        });
     }
 
     if !chars.all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(RepositoryError::OtherError(format!(
-            "identifier '{identifier}' can contain only letters, numbers, and underscores"
-        )));
+        return Err(RepositoryError::Validation {
+            message: format!(
+                "identifier '{identifier}' can contain only letters, numbers, and underscores"
+            ),
+            field: Some("name".to_string()),
+        });
     }
 
     Ok(())
