@@ -14,7 +14,7 @@ use crate::{
         routes::records,
         state::AppState,
     },
-    core::{errors::APIError, repositories::collections::CollectionRepository},
+    core::errors::APIError,
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -30,9 +30,7 @@ async fn create(
     state: State<AppState>,
     Json(body): Json<CreateCollectionRequest>,
 ) -> Result<Json<Collection>, APIError> {
-    let repo = CollectionRepository::new(state.db.clone());
-
-    match repo.create(body).await {
+    match state.collection_repo().create(body).await {
         Ok(val) => Ok(Json(val)),
         Err(err) => Err(err.into()),
     }
@@ -45,8 +43,7 @@ async fn list(
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
 
-    let repo = CollectionRepository::new(state.db.clone());
-    let resp = repo.list(page, per_page).await;
+    let resp = state.collection_repo().list(page, per_page).await;
 
     match resp {
         Ok(data) => Ok(Json(data)),
@@ -58,17 +55,14 @@ async fn get_one(
     Path(name): Path<String>,
     state: State<AppState>,
 ) -> Result<Json<Collection>, APIError> {
-    let repo = CollectionRepository::new(state.db.clone());
-    match repo.get_by_name(&name).await {
+    match state.collection_repo().get_by_name(&name).await {
         Ok(collection) => Ok(Json(collection)),
         Err(err) => Err(err.into()),
     }
 }
 
 async fn delete(Path(name): Path<String>, state: State<AppState>) -> Result<Json<Value>, APIError> {
-    let repo = CollectionRepository::new(state.db.clone());
-
-    match repo.delete(name).await {
+    match state.collection_repo().delete(name).await {
         Ok(_) => Ok(Json(json!({"detail": "collection deleted successfully."}))),
         Err(err) => Err(err.into()),
     }
@@ -79,9 +73,7 @@ async fn update(
     state: State<AppState>,
     Json(body): Json<UpdateCollectionRequest>,
 ) -> Result<Json<Collection>, APIError> {
-    let repo = CollectionRepository::new(state.db.clone());
-
-    match repo.update(name, body).await {
+    match state.collection_repo().update(name, body).await {
         Ok(collection) => Ok(Json(collection)),
         Err(err) => Err(err.into()),
     }
@@ -91,9 +83,7 @@ async fn truncate(
     Path(name): Path<String>,
     state: State<AppState>,
 ) -> Result<Json<Value>, APIError> {
-    let repo = CollectionRepository::new(state.db.clone());
-
-    match repo.truncate(name).await {
+    match state.collection_repo().truncate(name).await {
         Ok(_) => Ok(Json(json!({"detail": "collection truncated successfully"}))),
         Err(err) => Err(err.into()),
     }
