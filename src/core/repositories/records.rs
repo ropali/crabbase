@@ -1,5 +1,5 @@
 use serde_json::Value;
-use sqlx::{Pool, Row, Sqlite};
+use sqlx::{AnyPool, Row};
 use tracing::{error, info};
 
 use crate::{
@@ -12,11 +12,11 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct RecordsRepository {
-    db: Pool<Sqlite>,
+    db: AnyPool,
 }
 
 impl RecordsRepository {
-    pub fn new(db: Pool<Sqlite>) -> Self {
+    pub fn new(db: AnyPool) -> Self {
         Self { db }
     }
 
@@ -98,7 +98,7 @@ impl RecordsRepository {
 
         let quoted_table = quote_ident(&collection);
         let mut query_builder =
-            sqlx::QueryBuilder::<Sqlite>::new(format!("INSERT INTO {} (", quoted_table));
+            sqlx::QueryBuilder::<sqlx::Any>::new(format!("INSERT INTO {} (", quoted_table));
 
         // Add columns with proper sepration
         let mut separated = query_builder.separated(",");
@@ -146,7 +146,7 @@ impl RecordsRepository {
                     "SELECT id, created, updated FROM {} WHERE id = ?;",
                     quote_ident(&collection)
                 ))
-                .bind(res.last_insert_rowid())
+                .bind(res.last_insert_id())
                 .fetch_one(&self.db)
                 .await?;
 
@@ -192,7 +192,7 @@ impl RecordsRepository {
 
         let quoted_table = quote_ident(collection);
         let mut query_builder =
-            sqlx::QueryBuilder::<Sqlite>::new(format!("UPDATE {} SET ", quoted_table));
+            sqlx::QueryBuilder::<sqlx::Any>::new(format!("UPDATE {} SET ", quoted_table));
 
         let mut first = true;
         for (k, v) in &payload.data {

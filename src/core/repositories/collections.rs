@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sqlx::{Pool, Sqlite};
+use sqlx::AnyPool;
 use uuid::Uuid;
 
 use crate::{
@@ -12,11 +12,11 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct CollectionRepository {
-    db: Pool<Sqlite>,
+    db: AnyPool,
 }
 
 impl CollectionRepository {
-    pub fn new(db: Pool<Sqlite>) -> Self {
+    pub fn new(db: AnyPool) -> Self {
         Self { db }
     }
 
@@ -298,7 +298,7 @@ fn validate_columns(columns: &[Column]) -> Result<(), RepositoryError> {
 }
 
 async fn rebuild_collection_table(
-    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    tx: &mut sqlx::Transaction<'_, sqlx::Any>,
     current_name: &str,
     next_name: &str,
     current_fields: &[Column],

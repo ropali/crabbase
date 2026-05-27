@@ -1,7 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
 use serde_json::{Number, Value};
-use sqlx::sqlite::SqliteRow;
-use sqlx::{Column as _, Row};
+use sqlx::any::AnyRow;
+use sqlx::{Column as _, Error, FromRow, Row};
 use tracing::info;
 
 pub type RecordData = serde_json::Map<String, Value>;
@@ -15,7 +15,7 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
+    pub fn from_row(row: &AnyRow) -> Result<Self, sqlx::Error> {
         let mut data = RecordData::new();
 
         for c in row.columns() {
@@ -40,7 +40,7 @@ impl Record {
         })
     }
 
-    pub fn column_to_value(row: &SqliteRow, col_name: &str) -> Value {
+    pub fn column_to_value(row: &AnyRow, col_name: &str) -> Value {
         if let Ok(v) = row.try_get::<i64, _>(col_name) {
             return Value::Number(Number::from(v));
         }
@@ -85,18 +85,45 @@ pub struct PaginationParams {
     pub per_page: Option<u64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Collection {
     pub id: String,
     pub name: String,
 
-    #[sqlx(json)]
     pub fields: Vec<Column>,
 
-    #[sqlx(json)]
     pub indexes: Vec<Column>,
     pub created: String,
     pub updated: String,
+}
+
+impl<'r> FromRow<'r, AnyRow> for Collection {
+    fn from_row(row: &'r AnyRow) -> Result<Self, Error> {
+        // 1. Extract standard text fields
+        let id: String = row.try_get("id")?;
+        let name: String = row.try_get("name")?;
+        let created: String = row.try_get("created")?;
+        let updated: String = row.try_get("updated")?;
+
+        // 2. Extract and manually decode the JSON fields from their text columns
+        let fields_raw: String = row.try_get("fields")?;
+        let fields: Vec<Column> =
+            serde_json::from_str(&fields_raw).map_err(|e| Error::Decode(Box::new(e)))?;
+
+        let indexes_raw: String = row.try_get("indexes")?;
+        let indexes: Vec<Column> =
+            serde_json::from_str(&indexes_raw).map_err(|e| Error::Decode(Box::new(e)))?;
+
+        // 3. Construct and return the fully populated struct
+        Ok(Collection {
+            id,
+            name,
+            fields,
+            indexes,
+            created,
+            updated,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]

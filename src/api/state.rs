@@ -1,10 +1,10 @@
-use sqlx::{Pool, Sqlite};
+use sqlx::AnyPool;
 
 use crate::core::repositories::{collections::CollectionRepository, records::RecordsRepository};
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub db: Pool<Sqlite>,
+    pub db: AnyPool,
 }
 
 impl AppState {
