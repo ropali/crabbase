@@ -14,7 +14,16 @@ build:
 	cargo build
 
 test:
-	cargo test
+	@if [ -n "$(crate)" ]; then \
+		CRATE_NAME="$(crate)"; \
+		case "$$CRATE_NAME" in \
+			crabbase_*) ;; \
+			*) CRATE_NAME="crabbase_$$CRATE_NAME" ;; \
+		esac; \
+		cargo test -p $$CRATE_NAME; \
+	else \
+		cargo test --workspace; \
+	fi
 
 watch:
 	RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- --quiet

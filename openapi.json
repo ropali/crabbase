@@ -71,6 +71,95 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateCollectionRequest"
+              },
+              "examples": {
+                "allDataTypes": {
+                  "summary": "Collection with all data types",
+                  "description": "Example collection demonstrating every available column data type",
+                  "value": {
+                    "name": "products",
+                    "columns": [
+                      {
+                        "name": "title",
+                        "data_type": "PlainText",
+                        "index": true,
+                        "related_to": null
+                      },
+                      {
+                        "name": "description",
+                        "data_type": "RichText",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "price",
+                        "data_type": "Number",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "active",
+                        "data_type": "Bool",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "contact_email",
+                        "data_type": "Email",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "website",
+                        "data_type": "Url",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "published_at",
+                        "data_type": "Datetime",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "created_at",
+                        "data_type": {"AutoDatetime": "now"},
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "thumbnail",
+                        "data_type": "File",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "category_id",
+                        "data_type": "Relation",
+                        "index": false,
+                        "related_to": "categories"
+                      },
+                      {
+                        "name": "status",
+                        "data_type": "Select",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "metadata",
+                        "data_type": "Json",
+                        "index": false,
+                        "related_to": null
+                      },
+                      {
+                        "name": "location",
+                        "data_type": "GeoPoint",
+                        "index": false,
+                        "related_to": null
+                      }
+                    ]
+                  }
+                }
               }
             }
           }
@@ -672,11 +761,12 @@
               "Number",
               "Bool",
               "Email",
-              "URL",
+              "Url",
               "Datetime",
               "File",
+              "Relation",
               "Select",
-              "JSON",
+              "Json",
               "GeoPoint"
             ]
           },
@@ -684,19 +774,11 @@
             "type": "object",
             "properties": {
               "AutoDatetime": {
-                "type": "string"
+                "type": "string",
+                "description": "Auto-datetime mode (e.g. 'now', 'created', 'updated')"
               }
             },
             "required": ["AutoDatetime"]
-          },
-          {
-            "type": "object",
-            "properties": {
-              "Relation": {
-                "type": "string"
-              }
-            },
-            "required": ["Relation"]
           }
         ],
         "description": "Available column data types"
