@@ -118,7 +118,7 @@ pub enum DataTypes {
     Datetime,
     AutoDatetime(String),
     File,
-    Relation(String),
+    Relation,
     Select,
     Json,
     GeoPoint,
@@ -137,11 +137,9 @@ impl DataTypes {
             | Self::Json
             | Self::GeoPoint => "TEXT".to_owned(),
             DataTypes::Number => "INTEGER".to_owned(),
-            DataTypes::Bool => "INTEGER CHECK (is_active IN (0, 1))".to_owned(),
+            DataTypes::Bool => "INTEGER".to_owned(),
             DataTypes::AutoDatetime(_) => "TEXT".to_owned(),
-            DataTypes::Relation(field) => {
-                format!("FOREIGN KEY (id) REFERENCES {} (id)", field)
-            }
+            DataTypes::Relation => "INTEGER".to_owned(),
         }
     }
 }
@@ -152,6 +150,22 @@ pub struct Column {
     #[serde(deserialize_with = "deserialize_data_type")]
     pub data_type: DataTypes,
     pub index: bool,
+    pub related_to: Option<String>,
+}
+
+impl Column {
+    pub fn to_sql_definition(&self) -> String {
+        match &self.data_type {
+            DataTypes::Relation => {
+                let target = self.related_to.as_deref().unwrap_or("unknown");
+                format!(
+                    "\"{}\" INTEGER REFERENCES \"{}\"(\"id\")",
+                    self.name, target
+                )
+            }
+            _ => format!("\"{}\" {}", self.name, self.data_type.to_db_type()),
+        }
+    }
 }
 
 fn deserialize_data_type<'de, D>(deserializer: D) -> Result<DataTypes, D::Error>

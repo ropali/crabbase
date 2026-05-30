@@ -294,11 +294,13 @@ mod tests {
                 name: "title".into(),
                 data_type: DataTypes::PlainText,
                 index: false,
+                related_to: None,
             },
             Column {
                 name: "views".into(),
                 data_type: DataTypes::Number,
                 index: false,
+                related_to: None,
             },
         ];
         let create_col = CreateCollectionRequest {
@@ -330,6 +332,7 @@ mod tests {
             name: "title".into(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
         let create_col = CreateCollectionRequest {
             name: "items".into(),
@@ -361,6 +364,7 @@ mod tests {
             name: "title".into(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
         let create_col = CreateCollectionRequest {
             name: "items".into(),
@@ -399,11 +403,13 @@ mod tests {
                 name: "title".into(),
                 data_type: DataTypes::PlainText,
                 index: false,
+                related_to: None,
             },
             Column {
                 name: "views".into(),
                 data_type: DataTypes::Number,
                 index: false,
+                related_to: None,
             },
         ];
         let create_col = CreateCollectionRequest {
@@ -435,6 +441,7 @@ mod tests {
             name: "title".into(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
         let create_col = CreateCollectionRequest {
             name: "trash".into(),

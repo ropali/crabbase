@@ -39,7 +39,7 @@ impl CollectionRepository {
         let columns = collection
             .columns
             .iter()
-            .map(|c| format!("\"{}\" {}", c.name, c.data_type.clone().to_db_type()))
+            .map(|c| c.to_sql_definition())
             .collect::<Vec<String>>()
             .join(", ");
 
@@ -308,7 +308,7 @@ async fn rebuild_collection_table(
 
     let next_column_defs = next_fields
         .iter()
-        .map(|c| format!("\"{}\" {}", c.name, c.data_type.clone().to_db_type()))
+        .map(|c| c.to_sql_definition())
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -393,6 +393,7 @@ mod tests {
             name: "title".to_string(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
 
         let req = CreateCollectionRequest {
@@ -414,6 +415,7 @@ mod tests {
             name: "title".to_string(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
 
         let req = CreateCollectionRequest {
@@ -436,6 +438,7 @@ mod tests {
             name: "title".to_string(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
 
         let req = CreateCollectionRequest {
@@ -458,6 +461,7 @@ mod tests {
             name: "title".to_string(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
 
         let req = CreateCollectionRequest {
@@ -488,6 +492,7 @@ mod tests {
             name: "title".to_string(),
             data_type: DataTypes::PlainText,
             index: false,
+            related_to: None,
         }];
 
         let req = CreateCollectionRequest {
@@ -502,5 +507,181 @@ mod tests {
 
         let res = repo.get_by_name("todelete").await;
         assert!(matches!(res, Err(RepositoryError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_create_with_various_data_types() {
+        let pool = setup_pool().await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        let columns = vec![
+            Column {
+                name: "text_field".into(),
+                data_type: DataTypes::PlainText,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "rich_field".into(),
+                data_type: DataTypes::RichText,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "num_field".into(),
+                data_type: DataTypes::Number,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "bool_field".into(),
+                data_type: DataTypes::Bool,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "email_field".into(),
+                data_type: DataTypes::Email,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "url_field".into(),
+                data_type: DataTypes::Url,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "dt_field".into(),
+                data_type: DataTypes::Datetime,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "autodt_field".into(),
+                data_type: DataTypes::AutoDatetime("now".into()),
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "file_field".into(),
+                data_type: DataTypes::File,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "relation_field".into(),
+                data_type: DataTypes::Relation,
+                index: false,
+                related_to: Some("other_table".into()),
+            },
+            Column {
+                name: "select_field".into(),
+                data_type: DataTypes::Select,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "json_field".into(),
+                data_type: DataTypes::Json,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "geo_field".into(),
+                data_type: DataTypes::GeoPoint,
+                index: false,
+                related_to: None,
+            },
+            // include an indexed column to ensure indexes are recorded
+            Column {
+                name: "indexed".into(),
+                data_type: DataTypes::PlainText,
+                index: true,
+                related_to: None,
+            },
+        ];
+
+        let req = CreateCollectionRequest {
+            name: "types_test".to_string(),
+            columns: columns.clone(),
+        };
+
+        let created = repo.create(req).await.unwrap();
+        // Ensure created fields match the input columns
+        assert_eq!(created.fields, columns);
+
+        // Ensure indexes captured correctly
+        assert!(created.indexes.iter().any(|c| c.name == "indexed"));
+
+        // Fetch from DB and ensure it deserializes correctly
+        let fetched = repo.get_by_name("types_test").await.unwrap();
+        assert_eq!(fetched.fields, columns);
+    }
+
+    #[tokio::test]
+    async fn test_relation_type_creation() {
+        let pool = setup_pool().await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        // Create the related collection first
+        let related_columns = vec![Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            index: false,
+            related_to: None,
+        }];
+        let req_related = CreateCollectionRequest {
+            name: "other_table".to_string(),
+            columns: related_columns,
+        };
+        repo.create(req_related).await.unwrap();
+
+        // Create the main collection with the relation column and a dummy column to avoid empty column SQL error
+        let columns = vec![
+            Column {
+                name: "dummy".to_string(),
+                data_type: DataTypes::PlainText,
+                index: false,
+                related_to: None,
+            },
+            Column {
+                name: "relation_field".to_string(),
+                data_type: DataTypes::Relation,
+                index: false,
+                related_to: Some("other_table".to_string()),
+            },
+        ];
+        let req = CreateCollectionRequest {
+            name: "my_table".to_string(),
+            columns,
+        };
+        repo.create(req).await.unwrap();
+
+        #[derive(sqlx::FromRow, Debug)]
+        struct ForeignKeyInfo {
+            id: i64,
+            seq: i64,
+            table: String,
+            from: String,
+            to: String,
+            on_update: String,
+            on_delete: String,
+            match_type: String,
+        }
+
+        let fks: Vec<ForeignKeyInfo> = sqlx::query_as::<_, ForeignKeyInfo>(
+            "SELECT id, seq, [table], [from], [to], on_update, on_delete, [match] AS match_type FROM pragma_foreign_key_list('my_table')"
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        // Verify that there is a foreign key pointing to "other_table"
+        assert!(!fks.is_empty(), "No foreign keys found on my_table");
+        let fk = &fks[0];
+        assert_eq!(fk.table, "other_table");
+        assert_eq!(fk.from, "relation_field");
+        assert_eq!(fk.to, "id");
     }
 }
