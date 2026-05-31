@@ -1,11 +1,26 @@
-.PHONY: validate run release build test
+.PHONY: validate run release build test watch serve admin
 
 validate:
 	cargo check
 	cargo build
 
+# Run the default subcommand (serve)
 run:
-	cargo run
+	cargo run -- serve
+
+# Start the API server
+# Usage:
+#   make serve
+#   make serve port=9000 host=127.0.0.1
+serve:
+	cargo run -- serve $(if $(port),--port $(port)) $(if $(host),--host $(host))
+
+# Start the admin dashboard
+# Usage:
+#   make admin
+#   make admin port=8181 host=127.0.0.1
+admin:
+	cargo run -- admin $(if $(port),--port $(port)) $(if $(host),--host $(host))
 
 release:
 	cargo build --release

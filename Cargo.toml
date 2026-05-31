@@ -1,8 +1,5 @@
 [workspace]
-members = [
-    "crabbase",
-    "crates/*",
-]
+members = ["crabbase", "crates/*"]
 default-members = ["crabbase"]
 resolver = "3"
 
@@ -20,6 +17,8 @@ sqlx = { version = "0.8.6", features = ["sqlite", "runtime-tokio", "migrate"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 tracing-appender = "0.2"
+clap = { version = "4.6.1", features = ["derive"] }
+
 
 # Workspace local members
 crabbase_core = { path = "crates/core" }
