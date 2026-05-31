@@ -1,0 +1,1 @@
+// Background hooks handling
