@@ -1,1 +1,1 @@
-// Authentication logic
+pub mod auth;

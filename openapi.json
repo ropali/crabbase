@@ -495,6 +495,45 @@
         }
       }
     },
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Authenticate user and receive JWT token",
+        "operationId": "login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{name}/records/{id}": {
       "get": {
         "tags": ["Records"],
@@ -867,6 +906,64 @@
           },
           "details": {
             "description": "Optional additional error details"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["username", "password"],
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "User's username"
+          },
+          "password": {
+            "type": "string",
+            "description": "User's password"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "JWT authentication token"
+          }
+        }
+      },
+      "AuthClaims": {
+        "type": "object",
+        "description": "JWT token claims",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Token type (auth, verification, file)"
+          },
+          "id": {
+            "type": "string",
+            "description": "User ID"
+          },
+          "collectionId": {
+            "type": "string",
+            "description": "Associated collection ID"
+          },
+          "refreshable": {
+            "type": "boolean",
+            "description": "Whether the token can be refreshed"
+          },
+          "sub": {
+            "type": "string",
+            "description": "Subject (user ID)"
+          },
+          "exp": {
+            "type": "integer",
+            "description": "Expiration timestamp"
+          },
+          "iat": {
+            "type": "integer",
+            "description": "Issued at timestamp"
           }
         }
       }

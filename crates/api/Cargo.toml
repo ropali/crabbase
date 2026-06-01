@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 crabbase_core = { workspace = true }
 crabbase_db = { workspace = true }
+crabbase_auth = { workspace = true }
 
 axum = { workspace = true }
 tower = { workspace = true }

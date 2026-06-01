@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod collections;
 pub mod files;
 pub mod records;
@@ -15,6 +16,7 @@ pub fn get_app_routes(state: AppState) -> Router {
         .nest("/collections", collections::get_routes(state.clone()))
         .route("/openapi.json", get(openapi_json))
         .route("/docs", get(swagger_ui))
+        .nest("/auth", auth::get_routes(state.clone()))
         .with_state(state);
 
     Router::new().nest("/api", api)
