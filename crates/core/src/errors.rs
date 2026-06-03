@@ -169,3 +169,29 @@ impl From<RepositoryError> for APIError {
         }
     }
 }
+
+impl std::fmt::Display for RepositoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            RepositoryError::NotFound(msg) => write!(f, "Not Found: {}", msg),
+            RepositoryError::DuplicateKey(msg) => write!(f, "Duplicate Key: {}", msg),
+
+            RepositoryError::ConnectionFailed(msg) => write!(f, "Connection Failed: {}", msg),
+            RepositoryError::QueryFailed { message, source } => {
+                if let Some(src) = source {
+                    write!(f, "Query Failed: {} (Source: {})", message, src)
+                } else {
+                    write!(f, "Query Failed: {}", message)
+                }
+            }
+            RepositoryError::Validation { message, field } => {
+                if let Some(fld) = field {
+                    write!(f, "Validation Error on field '{}': {}", fld, message)
+                } else {
+                    write!(f, "Validation Error:{}", message)
+                }
+            }
+            RepositoryError::OtherError(msg) => write!(f, "Error: {}", msg),
+        }
+    }
+}

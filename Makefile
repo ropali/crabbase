@@ -41,4 +41,4 @@ test:
 	fi
 
 watch:
-	RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- --quiet
+	RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- serve

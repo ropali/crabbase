@@ -6,6 +6,7 @@ use axum::{
 };
 use crabbase_auth::auth::{Claims, TokenType, create_token, verify_token};
 use crabbase_core::errors::APIError;
+use crabbase_db::repositories::auth::AuthUser;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -22,15 +23,15 @@ pub struct LoginResponse {
     token: String,
 }
 
-pub struct AuthenticatedUser(pub Claims);
+pub struct AuthenticatedUser(pub AuthUser);
 
-impl<S> FromRequestParts<S> for AuthenticatedUser
-where
-    S: Send + Sync,
-{
+impl FromRequestParts<AppState> for AuthenticatedUser {
     type Rejection = APIError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
         let auth_header = parts
             .headers
             .get("Authorization")
@@ -42,7 +43,9 @@ where
             .ok_or(APIError::Unauthorized)?;
 
         let claims = verify_token(token).map_err(|_| APIError::Unauthorized)?;
-        Ok(AuthenticatedUser(claims))
+
+        let user = state.auth_service().verify_session(&claims).await?;
+        Ok(AuthenticatedUser(user))
     }
 }
 
@@ -59,9 +62,9 @@ async fn login(Json(body): Json<LoginRequest>) -> Result<Json<LoginResponse>, AP
     Ok(Json(LoginResponse { token }))
 }
 
-async fn profile(AuthenticatedUser(claims): AuthenticatedUser) -> Result<Json<Value>, APIError> {
+async fn profile(AuthenticatedUser(user): AuthenticatedUser) -> Result<Json<Value>, APIError> {
     Ok(Json(serde_json::json!({
-        "user_id": claims.sub,
-        "message": "You are authenticated!"
+        "id": user.id,
+        "email": user.email,
     })))
 }

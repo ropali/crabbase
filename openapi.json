@@ -7,11 +7,45 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8000/api",
+      "url": "http://localhost:8989/api",
       "description": "Local development server"
     }
   ],
   "paths": {
+    "/openapi.json": {
+      "get": {
+        "tags": ["Docs"],
+        "summary": "Get OpenAPI spec",
+        "operationId": "getOpenApi",
+        "responses": {
+          "200": {
+            "description": "OpenAPI JSON",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": ["Docs"],
+        "summary": "Swagger UI",
+        "operationId": "getDocs",
+        "responses": {
+          "200": {
+            "description": "Swagger UI HTML",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections": {
       "get": {
         "tags": ["Collections"],
@@ -534,6 +568,35 @@
         }
       }
     },
+    "/auth/profile": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get authenticated user's profile",
+        "operationId": "getProfile",
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{name}/records/{id}": {
       "get": {
         "tags": ["Records"],
@@ -931,6 +994,14 @@
             "type": "string",
             "description": "JWT authentication token"
           }
+        }
+      },
+      "UserProfile": {
+        "type": "object",
+        "required": ["id", "email"],
+        "properties": {
+          "id": { "type": "string", "description": "User ID" },
+          "email": { "type": "string", "description": "User email" }
         }
       },
       "AuthClaims": {
