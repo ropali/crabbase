@@ -67,4 +67,18 @@ impl AuthRepository {
 
         Ok(user)
     }
+
+    pub async fn get_collection_id_by_name(
+        &self,
+        name: &str,
+    ) -> Result<Option<String>, RepositoryError> {
+        let sql = "SELECT id FROM _collections WHERE name = $1 LIMIT 1";
+
+        let id = sqlx::query_scalar(sql)
+            .bind(name)
+            .fetch_optional(&self.db)
+            .await?;
+
+        Ok(id)
+    }
 }

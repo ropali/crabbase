@@ -27,7 +27,7 @@ pub struct Claims {
 
 pub fn create_token(
     user_id: &str,
-    collection: &str,
+    collection_id: &str,
     token_type: TokenType,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let now = Utc::now().timestamp() as usize;
@@ -41,7 +41,7 @@ pub fn create_token(
     let claims = Claims {
         token_type,
         id: user_id.to_string(),
-        collection_id: collection.to_string(),
+        collection_id: collection_id.to_string(),
         refreashable: Some(false),
         sub: user_id.to_string(),
         exp: now + 3600,

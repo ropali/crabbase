@@ -67,14 +67,17 @@ impl AuthService {
             return Err(APIError::Unauthorized);
         }
 
-        let token_collection = if collection == "admin" {
-            "_superusers"
-        } else {
-            collection
+        let col_id = match self.repo.get_collection_id_by_name(collection).await? {
+            Some(id) => id,
+            None => {
+                return Err(APIError::NotFound {
+                    resource: collection.to_string(),
+                });
+            }
         };
 
-        let token = create_token(&user.id, token_collection, TokenType::Auth)
-            .map_err(|_| APIError::Unauthorized)?;
+        let token =
+            create_token(&user.id, &col_id, TokenType::Auth).map_err(|_| APIError::Unauthorized)?;
 
         Ok(token)
     }
