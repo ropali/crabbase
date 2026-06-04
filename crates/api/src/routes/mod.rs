@@ -4,8 +4,10 @@ pub mod files;
 pub mod records;
 
 use axum::http::StatusCode;
+use axum::middleware::from_fn_with_state;
 use axum::{Json, Router, response::Html, routing::get};
 
+use crate::middleware::auth::require_auth;
 use crate::state::AppState;
 
 const OPENAPI_JSON: &str = include_str!("../../../../openapi.json");
@@ -13,7 +15,11 @@ const SWAGGER_HTML: &str = include_str!("swagger.html");
 
 pub fn get_app_routes(state: AppState) -> Router {
     let api = Router::new()
-        .nest("/collections", collections::get_routes(state.clone()))
+        .nest(
+            "/collections",
+            collections::get_routes(state.clone())
+                .route_layer(from_fn_with_state(state.clone(), require_auth)),
+        )
         .route("/openapi.json", get(openapi_json))
         .route("/docs", get(swagger_ui))
         .nest("/auth", auth::get_routes(state.clone()))

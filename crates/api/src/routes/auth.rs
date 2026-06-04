@@ -1,20 +1,17 @@
 use axum::{
     Json, Router,
-    extract::FromRequestParts,
-    http::request::Parts,
+    extract::{Path, State},
     routing::{get, post},
 };
-use crabbase_auth::auth::{Claims, TokenType, create_token, verify_token};
-use crabbase_core::errors::APIError;
-use crabbase_db::repositories::auth::AuthUser;
+pub(crate) use crabbase_core::errors::APIError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::state::AppState;
+use crate::{middleware::auth::AuthenticatedUser, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
-    username: String,
+    email: String,
     password: String,
 }
 
@@ -23,41 +20,22 @@ pub struct LoginResponse {
     token: String,
 }
 
-pub struct AuthenticatedUser(pub AuthUser);
-
-impl FromRequestParts<AppState> for AuthenticatedUser {
-    type Rejection = APIError;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let auth_header = parts
-            .headers
-            .get("Authorization")
-            .and_then(|v| v.to_str().ok())
-            .ok_or(APIError::Unauthorized)?;
-
-        let token = auth_header
-            .strip_prefix("Bearer ")
-            .ok_or(APIError::Unauthorized)?;
-
-        let claims = verify_token(token).map_err(|_| APIError::Unauthorized)?;
-
-        let user = state.auth_service().verify_session(&claims).await?;
-        Ok(AuthenticatedUser(user))
-    }
-}
-
 pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/login", post(login))
+        .route("/{collection}/login", post(login))
         .route("/profile", get(profile))
         .with_state(state)
 }
 
-async fn login(Json(body): Json<LoginRequest>) -> Result<Json<LoginResponse>, APIError> {
-    let token = create_token(&body.username, TokenType::Auth).unwrap();
+async fn login(
+    Path(collection): Path<String>,
+    state: State<AppState>,
+    Json(body): Json<LoginRequest>,
+) -> Result<Json<LoginResponse>, APIError> {
+    let token = state
+        .auth_service()
+        .authenticate(&collection, &body.email, &body.password)
+        .await?;
 
     Ok(Json(LoginResponse { token }))
 }

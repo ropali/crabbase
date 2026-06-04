@@ -11,12 +11,16 @@
       "description": "Local development server"
     }
   ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
   "paths": {
     "/openapi.json": {
       "get": {
         "tags": ["Docs"],
         "summary": "Get OpenAPI spec",
         "operationId": "getOpenApi",
+        "security": [],
         "responses": {
           "200": {
             "description": "OpenAPI JSON",
@@ -34,6 +38,7 @@
         "tags": ["Docs"],
         "summary": "Swagger UI",
         "operationId": "getDocs",
+        "security": [],
         "responses": {
           "200": {
             "description": "Swagger UI HTML",
@@ -529,11 +534,20 @@
         }
       }
     },
-    "/auth/login": {
+    "/auth/{collection}/login": {
       "post": {
         "tags": ["Auth"],
         "summary": "Authenticate user and receive JWT token",
         "operationId": "login",
+        "security": [],
+        "parameters": [
+          {
+            "name": "collection",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -739,6 +753,13 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
     "schemas": {
       "Collection": {
         "type": "object",
@@ -974,11 +995,11 @@
       },
       "LoginRequest": {
         "type": "object",
-        "required": ["username", "password"],
+        "required": ["email", "password"],
         "properties": {
-          "username": {
+          "email": {
             "type": "string",
-            "description": "User's username"
+            "description": "User's email"
           },
           "password": {
             "type": "string",

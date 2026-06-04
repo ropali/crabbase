@@ -106,11 +106,12 @@ async fn setup_superuser(
             } else {
                 let id = format!("r{}", uuid::Uuid::new_v4().simple());
                 let id = id.chars().take(15).collect::<String>();
-                sqlx::query("INSERT INTO _superusers (id, email, password_hash, token_key) VALUES (?, ?, ?, ?)")
+                sqlx::query("INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES (?, ?, ?, ?, ?)")
                     .bind(id)
                     .bind(&email)
                     .bind(password_hash)
                     .bind(token_key)
+                    .bind(1)
                     .execute(db_pool)
                     .await?;
             }
