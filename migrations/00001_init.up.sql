@@ -168,22 +168,13 @@ CREATE TABLE IF NOT EXISTS collections (
 -- Seed Data
 -- ============================================================
 
--- Insert default superuser (admin)
-INSERT OR IGNORE INTO _superusers (id, email, password_hash, token_key)
-VALUES (
-    'r' || lower(hex(randomblob(7))),
-    'admin@crabbase.local',
-    '$2b$12$placeholder_hash_replace_in_production',
-    lower(hex(randomblob(16)))
-);
-
--- Insert default users collection entry in _collections
+-- Insert default _superusers collection entry in _collections
 INSERT OR IGNORE INTO _collections (id, system, type, name, fields, options)
 VALUES (
     'r' || lower(hex(randomblob(7))),
     1,
     'auth',
-    'users',
-    '[{"name":"email","type":"email","required":true},{"name":"name","type":"text"},{"name":"avatar","type":"file"}]',
+    '_superusers',
+    '[{"name":"email","type":"email","required":true}]',
     '{"allowEmailAuth":true,"allowOAuth2":false,"requireVerification":false}'
 );

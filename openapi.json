@@ -7,11 +7,50 @@
   },
   "servers": [
     {
-      "url": "http://localhost:8000/api",
+      "url": "http://localhost:8989/api",
       "description": "Local development server"
     }
   ],
+  "security": [
+    { "bearerAuth": [] }
+  ],
   "paths": {
+    "/openapi.json": {
+      "get": {
+        "tags": ["Docs"],
+        "summary": "Get OpenAPI spec",
+        "operationId": "getOpenApi",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI JSON",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/docs": {
+      "get": {
+        "tags": ["Docs"],
+        "summary": "Swagger UI",
+        "operationId": "getDocs",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Swagger UI HTML",
+            "content": {
+              "text/html": {
+                "schema": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections": {
       "get": {
         "tags": ["Collections"],
@@ -495,6 +534,83 @@
         }
       }
     },
+    "/auth/{collection}/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Authenticate user and receive JWT token",
+        "operationId": "login",
+        "security": [],
+        "parameters": [
+          {
+            "name": "collection",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/profile": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Get authenticated user's profile",
+        "operationId": "getProfile",
+        "responses": {
+          "200": {
+            "description": "User profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/collections/{name}/records/{id}": {
       "get": {
         "tags": ["Records"],
@@ -637,6 +753,13 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
     "schemas": {
       "Collection": {
         "type": "object",
@@ -867,6 +990,72 @@
           },
           "details": {
             "description": "Optional additional error details"
+          }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "User's email"
+          },
+          "password": {
+            "type": "string",
+            "description": "User's password"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "required": ["token"],
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "JWT authentication token"
+          }
+        }
+      },
+      "UserProfile": {
+        "type": "object",
+        "required": ["id", "email"],
+        "properties": {
+          "id": { "type": "string", "description": "User ID" },
+          "email": { "type": "string", "description": "User email" }
+        }
+      },
+      "AuthClaims": {
+        "type": "object",
+        "description": "JWT token claims",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Token type (auth, verification, file)"
+          },
+          "id": {
+            "type": "string",
+            "description": "User ID"
+          },
+          "collectionId": {
+            "type": "string",
+            "description": "Associated collection ID"
+          },
+          "refreshable": {
+            "type": "boolean",
+            "description": "Whether the token can be refreshed"
+          },
+          "sub": {
+            "type": "string",
+            "description": "Subject (user ID)"
+          },
+          "exp": {
+            "type": "integer",
+            "description": "Expiration timestamp"
+          },
+          "iat": {
+            "type": "integer",
+            "description": "Issued at timestamp"
           }
         }
       }

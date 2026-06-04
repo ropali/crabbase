@@ -1,6 +1,9 @@
+use crabbase_auth::service::AuthService;
 use sqlx::{Pool, Sqlite};
 
-use crabbase_db::repositories::{collections::CollectionRepository, records::RecordsRepository};
+use crabbase_db::repositories::{
+    auth::AuthRepository, collections::CollectionRepository, records::RecordsRepository,
+};
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -14,5 +17,13 @@ impl AppState {
 
     pub fn records_repo(&self) -> RecordsRepository {
         RecordsRepository::new(self.db.clone())
+    }
+
+    pub fn auth_repo(&self) -> AuthRepository {
+        AuthRepository::new(self.db.clone())
+    }
+
+    pub fn auth_service(&self) -> AuthService {
+        AuthService::new(self.auth_repo())
     }
 }
