@@ -72,3 +72,46 @@ pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
 pub fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::BcryptError> {
     bcrypt::verify(password, hash)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_password_hashing() {
+        let password = "my_super_secure_password";
+        let hash = hash_password(password).unwrap();
+        assert!(verify_password(password, &hash).unwrap());
+        assert!(!verify_password("wrong_password", &hash).unwrap());
+    }
+
+    #[test]
+    fn test_token_lifecycle() {
+        let user_id = "test_user_123";
+        let collection_id = "users_col_xyz";
+
+        // Test Auth token
+        let token = create_token(user_id, collection_id, TokenType::Auth).unwrap();
+        let claims = verify_token(&token).unwrap();
+        assert_eq!(claims.id, user_id);
+        assert_eq!(claims.collection_id, collection_id);
+        assert_eq!(claims.token_type, "auth");
+        assert_eq!(claims.sub, user_id);
+
+        // Test Verification token
+        let token_ver = create_token(user_id, collection_id, TokenType::Verification).unwrap();
+        let claims_ver = verify_token(&token_ver).unwrap();
+        assert_eq!(claims_ver.token_type, "verification");
+
+        // Test File token
+        let token_file = create_token(user_id, collection_id, TokenType::File).unwrap();
+        let claims_file = verify_token(&token_file).unwrap();
+        assert_eq!(claims_file.token_type, "file");
+    }
+
+    #[test]
+    fn test_verify_invalid_token() {
+        let result = verify_token("invalid.token.string");
+        assert!(result.is_err());
+    }
+}

@@ -11,3 +11,7 @@ serde = { workspace = true }
 jsonwebtoken = { workspace = true }
 chrono = { workspace = true }
 bcrypt = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+sqlx = { workspace = true }

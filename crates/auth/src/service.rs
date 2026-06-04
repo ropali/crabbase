@@ -82,3 +82,337 @@ impl AuthService {
         Ok(token)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::{Claims, hash_password, verify_token};
+    use crabbase_core::errors::APIError;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn setup_service() -> (AuthService, sqlx::Pool<sqlx::Sqlite>) {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(":memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
+
+        // Clean seeded collections to keep tests deterministic
+        sqlx::query("DELETE FROM _collections;")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let repo = AuthRepository::new(pool.clone());
+        let service = AuthService::new(repo);
+        (service, pool)
+    }
+
+    #[tokio::test]
+    async fn test_verify_session_superuser() {
+        let (service, pool) = setup_service().await;
+
+        // 1. Setup a verified superuser
+        sqlx::query(
+            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind("admin_id_1")
+        .bind("admin1@example.com")
+        .bind("hash")
+        .bind("token")
+        .bind(1) // verified
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 2. Setup an unverified superuser
+        sqlx::query(
+            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind("admin_id_2")
+        .bind("admin2@example.com")
+        .bind("hash")
+        .bind("token")
+        .bind(0) // unverified
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Test verified superuser session verification
+        let claims_verified = Claims {
+            token_type: "auth".to_string(),
+            id: "admin_id_1".to_string(),
+            collection_id: "_superusers".to_string(),
+            refreashable: Some(false),
+            sub: "admin_id_1".to_string(),
+            exp: 0,
+            iat: 0,
+        };
+        let user = service.verify_session(&claims_verified).await.unwrap();
+        assert_eq!(user.id, "admin_id_1");
+        assert_eq!(user.email, "admin1@example.com");
+        assert!(user.verified);
+
+        // Test with collection_id as "admin"
+        let claims_admin = Claims {
+            token_type: "auth".to_string(),
+            id: "admin_id_1".to_string(),
+            collection_id: "admin".to_string(),
+            refreashable: Some(false),
+            sub: "admin_id_1".to_string(),
+            exp: 0,
+            iat: 0,
+        };
+        let user_admin = service.verify_session(&claims_admin).await.unwrap();
+        assert_eq!(user_admin.id, "admin_id_1");
+
+        // Test unverified superuser session verification
+        let claims_unverified = Claims {
+            token_type: "auth".to_string(),
+            id: "admin_id_2".to_string(),
+            collection_id: "_superusers".to_string(),
+            refreashable: Some(false),
+            sub: "admin_id_2".to_string(),
+            exp: 0,
+            iat: 0,
+        };
+        let err_forbidden = service
+            .verify_session(&claims_unverified)
+            .await
+            .unwrap_err();
+        assert!(matches!(err_forbidden, APIError::Forbidden));
+
+        // Test non-existent superuser session verification
+        let claims_nonexistent = Claims {
+            token_type: "auth".to_string(),
+            id: "nonexistent_admin".to_string(),
+            collection_id: "_superusers".to_string(),
+            refreashable: Some(false),
+            sub: "nonexistent_admin".to_string(),
+            exp: 0,
+            iat: 0,
+        };
+        let err_unauthorized = service
+            .verify_session(&claims_nonexistent)
+            .await
+            .unwrap_err();
+        assert!(matches!(err_unauthorized, APIError::Unauthorized));
+    }
+
+    #[tokio::test]
+    async fn test_verify_session_regular_user() {
+        let (service, pool) = setup_service().await;
+
+        // 1. Setup a verified user
+        sqlx::query(
+            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind("user_id_1")
+        .bind("user1@example.com")
+        .bind("hash")
+        .bind("token")
+        .bind(1) // verified
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 2. Setup an unverified user
+        sqlx::query(
+            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind("user_id_2")
+        .bind("user2@example.com")
+        .bind("hash")
+        .bind("token")
+        .bind(0) // unverified
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Test verified user session verification
+        let claims_verified = Claims {
+            token_type: "auth".to_string(),
+            id: "user_id_1".to_string(),
+            collection_id: "users".to_string(),
+            refreashable: Some(false),
+            sub: "user_id_1".to_string(),
+            exp: 0,
+            iat: 0,
+        };
+        let user = service.verify_session(&claims_verified).await.unwrap();
+        assert_eq!(user.id, "user_id_1");
+        assert_eq!(user.email, "user1@example.com");
+        assert!(user.verified);
+
+        // Test unverified user session verification
+        let claims_unverified = Claims {
+            token_type: "auth".to_string(),
+            id: "user_id_2".to_string(),
+            collection_id: "users".to_string(),
+            refreashable: Some(false),
+            sub: "user_id_2".to_string(),
+            exp: 0,
+            iat: 0,
+        };
+        let err_forbidden = service
+            .verify_session(&claims_unverified)
+            .await
+            .unwrap_err();
+        assert!(matches!(err_forbidden, APIError::Forbidden));
+
+        // Test non-existent user session verification
+        let claims_nonexistent = Claims {
+            token_type: "auth".to_string(),
+            id: "nonexistent_user".to_string(),
+            collection_id: "users".to_string(),
+            refreashable: Some(false),
+            sub: "nonexistent_user".to_string(),
+            exp: 0,
+            iat: 0,
+        };
+        let err_unauthorized = service
+            .verify_session(&claims_nonexistent)
+            .await
+            .unwrap_err();
+        assert!(matches!(err_unauthorized, APIError::Unauthorized));
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_superuser() {
+        let (service, pool) = setup_service().await;
+
+        let password = "admin_secure_password";
+        let hash = hash_password(password).unwrap();
+
+        // Setup a superuser
+        sqlx::query(
+            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind("admin_id_1")
+        .bind("admin@example.com")
+        .bind(hash)
+        .bind("token")
+        .bind(1)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 1. Test login fail - admin collection not in _collections
+        let err_not_found_col = service
+            .authenticate("admin", "admin@example.com", password)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err_not_found_col, APIError::NotFound { ref resource } if resource == "admin")
+        );
+
+        // Setup "admin" in _collections table so collection ID can be queried
+        sqlx::query(
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5, $6)"
+        )
+        .bind("admin_col_id")
+        .bind(1)
+        .bind("auth")
+        .bind("admin")
+        .bind("[]")
+        .bind("{}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 2. Test login success (returns token)
+        let token = service
+            .authenticate("admin", "admin@example.com", password)
+            .await
+            .unwrap();
+        let claims = verify_token(&token).unwrap();
+        assert_eq!(claims.id, "admin_id_1");
+        assert_eq!(claims.collection_id, "admin_col_id");
+
+        // 3. Test login fail - wrong password
+        let err_unauthorized = service
+            .authenticate("admin", "admin@example.com", "wrong_pass")
+            .await
+            .unwrap_err();
+        assert!(matches!(err_unauthorized, APIError::Unauthorized));
+
+        // 4. Test login fail - non-existent superuser
+        let err_not_found = service
+            .authenticate("admin", "nonexistent@example.com", password)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err_not_found, APIError::NotFound { ref resource } if resource == "nonexistent@example.com")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_authenticate_regular_user() {
+        let (service, pool) = setup_service().await;
+
+        let password = "user_secure_password";
+        let hash = hash_password(password).unwrap();
+
+        // Setup a user
+        sqlx::query(
+            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind("user_id_1")
+        .bind("user@example.com")
+        .bind(hash)
+        .bind("token")
+        .bind(1)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 1. Test login fail - collection exists as a table but not registered in _collections
+        let err_not_found_col = service
+            .authenticate("users", "user@example.com", password)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err_not_found_col, APIError::NotFound { ref resource } if resource == "users")
+        );
+
+        // Setup collection entry in _collections
+        sqlx::query(
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5, $6)"
+        )
+        .bind("users_col_id")
+        .bind(1)
+        .bind("auth")
+        .bind("users")
+        .bind("[]")
+        .bind("{}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // 2. Test login success (now that it is registered in _collections)
+        let token = service
+            .authenticate("users", "user@example.com", password)
+            .await
+            .unwrap();
+        let claims = verify_token(&token).unwrap();
+        assert_eq!(claims.id, "user_id_1");
+        assert_eq!(claims.collection_id, "users_col_id");
+
+        // 3. Test login fail - wrong password
+        let err_unauthorized = service
+            .authenticate("users", "user@example.com", "wrong_pass")
+            .await
+            .unwrap_err();
+        assert!(matches!(err_unauthorized, APIError::Unauthorized));
+
+        // 4. Test login fail - user does not exist in the collection
+        let err_not_found_user = service
+            .authenticate("users", "nonexistent@example.com", password)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err_not_found_user, APIError::NotFound { ref resource } if resource == "nonexistent@example.com")
+        );
+    }
+}
