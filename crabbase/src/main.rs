@@ -71,6 +71,11 @@ async fn setup_superuser(
         .execute(db_pool)
         .await?;
 
+    // Ensure all existing superusers are verified
+    sqlx::query("UPDATE _superusers SET verified = 1 WHERE verified = 0")
+        .execute(db_pool)
+        .await?;
+
     let email = std::env::var("CRABBASE_SUPERUSER_EMAIL")
         .unwrap_or_else(|_| "admin@crabbase.local".to_string());
 
@@ -145,12 +150,13 @@ async fn setup_superuser(
         let id = id.chars().take(15).collect::<String>();
 
         sqlx::query(
-            "INSERT INTO _superusers (id, email, password_hash, token_key) VALUES (?, ?, ?, ?)",
+            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(&email)
         .bind(password_hash)
         .bind(token_key)
+        .bind(1)
         .execute(db_pool)
         .await?;
 
