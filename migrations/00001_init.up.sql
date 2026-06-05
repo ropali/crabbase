@@ -124,45 +124,12 @@ CREATE TABLE IF NOT EXISTS _auth_origins (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_origins_unique_pairs
     ON _auth_origins (collection_ref, record_ref, fingerprint);
 
--- ============================================================
--- User Table
--- ============================================================
 
--- users: Default user collection
--- NOTE: Foreign keys to this table are intentionally omitted for now.
--- TODO: In future iterations, add FK constraints from collection records
--- to users.id for proper ownership and audit trails (e.g., created_by,
--- updated_by fields in collections/records tables).
-CREATE TABLE IF NOT EXISTS users (
-    id             TEXT PRIMARY KEY NOT NULL,
-    email          TEXT UNIQUE NOT NULL,
-    password_hash  TEXT NOT NULL,
-    token_key      TEXT NOT NULL,
-    email_visible  INTEGER NOT NULL DEFAULT 0,
-    verified       INTEGER NOT NULL DEFAULT 0,
-    name           TEXT,
-    avatar         TEXT,
-    created        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
-    updated        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_users_email ON users (email);
-CREATE INDEX IF NOT EXISTS idx_users_token_key ON users (token_key);
 
 -- ============================================================
 -- Core Application Tables
 -- ============================================================
 
--- collections: Registry of user-defined collections.
--- Each collection creates its own table at runtime with typed columns.
--- Records live directly in their collection's table, not in a generic table.
-CREATE TABLE IF NOT EXISTS collections (
-    id          TEXT PRIMARY KEY NOT NULL,
-    name        TEXT NOT NULL UNIQUE,
-    description TEXT,
-    created     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
-    updated     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
-);
 
 -- ============================================================
 -- Seed Data
@@ -175,6 +142,6 @@ VALUES (
     1,
     'auth',
     '_superusers',
-    '[{"name":"email","type":"email","required":true}]',
-    '{"allowEmailAuth":true,"allowOAuth2":false,"requireVerification":false}'
+    '[{"name":"email","type":"Email","related_to": null, "index": true}]',
+    '{"authToken": {"secret": "my-secret-key"}}'
 );

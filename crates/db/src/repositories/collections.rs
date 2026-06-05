@@ -5,9 +5,10 @@ use uuid::Uuid;
 use crabbase_core::{
     errors::RepositoryError,
     models::{
-        Collection, CollectionListResponse, Column, CreateCollectionRequest,
+        Collection, CollectionListResponse, CollectionOptions, Column, CreateCollectionRequest,
         UpdateCollectionRequest,
     },
+    utils::string_utils::random_str,
 };
 
 #[derive(Debug, Clone)]
@@ -86,16 +87,22 @@ impl CollectionRepository {
         )
         .expect("Failed to serialize indexes");
 
+        let mut options = serde_json::Map::new();
+        options.insert("secret".to_string(), random_str(None).into());
+
+        options.insert("duration".to_string(), 432000.into());
+
+        let options_json =
+            serde_json::to_string(&options).expect("Failed to serialized optional data.");
+
+        let col_id = Uuid::new_v4().to_string();
+
         let sql = format!(
             r#"
-                INSERT INTO _collections(id, system, name, fields, indexes)
-                VALUES ('{}', {}, '{}', '{}', '{}')
+                INSERT INTO _collections(id, system, name, fields, indexes, options)
+                VALUES ('{}', {}, '{}', '{}', '{}', '{}')
             "#,
-            Uuid::new_v4(),
-            false,
-            collection.name,
-            columns_json,
-            indexs_json
+            col_id, false, collection.name, columns_json, indexs_json, options_json
         );
 
         sqlx::query(&sql).execute(&mut *tx).await?;
@@ -103,7 +110,7 @@ impl CollectionRepository {
         tx.commit().await?;
 
         Ok(Collection {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: col_id,
             name: collection.name,
             fields: collection.columns.clone(),
             indexes: collection
@@ -112,6 +119,9 @@ impl CollectionRepository {
                 .filter(|c| c.index)
                 .cloned()
                 .collect(),
+            options: CollectionOptions {
+                auth_token: Some(options),
+            },
             created: Utc::now().to_string(),
             updated: Utc::now().to_string(),
         })
@@ -127,6 +137,15 @@ impl CollectionRepository {
             .map_err(|_| RepositoryError::NotFound(name.to_string()))
     }
 
+    pub async fn get_by_id(&self, id: &str) -> Result<Collection, RepositoryError> {
+        let sql = "SELECT * FROM _collections WHERE id = $1;";
+
+        sqlx::query_as::<_, Collection>(sql)
+            .bind(id)
+            .fetch_one(&self.db)
+            .await
+            .map_err(|_| RepositoryError::NotFound(id.to_string()))
+    }
     pub async fn list(
         &self,
         page: u64,

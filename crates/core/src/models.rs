@@ -5,6 +5,7 @@ use sqlx::{Column as _, Row};
 use tracing::info;
 
 pub type RecordData = serde_json::Map<String, Value>;
+pub type OptionalData = serde_json::Map<String, Value>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Record {
@@ -85,6 +86,13 @@ pub struct PaginationParams {
     pub per_page: Option<u64>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CollectionOptions {
+    #[serde(alias = "auth_token")]
+    pub auth_token: Option<OptionalData>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Collection {
     pub id: String,
@@ -95,6 +103,9 @@ pub struct Collection {
 
     #[sqlx(json)]
     pub indexes: Vec<Column>,
+
+    #[sqlx(json)]
+    pub options: CollectionOptions,
     pub created: String,
     pub updated: String,
 }
@@ -147,9 +158,11 @@ impl DataTypes {
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, PartialEq)]
 pub struct Column {
     pub name: String,
-    #[serde(deserialize_with = "deserialize_data_type")]
+    #[serde(deserialize_with = "deserialize_data_type", alias = "type")]
     pub data_type: DataTypes,
+    #[serde(default)]
     pub index: bool,
+    #[serde(default)]
     pub related_to: Option<String>,
 }
 
@@ -179,13 +192,21 @@ where
         return Ok(data_type);
     }
 
-    // Backward compatibility: accept legacy SQL-ish type strings in stored JSON.
+    // Backward compatibility: accept legacy/cased strings in stored JSON.
     if let Some(raw) = value.as_str() {
         return match raw.to_ascii_uppercase().as_str() {
-            "TEXT" => Ok(DataTypes::PlainText),
-            "INTEGER" | "INT" => Ok(DataTypes::Number),
+            "TEXT" | "PLAINTEXT" => Ok(DataTypes::PlainText),
+            "RICHTEXT" => Ok(DataTypes::RichText),
+            "INTEGER" | "INT" | "NUMBER" => Ok(DataTypes::Number),
             "BOOLEAN" | "BOOL" => Ok(DataTypes::Bool),
-            "DATE" => Ok(DataTypes::Datetime),
+            "DATE" | "DATETIME" => Ok(DataTypes::Datetime),
+            "EMAIL" => Ok(DataTypes::Email),
+            "URL" => Ok(DataTypes::Url),
+            "FILE" => Ok(DataTypes::File),
+            "RELATION" => Ok(DataTypes::Relation),
+            "SELECT" => Ok(DataTypes::Select),
+            "JSON" => Ok(DataTypes::Json),
+            "GEOPOINT" => Ok(DataTypes::GeoPoint),
             other => Err(D::Error::custom(format!(
                 "unsupported data_type string: {other}"
             ))),

@@ -1,4 +1,6 @@
-use crabbase_core::{errors::RepositoryError, utils::string_utils::quote_ident};
+use crabbase_core::{
+    errors::RepositoryError, models::Collection, utils::string_utils::quote_ident,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
 
@@ -68,18 +70,32 @@ impl AuthRepository {
         Ok(user)
     }
 
-    pub async fn get_collection_id_by_name(
+    pub async fn get_collection_by_name(
         &self,
         name: &str,
-    ) -> Result<Option<String>, RepositoryError> {
-        let sql = "SELECT id FROM _collections WHERE name = $1 LIMIT 1";
+    ) -> Result<Option<Collection>, RepositoryError> {
+        let sql = "SELECT * FROM _collections WHERE name = $1 LIMIT 1";
 
-        let id = sqlx::query_scalar(sql)
+        let col = sqlx::query_as::<_, Collection>(sql)
             .bind(name)
             .fetch_optional(&self.db)
             .await?;
 
-        Ok(id)
+        Ok(col)
+    }
+
+    pub async fn get_collection_by_id(
+        &self,
+        id: &str,
+    ) -> Result<Option<Collection>, RepositoryError> {
+        let sql = "SELECT * FROM _collections WHERE id = $1 LIMIT 1";
+
+        let col = sqlx::query_as::<_, Collection>(sql)
+            .bind(id)
+            .fetch_optional(&self.db)
+            .await?;
+
+        Ok(col)
     }
 }
 
@@ -170,9 +186,30 @@ mod tests {
         assert!(none_superuser.is_none());
     }
 
+    async fn create_users_table(pool: &sqlx::Pool<sqlx::Sqlite>) {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS users (
+                id             TEXT PRIMARY KEY NOT NULL,
+                email          TEXT UNIQUE NOT NULL,
+                password_hash  TEXT NOT NULL,
+                token_key      TEXT NOT NULL,
+                email_visible  INTEGER NOT NULL DEFAULT 0,
+                verified       INTEGER NOT NULL DEFAULT 0,
+                created        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
+                updated        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
+            );
+            "#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn test_get_user_by_id() {
         let pool = setup_pool().await;
+        create_users_table(&pool).await;
         let repo = AuthRepository::new(pool.clone());
 
         // Insert a user in the `users` table
@@ -209,6 +246,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_user_by_email() {
         let pool = setup_pool().await;
+        create_users_table(&pool).await;
         let repo = AuthRepository::new(pool.clone());
 
         // Insert a user in the `users` table
@@ -262,14 +300,14 @@ mod tests {
         .unwrap();
 
         let col_id = repo
-            .get_collection_id_by_name("members")
+            .get_collection_by_name("members")
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(col_id, "col_id_xyz");
+        assert_eq!(col_id.id, "col_id_xyz");
 
         let none_id = repo
-            .get_collection_id_by_name("nonexistent_col")
+            .get_collection_by_name("nonexistent_col")
             .await
             .unwrap();
         assert!(none_id.is_none());

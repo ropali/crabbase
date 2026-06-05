@@ -14,7 +14,18 @@ impl AuthService {
 
     // Verifies auth user session from claims
     pub async fn verify_session(&self, claims: &Claims) -> Result<AuthUser, APIError> {
-        let user_opt = if claims.collection_id == "_superusers" || claims.collection_id == "admin" {
+        let collection_name = self
+            .repo
+            .get_collection_by_id(&claims.collection_id)
+            .await
+            .map_err(|e| APIError::Internal {
+                message: "Database query failed".to_string(),
+                details: serde_json::json!(e.to_string()),
+            })?
+            .map(|col| col.name)
+            .unwrap_or_else(|| claims.collection_id.clone());
+
+        let user_opt = if collection_name == "_superusers" || collection_name == "admin" {
             self.repo
                 .get_superuser_by_id(&claims.id)
                 .await
@@ -24,7 +35,7 @@ impl AuthService {
                 })?
         } else {
             self.repo
-                .get_user_by_id(&claims.collection_id, &claims.id)
+                .get_user_by_id(&collection_name, &claims.id)
                 .await
                 .map_err(|e| APIError::Internal {
                     message: "Database query failed".to_string(),
@@ -67,7 +78,7 @@ impl AuthService {
             return Err(APIError::Unauthorized);
         }
 
-        let col_id = match self.repo.get_collection_id_by_name(collection).await? {
+        let col = match self.repo.get_collection_by_name(collection).await? {
             Some(id) => id,
             None => {
                 return Err(APIError::NotFound {
@@ -76,8 +87,25 @@ impl AuthService {
             }
         };
 
-        let token =
-            create_token(&user.id, &col_id, TokenType::Auth).map_err(|_| APIError::Unauthorized)?;
+        let col_token = col
+            .options
+            .auth_token
+            .as_ref()
+            .and_then(|t| t.get("secret"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| APIError::Internal {
+                message: "Unable to find the collection auth token".to_string(),
+                details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
+            })?;
+
+        let token = create_token(
+            &user.id,
+            &col.id,
+            col_token,
+            &user.token_key,
+            TokenType::Auth,
+        )
+        .map_err(|_| APIError::Unauthorized)?;
 
         Ok(token)
     }
@@ -200,9 +228,30 @@ mod tests {
         assert!(matches!(err_unauthorized, APIError::Unauthorized));
     }
 
+    async fn create_users_table(pool: &sqlx::Pool<sqlx::Sqlite>) {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS users (
+                id             TEXT PRIMARY KEY NOT NULL,
+                email          TEXT UNIQUE NOT NULL,
+                password_hash  TEXT NOT NULL,
+                token_key      TEXT NOT NULL,
+                email_visible  INTEGER NOT NULL DEFAULT 0,
+                verified       INTEGER NOT NULL DEFAULT 0,
+                created        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
+                updated        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
+            );
+            "#,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn test_verify_session_regular_user() {
         let (service, pool) = setup_service().await;
+        create_users_table(&pool).await;
 
         // 1. Setup a verified user
         sqlx::query(
@@ -316,7 +365,7 @@ mod tests {
         .bind("auth")
         .bind("admin")
         .bind("[]")
-        .bind("{}")
+        .bind("{\"authToken\": {\"secret\": \"super-secret-key\"}}")
         .execute(&pool)
         .await
         .unwrap();
@@ -326,7 +375,7 @@ mod tests {
             .authenticate("admin", "admin@example.com", password)
             .await
             .unwrap();
-        let claims = verify_token(&token).unwrap();
+        let claims = verify_token(&token, "super-secret-key", "token").unwrap();
         assert_eq!(claims.id, "admin_id_1");
         assert_eq!(claims.collection_id, "admin_col_id");
 
@@ -350,6 +399,7 @@ mod tests {
     #[tokio::test]
     async fn test_authenticate_regular_user() {
         let (service, pool) = setup_service().await;
+        create_users_table(&pool).await;
 
         let password = "user_secure_password";
         let hash = hash_password(password).unwrap();
@@ -385,7 +435,7 @@ mod tests {
         .bind("auth")
         .bind("users")
         .bind("[]")
-        .bind("{}")
+        .bind("{\"authToken\": {\"secret\": \"super-secret-key\"}}")
         .execute(&pool)
         .await
         .unwrap();
@@ -395,7 +445,7 @@ mod tests {
             .authenticate("users", "user@example.com", password)
             .await
             .unwrap();
-        let claims = verify_token(&token).unwrap();
+        let claims = verify_token(&token, "super-secret-key", "token").unwrap();
         assert_eq!(claims.id, "user_id_1");
         assert_eq!(claims.collection_id, "users_col_id");
 

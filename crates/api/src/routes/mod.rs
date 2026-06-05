@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use axum::middleware::from_fn_with_state;
 use axum::{Json, Router, response::Html, routing::get};
 
-use crate::middleware::auth::require_auth;
+use crate::middleware::auth::require_admin;
 use crate::state::AppState;
 
 const OPENAPI_JSON: &str = include_str!("../../../../openapi.json");
@@ -18,7 +18,7 @@ pub fn get_app_routes(state: AppState) -> Router {
         .nest(
             "/collections",
             collections::get_routes(state.clone())
-                .route_layer(from_fn_with_state(state.clone(), require_auth)),
+                .route_layer(from_fn_with_state(state.clone(), require_admin)),
         )
         .route("/openapi.json", get(openapi_json))
         .route("/docs", get(swagger_ui))

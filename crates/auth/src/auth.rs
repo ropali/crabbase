@@ -3,8 +3,6 @@ use chrono::Utc;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 
-const SECRET: &[u8] = b"my-secret-key";
-
 pub enum TokenType {
     Auth,
     Verification,
@@ -28,6 +26,8 @@ pub struct Claims {
 pub fn create_token(
     user_id: &str,
     collection_id: &str,
+    collection_secret: &str,
+    user_token: &str,
     token_type: TokenType,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let now = Utc::now().timestamp() as usize;
@@ -48,21 +48,40 @@ pub fn create_token(
         iat: now,
     };
 
+    let key = format!("{collection_secret}-{user_token}");
+
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(SECRET),
+        &EncodingKey::from_secret(key.as_bytes()),
     )
 }
 
-pub fn verify_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+pub fn verify_token(
+    token: &str,
+    collection_secret: &str,
+    user_token: &str,
+) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let key = format!("{collection_secret}-{user_token}");
     let data = decode::<Claims>(
         token,
-        &DecodingKey::from_secret(SECRET),
+        &DecodingKey::from_secret(key.as_bytes()),
         &Validation::default(),
     )?;
 
     Ok(data.claims)
+}
+
+pub fn extract_unverified_claims(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    let key = DecodingKey::from_secret(&[]);
+
+    let mut validation = Validation::new(jsonwebtoken::Algorithm::HS256);
+
+    validation.insecure_disable_signature_validation();
+
+    let token_data = decode::<Claims>(token, &key, &validation)?;
+
+    Ok(token_data.claims)
 }
 
 pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
@@ -89,29 +108,40 @@ mod tests {
     fn test_token_lifecycle() {
         let user_id = "test_user_123";
         let collection_id = "users_col_xyz";
+        let secret = "secret";
+        let user_token = "user_token";
 
         // Test Auth token
-        let token = create_token(user_id, collection_id, TokenType::Auth).unwrap();
-        let claims = verify_token(&token).unwrap();
+        let token =
+            create_token(user_id, collection_id, secret, user_token, TokenType::Auth).unwrap();
+        let claims = verify_token(&token, secret, user_token).unwrap();
         assert_eq!(claims.id, user_id);
         assert_eq!(claims.collection_id, collection_id);
         assert_eq!(claims.token_type, "auth");
         assert_eq!(claims.sub, user_id);
 
         // Test Verification token
-        let token_ver = create_token(user_id, collection_id, TokenType::Verification).unwrap();
-        let claims_ver = verify_token(&token_ver).unwrap();
+        let token_ver = create_token(
+            user_id,
+            collection_id,
+            secret,
+            user_token,
+            TokenType::Verification,
+        )
+        .unwrap();
+        let claims_ver = verify_token(&token_ver, secret, user_token).unwrap();
         assert_eq!(claims_ver.token_type, "verification");
 
         // Test File token
-        let token_file = create_token(user_id, collection_id, TokenType::File).unwrap();
-        let claims_file = verify_token(&token_file).unwrap();
+        let token_file =
+            create_token(user_id, collection_id, secret, user_token, TokenType::File).unwrap();
+        let claims_file = verify_token(&token_file, secret, user_token).unwrap();
         assert_eq!(claims_file.token_type, "file");
     }
 
     #[test]
     fn test_verify_invalid_token() {
-        let result = verify_token("invalid.token.string");
+        let result = verify_token("invalid.token.string", "secret", "user_token");
         assert!(result.is_err());
     }
 }
