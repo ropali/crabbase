@@ -6,7 +6,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{error, info, info_span};
 
 use crabbase_api::state::AppState;
-use crabbase_core::logging::init_logging;
+use crabbase_core::{logging::init_logging, utils::string_utils::random_str};
 use crabbase_db::connection::pool;
 
 use crate::cli::{Cli, Commands};
@@ -73,6 +73,13 @@ async fn setup_superuser(
 
     // Ensure all existing superusers are verified
     sqlx::query("UPDATE _superusers SET verified = 1 WHERE verified = 0")
+        .execute(db_pool)
+        .await?;
+
+    // Ensure the _superusers collection has a dynamically generated authToken secret
+    let secret = random_str(None);
+    sqlx::query("UPDATE _collections SET options = ? WHERE name = '_superusers'")
+        .bind(format!("{{\"authToken\": {{\"secret\": \"{}\"}}}}", secret))
         .execute(db_pool)
         .await?;
 
