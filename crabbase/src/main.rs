@@ -64,7 +64,7 @@ async fn run_server(
 }
 
 async fn setup_superuser(
-    db_pool: &sqlx::SqlitePool,
+    db_pool: &sqlx::PgPool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Delete the placeholder seed superuser if it exists
     sqlx::query("DELETE FROM _superusers WHERE password_hash = '$2b$12$placeholder_hash_replace_in_production'")
@@ -72,13 +72,13 @@ async fn setup_superuser(
         .await?;
 
     // Ensure all existing superusers are verified
-    sqlx::query("UPDATE _superusers SET verified = 1 WHERE verified = 0")
+    sqlx::query("UPDATE _superusers SET verified = true WHERE verified = false")
         .execute(db_pool)
         .await?;
 
     // Ensure the _superusers collection has a dynamically generated authToken secret
     let secret = random_str(None);
-    sqlx::query("UPDATE _collections SET options = ? WHERE name = '_superusers'")
+    sqlx::query("UPDATE _collections SET options = $1::jsonb WHERE name = '_superusers'")
         .bind(format!("{{\"authToken\": {{\"secret\": \"{}\"}}}}", secret))
         .execute(db_pool)
         .await?;
@@ -103,13 +103,13 @@ async fn setup_superuser(
             let token_key = uuid::Uuid::new_v4().to_string();
 
             let user_exists: Option<String> =
-                sqlx::query_scalar("SELECT id FROM _superusers WHERE email = ?")
+                sqlx::query_scalar("SELECT id FROM _superusers WHERE email = $1")
                     .bind(&email)
                     .fetch_optional(db_pool)
                     .await?;
 
             if let Some(id) = user_exists {
-                sqlx::query("UPDATE _superusers SET password_hash = ?, token_key = ?, updated = strftime('%Y-%m-%d %H:%M:%fZ') WHERE id = ?")
+                sqlx::query("UPDATE _superusers SET password_hash = $1, token_key = $2, updated = to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"') WHERE id = $3")
                     .bind(password_hash)
                     .bind(token_key)
                     .bind(id)
@@ -118,12 +118,12 @@ async fn setup_superuser(
             } else {
                 let id = format!("r{}", uuid::Uuid::new_v4().simple());
                 let id = id.chars().take(15).collect::<String>();
-                sqlx::query("INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES (?, ?, ?, ?, ?)")
+                sqlx::query("INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)")
                     .bind(id)
                     .bind(&email)
                     .bind(password_hash)
                     .bind(token_key)
-                    .bind(1)
+                    .bind(true)
                     .execute(db_pool)
                     .await?;
             }
@@ -157,13 +157,13 @@ async fn setup_superuser(
         let id = id.chars().take(15).collect::<String>();
 
         sqlx::query(
-            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(id)
         .bind(&email)
         .bind(password_hash)
         .bind(token_key)
-        .bind(1)
+        .bind(true)
         .execute(db_pool)
         .await?;
 

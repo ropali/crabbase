@@ -41,7 +41,7 @@ impl RulesSqlCompiler {
 
                     self.bindings.push(val);
 
-                    Ok("?".to_uppercase())
+                    Ok(format!("${}", self.bindings.len()))
                 } else if name.starts_with("@request.query.") {
                     let key = name.strip_prefix("@request.query.").unwrap();
 
@@ -49,7 +49,7 @@ impl RulesSqlCompiler {
 
                     self.bindings.push(val);
 
-                    Ok("?".to_string())
+                    Ok(format!("${}", self.bindings.len()))
                 } else {
                     // Safe verification: Ensure characters are safe alphnum to prevent SQL  injection
                     if name.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -81,7 +81,7 @@ impl RulesSqlCompiler {
             }
             Expr::Value(val) => {
                 self.bindings.push(val.clone());
-                Ok("?".to_string())
+                Ok(format!("${}", self.bindings.len()))
             }
         }
     }
@@ -106,20 +106,20 @@ mod tests {
             query: HashMap::new(),
         };
         let (sql, bindings) = compile_helper("status = 'active'", context).unwrap();
-        assert_eq!(sql, "(\"status\" = ?)");
+        assert_eq!(sql, "(\"status\" = $1)");
         assert_eq!(bindings, vec!["active".to_string()]);
     }
 
     #[test]
     fn test_compile_operators() {
         let operators = vec![
-            ("status = 'active'", "(\"status\" = ?)"),
-            ("status != 'active'", "(\"status\" != ?)"),
-            ("age < '18'", "(\"age\" < ?)"),
-            ("age > '18'", "(\"age\" > ?)"),
-            ("age <= '18'", "(\"age\" <= ?)"),
-            ("age >= '18'", "(\"age\" >= ?)"),
-            ("name ~ 'admin'", "(\"name\" LIKE ?)"),
+            ("status = 'active'", "(\"status\" = $1)"),
+            ("status != 'active'", "(\"status\" != $1)"),
+            ("age < '18'", "(\"age\" < $1)"),
+            ("age > '18'", "(\"age\" > $1)"),
+            ("age <= '18'", "(\"age\" <= $1)"),
+            ("age >= '18'", "(\"age\" >= $1)"),
+            ("name ~ 'admin'", "(\"name\" LIKE $1)"),
         ];
 
         for (input, expected_sql) in operators {
@@ -141,7 +141,7 @@ mod tests {
         };
         let (sql, bindings) =
             compile_helper("status = 'active' & role = 'admin'", context).unwrap();
-        assert_eq!(sql, "((\"status\" = ?) AND (\"role\" = ?))");
+        assert_eq!(sql, "((\"status\" = $1) AND (\"role\" = $2))");
         assert_eq!(bindings, vec!["active".to_string(), "admin".to_string()]);
     }
 
@@ -158,7 +158,7 @@ mod tests {
         };
 
         let (sql, bindings) = compile_helper("owner_id = @request.auth.id", context).unwrap();
-        assert_eq!(sql, "(\"owner_id\" = ?)");
+        assert_eq!(sql, "(\"owner_id\" = $1)");
         assert_eq!(bindings, vec!["user_123".to_string()]);
     }
 
@@ -170,7 +170,7 @@ mod tests {
         let context = SqlContext { auth: None, query };
 
         let (sql, bindings) = compile_helper("title ~ @request.query.search", context).unwrap();
-        assert_eq!(sql, "(\"title\" LIKE ?)");
+        assert_eq!(sql, "(\"title\" LIKE $1)");
         assert_eq!(bindings, vec!["rust".to_string()]);
     }
 
@@ -182,7 +182,7 @@ mod tests {
         };
 
         let (sql, bindings) = compile_helper("owner_id = @request.auth.id", context).unwrap();
-        assert_eq!(sql, "(\"owner_id\" = ?)");
+        assert_eq!(sql, "(\"owner_id\" = $1)");
         assert_eq!(bindings, vec!["".to_string()]);
     }
 

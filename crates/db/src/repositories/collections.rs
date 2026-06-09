@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
 use crabbase_core::{
@@ -13,11 +13,11 @@ use crabbase_core::{
 
 #[derive(Debug, Clone)]
 pub struct CollectionRepository {
-    db: Pool<Sqlite>,
+    db: Pool<Postgres>,
 }
 
 impl CollectionRepository {
-    pub fn new(db: Pool<Sqlite>) -> Self {
+    pub fn new(db: Pool<Postgres>) -> Self {
         Self { db }
     }
 
@@ -44,36 +44,30 @@ impl CollectionRepository {
             .collect::<Vec<String>>()
             .join(", ");
 
-        let indexes = collection
-            .columns
-            .iter()
-            .filter(|c| c.index)
-            .map(|c| {
-                format!(
-                    "CREATE INDEX idx_{0}_{1} ON \"{0}\" (\"{1}\");",
-                    collection.name, c.name
-                )
-            })
-            .collect::<Vec<String>>()
-            .join(" ");
-
-        let sql = format!(
+        let table_sql = format!(
             r#"
             CREATE TABLE IF NOT EXISTS "{}"
             (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id BIGSERIAL PRIMARY KEY,
                 {},
-                created TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
-                updated TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
+                created TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
+                updated TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
             );
-            {}
         "#,
-            collection.name, columns, indexes
+            collection.name, columns
         );
 
         let mut tx = self.db.begin().await?;
 
-        sqlx::query(&sql).execute(&mut *tx).await?;
+        sqlx::query(&table_sql).execute(&mut *tx).await?;
+
+        for c in collection.columns.iter().filter(|c| c.index) {
+            let index_sql = format!(
+                "CREATE INDEX IF NOT EXISTS idx_{0}_{1} ON \"{0}\" (\"{1}\");",
+                collection.name, c.name
+            );
+            sqlx::query(&index_sql).execute(&mut *tx).await?;
+        }
 
         let columns_json =
             serde_json::to_string(&collection.columns).expect("Failed to serialize columns");
@@ -100,9 +94,9 @@ impl CollectionRepository {
         let sql = format!(
             r#"
                 INSERT INTO _collections(id, system, name, fields, indexes, options)
-                VALUES ('{}', {}, '{}', '{}', '{}', '{}')
+                VALUES ('{}', {}, '{}', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
             "#,
-            col_id, false, collection.name, columns_json, indexs_json, options_json
+            col_id, 0, collection.name, columns_json, indexs_json, options_json
         );
 
         sqlx::query(&sql).execute(&mut *tx).await?;
@@ -156,7 +150,7 @@ impl CollectionRepository {
         page: u64,
         per_page: u64,
     ) -> Result<CollectionListResponse, RepositoryError> {
-        let q = r#"SELECT * FROM _collections LIMIT ? OFFSET ?"#;
+        let q = r#"SELECT * FROM _collections LIMIT $1 OFFSET $2"#;
 
         let offset = (page - 1) * per_page;
 
@@ -183,7 +177,7 @@ impl CollectionRepository {
     ) -> Result<Collection, RepositoryError> {
         let mut tx = self.db.begin().await?;
 
-        let current = sqlx::query_as::<_, Collection>("SELECT * FROM _collections WHERE name = ?")
+        let current = sqlx::query_as::<_, Collection>("SELECT * FROM _collections WHERE name = $1")
             .bind(&current_name)
             .fetch_optional(&mut *tx)
             .await?
@@ -217,7 +211,7 @@ impl CollectionRepository {
         })?;
 
         sqlx::query(
-            "UPDATE _collections SET name = ?, fields = ?, indexes = ?, updated = strftime('%Y-%m-%d %H:%M:%fZ') WHERE id = ?",
+            "UPDATE _collections SET name = $1, fields = $2::jsonb, indexes = $3::jsonb, updated = to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"') WHERE id = $4",
         )
         .bind(&next_name)
         .bind(&next_fields_json)
@@ -322,7 +316,7 @@ fn validate_columns(columns: &[Column]) -> Result<(), RepositoryError> {
 }
 
 async fn rebuild_collection_table(
-    tx: &mut sqlx::Transaction<'_, Sqlite>,
+    tx: &mut sqlx::Transaction<'_, Postgres>,
     current_name: &str,
     next_name: &str,
     current_fields: &[Column],
@@ -337,7 +331,7 @@ async fn rebuild_collection_table(
         .join(", ");
 
     let create_sql = format!(
-        "CREATE TABLE \"{}\" (id INTEGER PRIMARY KEY AUTOINCREMENT, {}, created TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')), updated TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')))",
+        "CREATE TABLE \"{}\" (id BIGSERIAL PRIMARY KEY, {}, created TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"')), updated TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"')))",
         temp_name, next_column_defs
     );
     sqlx::query(&create_sql).execute(&mut **tx).await?;
@@ -393,14 +387,39 @@ mod tests {
     use crabbase_core::models::{
         Column, CreateCollectionRequest, DataTypes, UpdateCollectionRequest,
     };
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::postgres::PgPoolOptions;
 
-    async fn setup_pool() -> sqlx::Pool<sqlx::Sqlite> {
-        let pool = SqlitePoolOptions::new()
+    async fn setup_pool(schema: &str) -> sqlx::Pool<sqlx::Postgres> {
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/crabbase".to_string());
+
+        let init_pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect(":memory:")
+            .connect(&db_url)
             .await
             .unwrap();
+
+        let schema_ident = format!("\"{}\"", schema);
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE;", schema_ident))
+            .execute(&init_pool)
+            .await;
+
+        sqlx::query(&format!("CREATE SCHEMA {};", schema_ident))
+            .execute(&init_pool)
+            .await
+            .unwrap();
+
+        init_pool.close().await;
+
+        let mut options: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
+        options = options.options([("search_path", schema)]);
+
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+
         sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
         // Clean seeded collections (migrations insert a default 'users' entry) to keep tests deterministic
         sqlx::query("DELETE FROM _collections;")
@@ -412,7 +431,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_collection() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("col_create_collection").await;
         let repo = CollectionRepository::new(pool.clone());
 
         let columns = vec![Column {
@@ -434,7 +453,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_by_name() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("col_get_by_name").await;
         let repo = CollectionRepository::new(pool.clone());
 
         let columns = vec![Column {
@@ -457,7 +476,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_collections() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("col_list_collections").await;
         let repo = CollectionRepository::new(pool.clone());
 
         let columns = vec![Column {
@@ -480,7 +499,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_collection_rename() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("col_update_collection_rename").await;
         let repo = CollectionRepository::new(pool.clone());
 
         let columns = vec![Column {
@@ -511,7 +530,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_collection() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("col_delete_collection").await;
         let repo = CollectionRepository::new(pool.clone());
 
         let columns = vec![Column {
@@ -537,8 +556,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_with_various_data_types() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("col_create_with_various_data_types").await;
         let repo = CollectionRepository::new(pool.clone());
+
+        // Create the related collection first
+        let related_columns = vec![Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            index: false,
+            related_to: None,
+        }];
+        let req_related = CreateCollectionRequest {
+            name: "other_table".to_string(),
+            columns: related_columns,
+        };
+        repo.create(req_related).await.unwrap();
 
         let columns = vec![
             Column {
@@ -647,7 +679,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_relation_type_creation() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("col_relation_type_creation").await;
         let repo = CollectionRepository::new(pool.clone());
 
         // Create the related collection first
@@ -685,20 +717,26 @@ mod tests {
         repo.create(req).await.unwrap();
 
         #[derive(sqlx::FromRow, Debug)]
-        #[allow(dead_code)]
         struct ForeignKeyInfo {
-            id: i64,
-            seq: i64,
-            table: String,
-            from: String,
-            to: String,
-            on_update: String,
-            on_delete: String,
-            match_type: String,
+            table_name: String,
+            column_name: String,
+            referenced_table: String,
         }
 
         let fks: Vec<ForeignKeyInfo> = sqlx::query_as::<_, ForeignKeyInfo>(
-            "SELECT id, seq, [table], [from], [to], on_update, on_delete, [match] AS match_type FROM pragma_foreign_key_list('my_table')"
+            r#"
+            SELECT
+                kcu.table_name as table_name,
+                kcu.column_name as column_name,
+                ccu.table_name AS referenced_table
+            FROM
+                information_schema.table_constraints AS tc
+                JOIN information_schema.key_column_usage AS kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                JOIN information_schema.constraint_column_usage AS ccu
+                  ON ccu.constraint_name = tc.constraint_name
+            WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = 'my_table'
+            "#,
         )
         .fetch_all(&pool)
         .await
@@ -707,8 +745,7 @@ mod tests {
         // Verify that there is a foreign key pointing to "other_table"
         assert!(!fks.is_empty(), "No foreign keys found on my_table");
         let fk = &fks[0];
-        assert_eq!(fk.table, "other_table");
-        assert_eq!(fk.from, "relation_field");
-        assert_eq!(fk.to, "id");
+        assert_eq!(fk.referenced_table, "other_table");
+        assert_eq!(fk.column_name, "relation_field");
     }
 }

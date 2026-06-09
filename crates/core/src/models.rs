@@ -1,8 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
 use serde_json::{Number, Value};
-use sqlx::sqlite::SqliteRow;
+use sqlx::postgres::PgRow;
 use sqlx::{Column as _, Row};
-use tracing::info;
 
 pub type RecordData = serde_json::Map<String, Value>;
 pub type OptionalData = serde_json::Map<String, Value>;
@@ -16,7 +15,7 @@ pub struct Record {
 }
 
 impl Record {
-    pub fn from_row(row: &SqliteRow) -> Result<Self, sqlx::Error> {
+    pub fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let mut data = RecordData::new();
 
         for c in row.columns() {
@@ -25,10 +24,7 @@ impl Record {
             if matches!(col, "id" | "created" | "updated") {
                 continue;
             }
-
             let value = Self::column_to_value(row, col);
-
-            info!("Value: {}", value);
 
             data.insert(col.to_string(), value);
         }
@@ -41,7 +37,7 @@ impl Record {
         })
     }
 
-    pub fn column_to_value(row: &SqliteRow, col_name: &str) -> Value {
+    pub fn column_to_value(row: &PgRow, col_name: &str) -> Value {
         if let Ok(v) = row.try_get::<i64, _>(col_name) {
             return Value::Number(Number::from(v));
         }
@@ -154,10 +150,10 @@ impl DataTypes {
             | Self::Select
             | Self::Json
             | Self::GeoPoint => "TEXT".to_owned(),
-            DataTypes::Number => "INTEGER".to_owned(),
-            DataTypes::Bool => "INTEGER".to_owned(),
+            DataTypes::Number => "BIGINT".to_owned(),
+            DataTypes::Bool => "BOOLEAN".to_owned(),
             DataTypes::AutoDatetime(_) => "TEXT".to_owned(),
-            DataTypes::Relation => "INTEGER".to_owned(),
+            DataTypes::Relation => "BIGINT".to_owned(),
         }
     }
 }
@@ -178,10 +174,7 @@ impl Column {
         match &self.data_type {
             DataTypes::Relation => {
                 let target = self.related_to.as_deref().unwrap_or("unknown");
-                format!(
-                    "\"{}\" INTEGER REFERENCES \"{}\"(\"id\")",
-                    self.name, target
-                )
+                format!("\"{}\" BIGINT REFERENCES \"{}\"(\"id\")", self.name, target)
             }
             _ => format!("\"{}\" {}", self.name, self.data_type.to_db_type()),
         }

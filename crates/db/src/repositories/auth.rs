@@ -2,7 +2,7 @@ use crabbase_core::{
     errors::RepositoryError, models::Collection, utils::string_utils::quote_ident,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Postgres};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AuthUser {
@@ -15,11 +15,11 @@ pub struct AuthUser {
 
 #[derive(Debug)]
 pub struct AuthRepository {
-    db: Pool<Sqlite>,
+    db: Pool<Postgres>,
 }
 
 impl AuthRepository {
-    pub fn new(db: Pool<Sqlite>) -> Self {
+    pub fn new(db: Pool<Postgres>) -> Self {
         Self { db }
     }
 
@@ -102,14 +102,39 @@ impl AuthRepository {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::postgres::PgPoolOptions;
 
-    async fn setup_pool() -> sqlx::Pool<sqlx::Sqlite> {
-        let pool = SqlitePoolOptions::new()
+    async fn setup_pool(schema: &str) -> sqlx::Pool<sqlx::Postgres> {
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/crabbase".to_string());
+
+        let init_pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect(":memory:")
+            .connect(&db_url)
             .await
             .unwrap();
+
+        let schema_ident = format!("\"{}\"", schema);
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE;", schema_ident))
+            .execute(&init_pool)
+            .await;
+
+        sqlx::query(&format!("CREATE SCHEMA {};", schema_ident))
+            .execute(&init_pool)
+            .await
+            .unwrap();
+
+        init_pool.close().await;
+
+        let mut options: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
+        options = options.options([("search_path", schema)]);
+
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+
         sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
         // Clean seeded collections to keep tests deterministic
         sqlx::query("DELETE FROM _collections;")
@@ -121,12 +146,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_is_auth_collection() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("db_auth_is_auth_collection").await;
         let repo = AuthRepository::new(pool.clone());
 
         // Insert a collection with type = 'auth'
         sqlx::query(
-            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5, $6)"
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
         )
         .bind("auth_col_id")
         .bind(0)
@@ -140,7 +165,7 @@ mod tests {
 
         // Insert a collection with type = 'base'
         sqlx::query(
-            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5, $6)"
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
         )
         .bind("base_col_id")
         .bind(0)
@@ -159,7 +184,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_superuser_by_id() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("db_auth_get_superuser_by_id").await;
         let repo = AuthRepository::new(pool.clone());
 
         // Insert a superuser
@@ -170,7 +195,7 @@ mod tests {
         .bind("admin@example.com")
         .bind("hash123")
         .bind("token123")
-        .bind(1)
+        .bind(true)
         .execute(&pool)
         .await
         .unwrap();
@@ -186,7 +211,7 @@ mod tests {
         assert!(none_superuser.is_none());
     }
 
-    async fn create_users_table(pool: &sqlx::Pool<sqlx::Sqlite>) {
+    async fn create_users_table(pool: &sqlx::Pool<sqlx::Postgres>) {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS users (
@@ -194,12 +219,12 @@ mod tests {
                 email          TEXT UNIQUE NOT NULL,
                 password_hash  TEXT NOT NULL,
                 token_key      TEXT NOT NULL,
-                email_visible  INTEGER NOT NULL DEFAULT 0,
-                verified       INTEGER NOT NULL DEFAULT 0,
-                created        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
-                updated        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
+                email_visible  BOOLEAN NOT NULL DEFAULT FALSE,
+                verified       BOOLEAN NOT NULL DEFAULT FALSE,
+                created        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
+                updated        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
             );
-            "#,
+            "#
         )
         .execute(pool)
         .await
@@ -208,7 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_user_by_id() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("db_auth_get_user_by_id").await;
         create_users_table(&pool).await;
         let repo = AuthRepository::new(pool.clone());
 
@@ -220,7 +245,7 @@ mod tests {
         .bind("user1@example.com")
         .bind("hash456")
         .bind("token456")
-        .bind(0)
+        .bind(false)
         .execute(&pool)
         .await
         .unwrap();
@@ -245,7 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_user_by_email() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("db_auth_get_user_by_email").await;
         create_users_table(&pool).await;
         let repo = AuthRepository::new(pool.clone());
 
@@ -257,7 +282,7 @@ mod tests {
         .bind("user2@example.com")
         .bind("hash789")
         .bind("token789")
-        .bind(1)
+        .bind(true)
         .execute(&pool)
         .await
         .unwrap();
@@ -282,12 +307,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_collection_id_by_name() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("db_auth_get_collection_id_by_name").await;
         let repo = AuthRepository::new(pool.clone());
 
         // Insert a collection
         sqlx::query(
-            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5, $6)"
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
         )
         .bind("col_id_xyz")
         .bind(0)
