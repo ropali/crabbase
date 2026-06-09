@@ -104,6 +104,13 @@ pub struct Collection {
     #[sqlx(json)]
     pub indexes: Vec<Column>,
 
+    // Rules
+    pub list_rule: Option<String>,
+    pub view_rule: Option<String>,
+    pub create_rule: Option<String>,
+    pub update_rule: Option<String>,
+    pub delete_rule: Option<String>,
+
     #[sqlx(json)]
     pub options: CollectionOptions,
     pub created: String,

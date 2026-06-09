@@ -5,7 +5,7 @@ use axum::{
 };
 use serde_json::{Value, json};
 
-use crate::state::AppState;
+use crate::{middleware::auth::RequestContext, state::AppState};
 use crabbase_core::{
     errors::APIError,
     models::{
@@ -27,11 +27,16 @@ async fn list_records(
     Path(name): Path<String>,
     Query(params): Query<PaginationParams>,
     state: axum::extract::State<AppState>,
+    RequestContext(sql_context): RequestContext,
 ) -> Result<Json<RecordListResponse>, APIError> {
     let page = params.page.unwrap_or(1).max(1);
     let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
 
-    match state.records_repo().list(&name, page, per_page).await {
+    match state
+        .records_repo()
+        .list(&name, page, per_page, sql_context)
+        .await
+    {
         Ok(values) => Ok(Json(values)),
         Err(err) => Err(err.into()),
     }

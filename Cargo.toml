@@ -22,6 +22,7 @@ axum_jwt_auth = { version = "0.7.0" }
 jsonwebtoken = { version = "9" }
 bcrypt = "0.15.1"
 rand = "0.8"
+serde_urlencoded = "0.7.1"
 
 
 # Workspace local members

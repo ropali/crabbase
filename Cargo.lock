@@ -387,6 +387,7 @@ dependencies = [
  "crabbase_db",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sqlx",
  "tower",
  "tower-http",

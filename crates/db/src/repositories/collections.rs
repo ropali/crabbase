@@ -124,6 +124,11 @@ impl CollectionRepository {
             },
             created: Utc::now().to_string(),
             updated: Utc::now().to_string(),
+            list_rule: None,
+            view_rule: None,
+            create_rule: None,
+            update_rule: None,
+            delete_rule: None,
         })
     }
 

@@ -26,7 +26,6 @@ pub enum Expr {
 }
 
 /// Tokenize the raw filter query string
-
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut tokens = vec![];
     let mut chars = input.chars().peekable();
@@ -56,10 +55,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 let mut op = String::new();
                 op.push(chars.next().unwrap());
 
-                if let Some(&next_c) = chars.peek() {
-                    if next_c == '=' || next_c == '~' {
-                        op.push(chars.next().unwrap());
-                    }
+                if let Some(&next_c) = chars.peek()
+                    && (next_c == '=' || next_c == '~')
+                {
+                    op.push(chars.next().unwrap());
                 }
 
                 tokens.push(Token::Operator(op));

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::rules::parser::Expr;
 
 pub struct SqlContext {
-    pub auth: Option<HashMap<String, String>>, // Maps "@request.auth.id" etc
-    pub query: HashMap<String, String>,        // Maps "@request,query.x" etc
+    pub auth: Option<serde_json::Value>, // Maps "@request.auth.*" dynamically (JSON Object)
+    pub query: HashMap<String, String>,  // Maps "@request.query.x" etc
 }
 
 pub struct RulesSqlCompiler {
@@ -29,8 +29,14 @@ impl RulesSqlCompiler {
                         .context
                         .auth
                         .as_ref()
-                        .and_then(|m| m.get(key))
-                        .cloned()
+                        .and_then(|v| v.get(key))
+                        .map(|v| match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Null => "".to_string(),
+                            other => other.to_string(),
+                        })
                         .unwrap_or_default();
 
                     self.bindings.push(val);
@@ -133,16 +139,18 @@ mod tests {
             auth: None,
             query: HashMap::new(),
         };
-        let (sql, bindings) = compile_helper("status = 'active' & role = 'admin'", context).unwrap();
+        let (sql, bindings) =
+            compile_helper("status = 'active' & role = 'admin'", context).unwrap();
         assert_eq!(sql, "((\"status\" = ?) AND (\"role\" = ?))");
         assert_eq!(bindings, vec!["active".to_string(), "admin".to_string()]);
     }
 
     #[test]
     fn test_compile_auth_context() {
-        let mut auth = HashMap::new();
-        auth.insert("id".to_string(), "user_123".to_string());
-        auth.insert("role".to_string(), "admin".to_string());
+        let auth = serde_json::json!({
+            "id": "user_123",
+            "role": "admin"
+        });
 
         let context = SqlContext {
             auth: Some(auth),
@@ -159,10 +167,7 @@ mod tests {
         let mut query = HashMap::new();
         query.insert("search".to_string(), "rust".to_string());
 
-        let context = SqlContext {
-            auth: None,
-            query,
-        };
+        let context = SqlContext { auth: None, query };
 
         let (sql, bindings) = compile_helper("title ~ @request.query.search", context).unwrap();
         assert_eq!(sql, "(\"title\" LIKE ?)");

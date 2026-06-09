@@ -6,6 +6,10 @@ use crate::repositories::collections::CollectionRepository;
 use crabbase_core::{
     errors::RepositoryError,
     models::{CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
+    rules::{
+        compiler::{RulesSqlCompiler, SqlContext},
+        parser::{RuleParser, tokenize},
+    },
     utils::string_utils::quote_ident,
 };
 
@@ -24,15 +28,45 @@ impl RecordsRepository {
         collection: &str,
         page: u64,
         per_page: u64,
+        sql_context: SqlContext,
     ) -> Result<RecordListResponse, RepositoryError> {
-        let q = format!("SELECT * FROM {} LIMIT ? OFFSET ?", collection);
+        let col = CollectionRepository::new(self.db.clone())
+            .get_by_name(collection)
+            .await?;
+
+        let mut base_query = format!("SELECT * FROM {}", collection);
+        let mut bindings: Vec<String> = vec![];
+
+        if let Some(rule) = &col.list_rule
+            && !rule.trim().is_empty()
+        {
+            let tokens = tokenize(rule);
+            let mut parser = RuleParser::new(tokens);
+
+            if let Ok(ast) = parser.parse() {
+                let mut compiler = RulesSqlCompiler::new(sql_context);
+
+                if let Ok(sql_clause) = compiler.compile(&ast) {
+                    base_query.push_str(" WHERE ");
+                    base_query.push_str(&sql_clause);
+                    bindings = compiler.bindings;
+                }
+            }
+        }
+
+        base_query.push_str(" LIMIT ? OFFSET ?");
 
         let offset = (page - 1) * per_page;
-        let result = sqlx::query(&q)
-            .bind(per_page as i64)
-            .bind(offset as i64)
-            .fetch_all(&self.db)
-            .await?;
+
+        let mut query = sqlx::query(&base_query);
+
+        for bind_val in bindings {
+            query = query.bind(bind_val);
+        }
+
+        let query = query.bind(per_page as i64).bind(offset as i64);
+
+        let result = query.fetch_all(&self.db).await?;
 
         let items = result
             .iter()
@@ -428,7 +462,18 @@ mod tests {
                 .unwrap();
         }
 
-        let listed = repo.list("blogs", 1, 10).await.unwrap();
+        let listed = repo
+            .list(
+                "blogs",
+                1,
+                10,
+                crabbase_core::rules::compiler::SqlContext {
+                    auth: None,
+                    query: std::collections::HashMap::new(),
+                },
+            )
+            .await
+            .unwrap();
         assert!(listed.items.len() >= 3);
     }
 
