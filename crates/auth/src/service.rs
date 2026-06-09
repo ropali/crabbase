@@ -263,8 +263,8 @@ mod tests {
                 token_key      TEXT NOT NULL,
                 email_visible  BOOLEAN NOT NULL DEFAULT FALSE,
                 verified       BOOLEAN NOT NULL DEFAULT FALSE,
-                created        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-                updated        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+                created        TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated        TIMESTAMPTZ NOT NULL DEFAULT now()
             );
             "#,
         )

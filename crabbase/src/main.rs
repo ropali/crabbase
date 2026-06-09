@@ -109,7 +109,7 @@ async fn setup_superuser(
                     .await?;
 
             if let Some(id) = user_exists {
-                sqlx::query("UPDATE _superusers SET password_hash = $1, token_key = $2, updated = to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"') WHERE id = $3")
+                sqlx::query("UPDATE _superusers SET password_hash = $1, token_key = $2, updated = now() WHERE id = $3")
                     .bind(password_hash)
                     .bind(token_key)
                     .bind(id)

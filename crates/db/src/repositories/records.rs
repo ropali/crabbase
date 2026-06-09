@@ -94,12 +94,11 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(collection.to_string()));
         }
 
-        let id_i64 = id
-            .parse::<i64>()
-            .map_err(|e| RepositoryError::OtherError(format!("invalid id: {e}")))?;
+        let id_uuid = uuid::Uuid::parse_str(id)
+            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
 
         let row = sqlx::query(&format!("SELECT * FROM {collection} WHERE id = $1"))
-            .bind(id_i64)
+            .bind(id_uuid)
             .fetch_one(&self.db)
             .await?;
 
@@ -179,10 +178,10 @@ impl RecordsRepository {
 
         match query.fetch_one(&self.db).await {
             Ok(row) => Ok(Record {
-                id: row.try_get::<i64, _>("id")?,
+                id: row.try_get::<uuid::Uuid, _>("id")?,
                 data: body.data,
-                created: row.try_get::<String, _>("created")?,
-                updated: row.try_get::<String, _>("updated")?,
+                created: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created")?,
+                updated: row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated")?,
             }),
             Err(err) => Err(RepositoryError::QueryFailed {
                 message: "failed to create the record".to_string(),
@@ -251,14 +250,12 @@ impl RecordsRepository {
             }
         }
 
-        query_builder
-            .push(", updated = to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"')");
+        query_builder.push(", updated = now()");
 
-        let id_i64 = id
-            .parse::<i64>()
-            .map_err(|e| RepositoryError::OtherError(format!("invalid id: {e}")))?;
+        let id_uuid = uuid::Uuid::parse_str(id)
+            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
 
-        query_builder.push(" WHERE id = ").push_bind(id_i64);
+        query_builder.push(" WHERE id = ").push_bind(id_uuid);
 
         info!("SQL: {}", query_builder.sql());
 
@@ -280,12 +277,11 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(collection.to_string()));
         }
 
-        let id_i64 = id
-            .parse::<i64>()
-            .map_err(|e| RepositoryError::OtherError(format!("invalid id: {e}")))?;
+        let id_uuid = uuid::Uuid::parse_str(id)
+            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
 
         sqlx::query(&format!("DELETE FROM {collection} WHERE id = $1"))
-            .bind(id_i64)
+            .bind(id_uuid)
             .execute(&self.db)
             .await?;
 

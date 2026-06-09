@@ -1,17 +1,19 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, de::Error as DeError};
 use serde_json::{Number, Value};
 use sqlx::postgres::PgRow;
 use sqlx::{Column as _, Row};
+use uuid::Uuid;
 
 pub type RecordData = serde_json::Map<String, Value>;
 pub type OptionalData = serde_json::Map<String, Value>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Record {
-    pub id: i64,
+    pub id: Uuid,
     pub data: RecordData,
-    pub created: String,
-    pub updated: String,
+    pub created: DateTime<Utc>,
+    pub updated: DateTime<Utc>,
 }
 
 impl Record {
@@ -109,8 +111,8 @@ pub struct Collection {
 
     #[sqlx(json)]
     pub options: CollectionOptions,
-    pub created: String,
-    pub updated: String,
+    pub created: DateTime<Utc>,
+    pub updated: DateTime<Utc>,
 }
 
 #[derive(Debug, Serialize)]
@@ -146,14 +148,13 @@ impl DataTypes {
             | Self::Email
             | Self::Url
             | Self::File
-            | Self::Datetime
             | Self::Select
             | Self::Json
-            | Self::GeoPoint => "TEXT".to_owned(),
+            | Self::GeoPoint => "TEXT".to_owned(), // TODO: Handle the Geo point data type properly
+            Self::Datetime | Self::AutoDatetime(_) => "TIMESTAMPTZ".to_owned(),
             DataTypes::Number => "BIGINT".to_owned(),
             DataTypes::Bool => "BOOLEAN".to_owned(),
-            DataTypes::AutoDatetime(_) => "TEXT".to_owned(),
-            DataTypes::Relation => "BIGINT".to_owned(),
+            DataTypes::Relation => "UUID".to_owned(),
         }
     }
 }
@@ -174,7 +175,10 @@ impl Column {
         match &self.data_type {
             DataTypes::Relation => {
                 let target = self.related_to.as_deref().unwrap_or("unknown");
-                format!("\"{}\" BIGINT REFERENCES \"{}\"(\"id\")", self.name, target)
+                format!("\"{}\" UUID REFERENCES \"{}\"(\"id\")", self.name, target)
+            }
+            DataTypes::AutoDatetime(action) if action == "now" => {
+                format!("\"{}\" TIMESTAMPTZ DEFAULT now()", self.name)
             }
             _ => format!("\"{}\" {}", self.name, self.data_type.to_db_type()),
         }

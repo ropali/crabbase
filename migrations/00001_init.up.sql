@@ -1,4 +1,10 @@
 -- ============================================================
+-- Extensions
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ============================================================
 -- System Tables
 -- ============================================================
 
@@ -6,7 +12,7 @@
 CREATE TABLE IF NOT EXISTS _migrations (
     id         TEXT PRIMARY KEY,
     file       TEXT UNIQUE NOT NULL,
-    applied_at TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- _collections: Collection metadata & schema definitions
@@ -24,8 +30,8 @@ CREATE TABLE IF NOT EXISTS _collections (
     update_rule TEXT DEFAULT NULL,            -- Access rule for UPDATE operations
     delete_rule TEXT DEFAULT NULL,            -- Access rule for DELETE operations
     options     JSONB NOT NULL DEFAULT '{}',   -- JSON object for type-specific options
-    created     TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-    updated     TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx__collections_type ON _collections (type);
@@ -34,8 +40,8 @@ CREATE INDEX IF NOT EXISTS idx__collections_type ON _collections (type);
 CREATE TABLE IF NOT EXISTS _params (
     id      TEXT PRIMARY KEY NOT NULL,
     value   TEXT DEFAULT NULL,  -- JSON value
-    created TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-    updated TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- _logs: Application audit logs
@@ -44,12 +50,12 @@ CREATE TABLE IF NOT EXISTS _logs (
     level   INTEGER NOT NULL DEFAULT 0,
     message TEXT NOT NULL DEFAULT '',
     data    TEXT NOT NULL DEFAULT '{}',  -- JSON object
-    created TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_logs_level ON _logs (level);
 CREATE INDEX IF NOT EXISTS idx_logs_message ON _logs (message);
-CREATE INDEX IF NOT EXISTS idx_logs_created_hour ON _logs ((substring(created from 1 for 13) || ':00:00'));
+CREATE INDEX IF NOT EXISTS idx_logs_created_hour ON _logs (date_trunc('hour', created AT TIME ZONE 'UTC'));
 
 -- ============================================================
 -- Auth Tables
@@ -63,8 +69,8 @@ CREATE TABLE IF NOT EXISTS _superusers (
     token_key       TEXT NOT NULL,
     email_visible   BOOLEAN NOT NULL DEFAULT FALSE,
     verified        BOOLEAN NOT NULL DEFAULT FALSE,
-    created         TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-    updated         TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx__superusers_email ON _superusers (email);
@@ -76,8 +82,8 @@ CREATE TABLE IF NOT EXISTS _mfas (
     collection_ref TEXT NOT NULL,
     record_ref     TEXT NOT NULL,
     method         TEXT NOT NULL,  -- 'password', 'oauth2', 'otp'
-    created        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-    updated        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_mfas_collection_ref_record_ref ON _mfas (collection_ref, record_ref);
@@ -89,8 +95,8 @@ CREATE TABLE IF NOT EXISTS _otps (
     record_ref     TEXT NOT NULL,
     password_hash  TEXT NOT NULL,  -- Hashed OTP
     sent_to        TEXT,           -- Email sent to
-    created        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-    updated        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_otps_collection_ref_record_ref ON _otps (collection_ref, record_ref);
@@ -102,8 +108,8 @@ CREATE TABLE IF NOT EXISTS _external_auths (
     record_ref     TEXT NOT NULL,
     provider       TEXT NOT NULL,  -- 'google', 'github', etc.
     provider_id    TEXT NOT NULL,
-    created        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-    updated        TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_external_auths_record_provider
@@ -117,18 +123,12 @@ CREATE TABLE IF NOT EXISTS _auth_origins (
     collection_ref TEXT NOT NULL,
     record_ref     TEXT NOT NULL,
     fingerprint   TEXT NOT NULL,
-    created       TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-    updated       TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+    created       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_origins_unique_pairs
     ON _auth_origins (collection_ref, record_ref, fingerprint);
-
-
-
--- ============================================================
--- Core Application Tables
--- ============================================================
 
 
 -- ============================================================

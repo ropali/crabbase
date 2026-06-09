@@ -48,10 +48,10 @@ impl CollectionRepository {
             r#"
             CREATE TABLE IF NOT EXISTS "{}"
             (
-                id BIGSERIAL PRIMARY KEY,
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 {},
-                created TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"')),
-                updated TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS"Z"'))
+                created TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated TIMESTAMPTZ NOT NULL DEFAULT now()
             );
         "#,
             collection.name, columns
@@ -116,8 +116,8 @@ impl CollectionRepository {
             options: CollectionOptions {
                 auth_token: Some(options),
             },
-            created: Utc::now().to_string(),
-            updated: Utc::now().to_string(),
+            created: Utc::now(),
+            updated: Utc::now(),
             list_rule: None,
             view_rule: None,
             create_rule: None,
@@ -211,7 +211,7 @@ impl CollectionRepository {
         })?;
 
         sqlx::query(
-            "UPDATE _collections SET name = $1, fields = $2::jsonb, indexes = $3::jsonb, updated = to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"') WHERE id = $4",
+            "UPDATE _collections SET name = $1, fields = $2::jsonb, indexes = $3::jsonb, updated = now() WHERE id = $4",
         )
         .bind(&next_name)
         .bind(&next_fields_json)
@@ -331,7 +331,7 @@ async fn rebuild_collection_table(
         .join(", ");
 
     let create_sql = format!(
-        "CREATE TABLE \"{}\" (id BIGSERIAL PRIMARY KEY, {}, created TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"')), updated TEXT NOT NULL DEFAULT (to_char(now() at time zone 'utc', 'YYYY-MM-DD HH24:MI:SS.MS\"Z\"')))",
+        "CREATE TABLE \"{}\" (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), {}, created TIMESTAMPTZ NOT NULL DEFAULT now(), updated TIMESTAMPTZ NOT NULL DEFAULT now())",
         temp_name, next_column_defs
     );
     sqlx::query(&create_sql).execute(&mut **tx).await?;
