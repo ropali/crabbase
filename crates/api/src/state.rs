@@ -1,5 +1,5 @@
 use crabbase_auth::service::AuthService;
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Postgres};
 
 use crabbase_db::repositories::{
     auth::AuthRepository, collections::CollectionRepository, records::RecordsRepository,
@@ -7,7 +7,7 @@ use crabbase_db::repositories::{
 
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub db: Pool<Sqlite>,
+    pub db: Pool<Postgres>,
 }
 
 impl AppState {

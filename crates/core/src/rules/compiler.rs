@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::rules::parser::Expr;
 
+#[derive(Clone, Debug)]
 pub struct SqlContext {
     pub auth: Option<serde_json::Value>, // Maps "@request.auth.*" dynamically (JSON Object)
     pub query: HashMap<String, String>,  // Maps "@request.query.x" etc
@@ -41,7 +42,7 @@ impl RulesSqlCompiler {
 
                     self.bindings.push(val);
 
-                    Ok("?".to_uppercase())
+                    Ok(format!("${}", self.bindings.len()))
                 } else if name.starts_with("@request.query.") {
                     let key = name.strip_prefix("@request.query.").unwrap();
 
@@ -49,7 +50,7 @@ impl RulesSqlCompiler {
 
                     self.bindings.push(val);
 
-                    Ok("?".to_string())
+                    Ok(format!("${}", self.bindings.len()))
                 } else {
                     // Safe verification: Ensure characters are safe alphnum to prevent SQL  injection
                     if name.chars().all(|c| c.is_alphanumeric() || c == '_') {
@@ -63,8 +64,24 @@ impl RulesSqlCompiler {
                 let sql_left = self.compile(left)?;
                 let sql_right = self.compile(right)?;
                 let sql_op = match op.as_str() {
-                    "=" => "=",
-                    "!=" => "!=",
+                    "=" => {
+                        if matches!(**right, Expr::Null) {
+                            return Ok(format!("({} IS NULL)", sql_left));
+                        }
+                        if matches!(**left, Expr::Null) {
+                            return Ok(format!("({} IS NULL)", sql_right));
+                        }
+                        "="
+                    }
+                    "!=" => {
+                        if matches!(**right, Expr::Null) {
+                            return Ok(format!("({} IS NOT NULL)", sql_left));
+                        }
+                        if matches!(**left, Expr::Null) {
+                            return Ok(format!("({} IS NOT NULL)", sql_right));
+                        }
+                        "!="
+                    }
                     "<" => "<",
                     ">" => ">",
                     "<=" => "<=",
@@ -81,8 +98,17 @@ impl RulesSqlCompiler {
             }
             Expr::Value(val) => {
                 self.bindings.push(val.clone());
-                Ok("?".to_string())
+                Ok(format!("${}", self.bindings.len()))
             }
+            Expr::Bool(b) => {
+                if *b {
+                    Ok("TRUE".to_string())
+                } else {
+                    Ok("FALSE".to_string())
+                }
+            }
+            Expr::Null => Ok("NULL".to_string()),
+            Expr::Number(val) => Ok(val.clone()),
         }
     }
 }
@@ -106,20 +132,50 @@ mod tests {
             query: HashMap::new(),
         };
         let (sql, bindings) = compile_helper("status = 'active'", context).unwrap();
-        assert_eq!(sql, "(\"status\" = ?)");
+        assert_eq!(sql, "(\"status\" = $1)");
         assert_eq!(bindings, vec!["active".to_string()]);
+    }
+
+    #[test]
+    fn test_compile_boolean_literals() {
+        let context = SqlContext {
+            auth: None,
+            query: HashMap::new(),
+        };
+        let (sql, bindings) = compile_helper("active = true", context.clone()).unwrap();
+        assert_eq!(sql, "(\"active\" = TRUE)");
+        assert_eq!(bindings.len(), 0);
+
+        let (sql2, bindings2) = compile_helper("active = false", context).unwrap();
+        assert_eq!(sql2, "(\"active\" = FALSE)");
+        assert_eq!(bindings2.len(), 0);
+    }
+
+    #[test]
+    fn test_compile_null_literals() {
+        let context = SqlContext {
+            auth: None,
+            query: HashMap::new(),
+        };
+        let (sql, bindings) = compile_helper("owner_id = null", context.clone()).unwrap();
+        assert_eq!(sql, "(\"owner_id\" IS NULL)");
+        assert_eq!(bindings.len(), 0);
+
+        let (sql2, bindings2) = compile_helper("owner_id != null", context).unwrap();
+        assert_eq!(sql2, "(\"owner_id\" IS NOT NULL)");
+        assert_eq!(bindings2.len(), 0);
     }
 
     #[test]
     fn test_compile_operators() {
         let operators = vec![
-            ("status = 'active'", "(\"status\" = ?)"),
-            ("status != 'active'", "(\"status\" != ?)"),
-            ("age < '18'", "(\"age\" < ?)"),
-            ("age > '18'", "(\"age\" > ?)"),
-            ("age <= '18'", "(\"age\" <= ?)"),
-            ("age >= '18'", "(\"age\" >= ?)"),
-            ("name ~ 'admin'", "(\"name\" LIKE ?)"),
+            ("status = 'active'", "(\"status\" = $1)"),
+            ("status != 'active'", "(\"status\" != $1)"),
+            ("age < '18'", "(\"age\" < $1)"),
+            ("age > '18'", "(\"age\" > $1)"),
+            ("age <= '18'", "(\"age\" <= $1)"),
+            ("age >= '18'", "(\"age\" >= $1)"),
+            ("name ~ 'admin'", "(\"name\" LIKE $1)"),
         ];
 
         for (input, expected_sql) in operators {
@@ -141,7 +197,7 @@ mod tests {
         };
         let (sql, bindings) =
             compile_helper("status = 'active' & role = 'admin'", context).unwrap();
-        assert_eq!(sql, "((\"status\" = ?) AND (\"role\" = ?))");
+        assert_eq!(sql, "((\"status\" = $1) AND (\"role\" = $2))");
         assert_eq!(bindings, vec!["active".to_string(), "admin".to_string()]);
     }
 
@@ -158,7 +214,7 @@ mod tests {
         };
 
         let (sql, bindings) = compile_helper("owner_id = @request.auth.id", context).unwrap();
-        assert_eq!(sql, "(\"owner_id\" = ?)");
+        assert_eq!(sql, "(\"owner_id\" = $1)");
         assert_eq!(bindings, vec!["user_123".to_string()]);
     }
 
@@ -170,7 +226,7 @@ mod tests {
         let context = SqlContext { auth: None, query };
 
         let (sql, bindings) = compile_helper("title ~ @request.query.search", context).unwrap();
-        assert_eq!(sql, "(\"title\" LIKE ?)");
+        assert_eq!(sql, "(\"title\" LIKE $1)");
         assert_eq!(bindings, vec!["rust".to_string()]);
     }
 
@@ -182,7 +238,7 @@ mod tests {
         };
 
         let (sql, bindings) = compile_helper("owner_id = @request.auth.id", context).unwrap();
-        assert_eq!(sql, "(\"owner_id\" = ?)");
+        assert_eq!(sql, "(\"owner_id\" = $1)");
         assert_eq!(bindings, vec!["".to_string()]);
     }
 
@@ -198,6 +254,21 @@ mod tests {
         let res = compiler.compile(&unsafe_expr);
         assert!(res.is_err());
         assert!(res.unwrap_err().contains("Unsafe identifier"));
+    }
+
+    #[test]
+    fn test_compile_numeric_literals() {
+        let context = SqlContext {
+            auth: None,
+            query: HashMap::new(),
+        };
+        let (sql, bindings) = compile_helper("price >= 300", context.clone()).unwrap();
+        assert_eq!(sql, "(\"price\" >= 300)");
+        assert_eq!(bindings.len(), 0);
+
+        let (sql2, bindings2) = compile_helper("price < -10.5", context).unwrap();
+        assert_eq!(sql2, "(\"price\" < -10.5)");
+        assert_eq!(bindings2.len(), 0);
     }
 
     #[test]

@@ -116,14 +116,39 @@ mod tests {
     use super::*;
     use crate::auth::{Claims, hash_password, verify_token};
     use crabbase_core::errors::APIError;
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::postgres::PgPoolOptions;
 
-    async fn setup_service() -> (AuthService, sqlx::Pool<sqlx::Sqlite>) {
-        let pool = SqlitePoolOptions::new()
+    async fn setup_service(schema: &str) -> (AuthService, sqlx::Pool<sqlx::Postgres>) {
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/crabbase".to_string());
+
+        let init_pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect(":memory:")
+            .connect(&db_url)
             .await
             .unwrap();
+
+        let schema_ident = format!("\"{}\"", schema);
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE;", schema_ident))
+            .execute(&init_pool)
+            .await;
+
+        sqlx::query(&format!("CREATE SCHEMA {};", schema_ident))
+            .execute(&init_pool)
+            .await
+            .unwrap();
+
+        init_pool.close().await;
+
+        let mut options: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
+        options = options.options([("search_path", schema)]);
+
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+
         sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
 
         // Clean seeded collections to keep tests deterministic
@@ -139,7 +164,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_session_superuser() {
-        let (service, pool) = setup_service().await;
+        let (service, pool) = setup_service("auth_verify_session_superuser").await;
 
         // 1. Setup a verified superuser
         sqlx::query(
@@ -149,7 +174,7 @@ mod tests {
         .bind("admin1@example.com")
         .bind("hash")
         .bind("token")
-        .bind(1) // verified
+        .bind(true) // verified
         .execute(&pool)
         .await
         .unwrap();
@@ -162,7 +187,7 @@ mod tests {
         .bind("admin2@example.com")
         .bind("hash")
         .bind("token")
-        .bind(0) // unverified
+        .bind(false) // unverified
         .execute(&pool)
         .await
         .unwrap();
@@ -228,7 +253,7 @@ mod tests {
         assert!(matches!(err_unauthorized, APIError::Unauthorized));
     }
 
-    async fn create_users_table(pool: &sqlx::Pool<sqlx::Sqlite>) {
+    async fn create_users_table(pool: &sqlx::Pool<sqlx::Postgres>) {
         sqlx::query(
             r#"
             CREATE TABLE IF NOT EXISTS users (
@@ -236,10 +261,10 @@ mod tests {
                 email          TEXT UNIQUE NOT NULL,
                 password_hash  TEXT NOT NULL,
                 token_key      TEXT NOT NULL,
-                email_visible  INTEGER NOT NULL DEFAULT 0,
-                verified       INTEGER NOT NULL DEFAULT 0,
-                created        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
-                updated        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
+                email_visible  BOOLEAN NOT NULL DEFAULT FALSE,
+                verified       BOOLEAN NOT NULL DEFAULT FALSE,
+                created        TIMESTAMPTZ NOT NULL DEFAULT now(),
+                updated        TIMESTAMPTZ NOT NULL DEFAULT now()
             );
             "#,
         )
@@ -250,7 +275,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_session_regular_user() {
-        let (service, pool) = setup_service().await;
+        let (service, pool) = setup_service("auth_verify_session_regular_user").await;
         create_users_table(&pool).await;
 
         // 1. Setup a verified user
@@ -261,7 +286,7 @@ mod tests {
         .bind("user1@example.com")
         .bind("hash")
         .bind("token")
-        .bind(1) // verified
+        .bind(true) // verified
         .execute(&pool)
         .await
         .unwrap();
@@ -274,7 +299,7 @@ mod tests {
         .bind("user2@example.com")
         .bind("hash")
         .bind("token")
-        .bind(0) // unverified
+        .bind(false) // unverified
         .execute(&pool)
         .await
         .unwrap();
@@ -329,7 +354,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authenticate_superuser() {
-        let (service, pool) = setup_service().await;
+        let (service, pool) = setup_service("auth_authenticate_superuser").await;
 
         let password = "admin_secure_password";
         let hash = hash_password(password).unwrap();
@@ -342,7 +367,7 @@ mod tests {
         .bind("admin@example.com")
         .bind(hash)
         .bind("token")
-        .bind(1)
+        .bind(true)
         .execute(&pool)
         .await
         .unwrap();
@@ -358,7 +383,7 @@ mod tests {
 
         // Setup "admin" in _collections table so collection ID can be queried
         sqlx::query(
-            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5, $6)"
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
         )
         .bind("admin_col_id")
         .bind(1)
@@ -398,7 +423,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_authenticate_regular_user() {
-        let (service, pool) = setup_service().await;
+        let (service, pool) = setup_service("auth_authenticate_regular_user").await;
         create_users_table(&pool).await;
 
         let password = "user_secure_password";
@@ -412,7 +437,7 @@ mod tests {
         .bind("user@example.com")
         .bind(hash)
         .bind("token")
-        .bind(1)
+        .bind(true)
         .execute(&pool)
         .await
         .unwrap();
@@ -428,7 +453,7 @@ mod tests {
 
         // Setup collection entry in _collections
         sqlx::query(
-            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5, $6)"
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
         )
         .bind("users_col_id")
         .bind(1)

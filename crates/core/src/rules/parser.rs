@@ -2,6 +2,9 @@
 pub enum Token {
     Ident(String),
     Literal(String),
+    Bool(bool),
+    Null,
+    Number(String),
     Operator(String),
     And,
     Or,
@@ -23,6 +26,9 @@ pub enum Expr {
     },
     Variable(String),
     Value(String),
+    Bool(bool),
+    Null,
+    Number(String),
 }
 
 /// Tokenize the raw filter query string
@@ -77,6 +83,40 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 tokens.push(Token::Literal(literal));
             }
 
+            '0'..='9' => {
+                let mut num = String::new();
+                while let Some(&next_c) = chars.peek() {
+                    if next_c.is_ascii_digit() || next_c == '.' {
+                        num.push(chars.next().unwrap());
+                    } else {
+                        break;
+                    }
+                }
+                tokens.push(Token::Number(num));
+            }
+
+            '-' | '+' => {
+                let mut temp_chars = chars.clone();
+                temp_chars.next(); // consume the sign
+                if let Some(&next_c) = temp_chars.peek()
+                    && next_c.is_ascii_digit()
+                {
+                    let mut num = String::new();
+                    num.push(chars.next().unwrap()); // consume sign
+                    while let Some(&next_c) = chars.peek() {
+                        if next_c.is_ascii_digit() || next_c == '.' {
+                            num.push(chars.next().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+                    tokens.push(Token::Number(num));
+                    continue;
+                }
+                // If not followed by a digit, let the default handle it or consume if operator
+                chars.next();
+            }
+
             _ => {
                 let mut indent = String::new();
 
@@ -89,7 +129,15 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
 
                 if !indent.is_empty() {
-                    tokens.push(Token::Ident(indent));
+                    if indent == "true" {
+                        tokens.push(Token::Bool(true));
+                    } else if indent == "false" {
+                        tokens.push(Token::Bool(false));
+                    } else if indent == "null" || indent == "NULL" {
+                        tokens.push(Token::Null);
+                    } else {
+                        tokens.push(Token::Ident(indent));
+                    }
                 } else {
                     chars.next();
                 }
@@ -188,6 +236,20 @@ impl RuleParser {
                 self.consume();
                 Ok(Expr::Value(val))
             }
+            Some(Token::Bool(val)) => {
+                let val = *val;
+                self.consume();
+                Ok(Expr::Bool(val))
+            }
+            Some(Token::Null) => {
+                self.consume();
+                Ok(Expr::Null)
+            }
+            Some(Token::Number(val)) => {
+                let val = val.clone();
+                self.consume();
+                Ok(Expr::Number(val))
+            }
             _ => Err("Invalid syntax in rule expression".to_string()),
         }
     }
@@ -218,6 +280,29 @@ mod tests {
                 assert_eq!(*left, Expr::Variable("status".to_string()));
                 assert_eq!(op, "=");
                 assert_eq!(*right, Expr::Value("active".to_string()));
+            }
+            _ => panic!("Expected Binary expression"),
+        }
+    }
+
+    #[test]
+    fn test_parse_numbers() {
+        let ast = parse_helper("price >= 300").unwrap();
+        match ast {
+            Expr::Binary { left, op, right } => {
+                assert_eq!(*left, Expr::Variable("price".to_string()));
+                assert_eq!(op, ">=");
+                assert_eq!(*right, Expr::Number("300".to_string()));
+            }
+            _ => panic!("Expected Binary expression"),
+        }
+
+        let ast2 = parse_helper("price < -10.5").unwrap();
+        match ast2 {
+            Expr::Binary { left, op, right } => {
+                assert_eq!(*left, Expr::Variable("price".to_string()));
+                assert_eq!(op, "<");
+                assert_eq!(*right, Expr::Number("-10.5".to_string()));
             }
             _ => panic!("Expected Binary expression"),
         }

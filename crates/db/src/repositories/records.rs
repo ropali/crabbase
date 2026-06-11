@@ -1,6 +1,6 @@
 use serde_json::Value;
-use sqlx::{Pool, Row, Sqlite};
-use tracing::{error, info};
+use sqlx::{Pool, Postgres, Row};
+use tracing::info;
 
 use crate::repositories::collections::CollectionRepository;
 use crabbase_core::{
@@ -15,11 +15,11 @@ use crabbase_core::{
 
 #[derive(Debug, Clone)]
 pub struct RecordsRepository {
-    db: Pool<Sqlite>,
+    db: Pool<Postgres>,
 }
 
 impl RecordsRepository {
-    pub fn new(db: Pool<Sqlite>) -> Self {
+    pub fn new(db: Pool<Postgres>) -> Self {
         Self { db }
     }
 
@@ -54,7 +54,9 @@ impl RecordsRepository {
             }
         }
 
-        base_query.push_str(" LIMIT ? OFFSET ?");
+        let limit_idx = bindings.len() + 1;
+        let offset_idx = bindings.len() + 2;
+        base_query.push_str(&format!(" LIMIT ${limit_idx} OFFSET ${offset_idx}"));
 
         let offset = (page - 1) * per_page;
 
@@ -92,8 +94,11 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(collection.to_string()));
         }
 
+        let id_uuid = uuid::Uuid::parse_str(id)
+            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
+
         let row = sqlx::query(&format!("SELECT * FROM {collection} WHERE id = $1"))
-            .bind(id)
+            .bind(id_uuid)
             .fetch_one(&self.db)
             .await?;
 
@@ -111,11 +116,8 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound("Empty Input".to_string()));
         }
 
-        let exist = sqlx::query("SELECT name FROM sqlite_master WHERE type='table' AND name=$1")
-            .bind(&collection)
-            .execute(&self.db)
-            .await
-            .is_ok();
+        let col_repo = CollectionRepository::new(self.db.clone());
+        let exist = col_repo.exists(&collection).await;
 
         info!("TABLE EXIST {}: {}", collection, exist);
 
@@ -131,7 +133,7 @@ impl RecordsRepository {
 
         let quoted_table = quote_ident(&collection);
         let mut query_builder =
-            sqlx::QueryBuilder::<Sqlite>::new(format!("INSERT INTO {} (", quoted_table));
+            sqlx::QueryBuilder::<Postgres>::new(format!("INSERT INTO {} (", quoted_table));
 
         // Add columns with proper sepration
         let mut separated = query_builder.separated(",");
@@ -171,32 +173,20 @@ impl RecordsRepository {
         }
         separated_values.push_unseparated(")");
 
+        query_builder.push(" RETURNING id, created, updated");
         let query = query_builder.build();
 
-        match query.execute(&self.db).await {
-            Ok(res) => {
-                let row = sqlx::query(&format!(
-                    "SELECT id, created, updated FROM {} WHERE id = ?;",
-                    quote_ident(&collection)
-                ))
-                .bind(res.last_insert_rowid())
-                .fetch_one(&self.db)
-                .await?;
-
-                Ok(Record {
-                    id: row.try_get::<i64, _>("id")?,
-                    data: body.data,
-                    created: row.try_get::<String, _>("created")?,
-                    updated: row.try_get::<String, _>("updated")?,
-                })
-            }
-            Err(err) => {
-                error!("Error: {}", err);
-                Err(RepositoryError::QueryFailed {
-                    message: "failed to update the record".to_string(),
-                    source: Some(err.to_string()),
-                })
-            }
+        match query.fetch_one(&self.db).await {
+            Ok(row) => Ok(Record {
+                id: row.try_get::<uuid::Uuid, _>("id")?,
+                data: body.data,
+                created: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created")?,
+                updated: row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated")?,
+            }),
+            Err(err) => Err(RepositoryError::QueryFailed {
+                message: "failed to create the record".to_string(),
+                source: Some(err.to_string()),
+            }),
         }
     }
 
@@ -225,7 +215,7 @@ impl RecordsRepository {
 
         let quoted_table = quote_ident(collection);
         let mut query_builder =
-            sqlx::QueryBuilder::<Sqlite>::new(format!("UPDATE {} SET ", quoted_table));
+            sqlx::QueryBuilder::<Postgres>::new(format!("UPDATE {} SET ", quoted_table));
 
         let mut first = true;
         for (k, v) in &payload.data {
@@ -260,9 +250,12 @@ impl RecordsRepository {
             }
         }
 
-        query_builder.push(", updated = strftime('%Y-%m-%d %H:%M:%fZ')");
+        query_builder.push(", updated = now()");
 
-        query_builder.push(" WHERE id = ").push_bind(id);
+        let id_uuid = uuid::Uuid::parse_str(id)
+            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
+
+        query_builder.push(" WHERE id = ").push_bind(id_uuid);
 
         info!("SQL: {}", query_builder.sql());
 
@@ -284,8 +277,11 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(collection.to_string()));
         }
 
+        let id_uuid = uuid::Uuid::parse_str(id)
+            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
+
         sqlx::query(&format!("DELETE FROM {collection} WHERE id = $1"))
-            .bind(id)
+            .bind(id_uuid)
             .execute(&self.db)
             .await?;
 
@@ -301,14 +297,39 @@ mod tests {
         Column, CreateCollectionRequest, CreateRecordRequest, DataTypes, UpdateRecordRequest,
     };
     use serde_json::{Value, map::Map};
-    use sqlx::sqlite::SqlitePoolOptions;
+    use sqlx::postgres::PgPoolOptions;
 
-    async fn setup_pool() -> sqlx::Pool<sqlx::Sqlite> {
-        let pool = SqlitePoolOptions::new()
+    async fn setup_pool(schema: &str) -> sqlx::Pool<sqlx::Postgres> {
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/crabbase".to_string());
+
+        let init_pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect(":memory:")
+            .connect(&db_url)
             .await
             .unwrap();
+
+        let schema_ident = format!("\"{}\"", schema);
+        let _ = sqlx::query(&format!("DROP SCHEMA IF EXISTS {} CASCADE;", schema_ident))
+            .execute(&init_pool)
+            .await;
+
+        sqlx::query(&format!("CREATE SCHEMA {};", schema_ident))
+            .execute(&init_pool)
+            .await
+            .unwrap();
+
+        init_pool.close().await;
+
+        let mut options: sqlx::postgres::PgConnectOptions = db_url.parse().unwrap();
+        options = options.options([("search_path", schema)]);
+
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_with(options)
+            .await
+            .unwrap();
+
         sqlx::migrate!("../../migrations").run(&pool).await.unwrap();
         // Remove seeded _collections row inserted by migrations to avoid deserialize errors in tests
         sqlx::query("DELETE FROM _collections;")
@@ -320,7 +341,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_record() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("rec_create_record").await;
         let col_repo = CollectionRepository::new(pool.clone());
         let columns = vec![
             Column {
@@ -359,7 +380,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_record() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("rec_get_record").await;
         let col_repo = CollectionRepository::new(pool.clone());
         let columns = vec![Column {
             name: "title".into(),
@@ -391,7 +412,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_record() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("rec_update_record").await;
         let col_repo = CollectionRepository::new(pool.clone());
         let columns = vec![Column {
             name: "title".into(),
@@ -429,7 +450,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_records() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("rec_list_records").await;
         let col_repo = CollectionRepository::new(pool.clone());
         let columns = vec![
             Column {
@@ -479,7 +500,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_delete_record() {
-        let pool = setup_pool().await;
+        let pool = setup_pool("rec_delete_record").await;
         let col_repo = CollectionRepository::new(pool.clone());
         let columns = vec![Column {
             name: "title".into(),

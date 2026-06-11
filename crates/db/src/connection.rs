@@ -1,15 +1,14 @@
-use sqlx::{Pool, Sqlite, SqlitePool, sqlite::SqliteConnectOptions};
-use tracing::info;
+use std::str::FromStr;
 
-pub async fn pool() -> Result<Pool<Sqlite>, sqlx::Error> {
-    let opts = SqliteConnectOptions::new()
-        .filename("app.db")
-        .create_if_missing(true)
-        .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal);
+use sqlx::{PgPool, Pool, Postgres, postgres::PgConnectOptions};
 
-    let pool = SqlitePool::connect_with(opts).await?;
+pub async fn pool() -> Result<Pool<Postgres>, sqlx::Error> {
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/crabbase".to_string());
 
-    info!("Connected to SQLite!");
+    let opts = PgConnectOptions::from_str(&db_url)?;
+
+    let pool = PgPool::connect_with(opts).await?;
 
     Ok(pool)
 }
