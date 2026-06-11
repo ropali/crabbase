@@ -35,6 +35,7 @@ impl RecordsRepository {
             .await?;
 
         let mut base_query = format!("SELECT * FROM {}", collection);
+        let mut count_base_query = format!("SELECT COUNT(id) FROM {}", collection);
         let mut bindings: Vec<String> = vec![];
 
         if let Some(rule) = &col.list_rule
@@ -49,6 +50,9 @@ impl RecordsRepository {
                 if let Ok(sql_clause) = compiler.compile(&ast) {
                     base_query.push_str(" WHERE ");
                     base_query.push_str(&sql_clause);
+
+                    count_base_query.push_str(" WHERE ");
+                    count_base_query.push_str(&sql_clause);
                     bindings = compiler.bindings;
                 }
             }
@@ -61,25 +65,27 @@ impl RecordsRepository {
         let offset = (page - 1) * per_page;
 
         let mut query = sqlx::query(&base_query);
+        let mut count_query = sqlx::query_scalar(&count_base_query);
 
         for bind_val in bindings {
-            query = query.bind(bind_val);
+            query = query.bind(bind_val.clone());
+            count_query = count_query.bind(bind_val);
         }
 
         let query = query.bind(per_page as i64).bind(offset as i64);
 
         let result = query.fetch_all(&self.db).await?;
 
+        let total_count: i64 = count_query.fetch_one(&self.db).await?;
+
         let items = result
             .iter()
             .filter_map(|r| Record::from_row(r).ok())
             .collect::<Vec<Record>>();
 
-        let total = items.len();
-
         Ok(RecordListResponse {
             items,
-            total: total as u64,
+            total: total_count as u64,
             page,
             per_page,
         })
