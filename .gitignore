@@ -6,3 +6,5 @@ app.db*
 logs/*
 
 .idea
+
+.env

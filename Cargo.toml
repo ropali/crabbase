@@ -23,6 +23,7 @@ jsonwebtoken = { version = "9" }
 bcrypt = "0.15.1"
 rand = "0.8"
 serde_urlencoded = "0.7.1"
+dotenvy = "0.15.7"
 
 
 # Workspace local members
