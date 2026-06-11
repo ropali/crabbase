@@ -3,16 +3,16 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Create N test collections (SQLite tables) and register them in metadata tables.
+Create N test collections (PostgreSQL tables) and register them in metadata tables.
 
 Usage:
-  scripts/create_test_collections.sh --count N [--prefix NAME] [--rows N] [--db PATH] [--reset]
+  scripts/create_test_collections.sh --count N [--prefix NAME] [--rows N] [--db-url URL] [--reset]
 
 Options:
   --count N       Number of collections to create (required)
   --prefix NAME   Table/collection prefix (default: test_collection)
   --rows N        Seed rows per collection table (default: 10)
-  --db PATH       SQLite database path (default: app.db)
+  --db-url URL    PostgreSQL database URL (default: env DATABASE_URL or postgres://postgres:postgres@localhost:5432/crabbase)
   --reset         Drop existing matching tables and recreate metadata
   --help          Show help
 
@@ -22,7 +22,7 @@ Examples:
 USAGE
 }
 
-DB_PATH="app.db"
+DB_URL="${DATABASE_URL:-postgres://postgres:postgres@localhost:5432/crabbase}"
 COUNT=""
 PREFIX="test_collection"
 ROWS=10
@@ -42,8 +42,8 @@ while [[ $# -gt 0 ]]; do
       ROWS="${2:-}"
       shift 2
       ;;
-    --db)
-      DB_PATH="${2:-}"
+    --db-url)
+      DB_URL="${2:-}"
       shift 2
       ;;
     --reset)
@@ -83,28 +83,22 @@ if ! [[ "$PREFIX" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
   exit 1
 fi
 
-if [[ ! -f "$DB_PATH" ]]; then
-  echo "Error: database file not found: $DB_PATH" >&2
-  exit 1
-fi
-
-if ! command -v sqlite3 >/dev/null 2>&1; then
-  echo "Error: sqlite3 command not found" >&2
+if ! command -v psql >/dev/null 2>&1; then
+  echo "Error: psql command not found. Please install postgresql-client." >&2
   exit 1
 fi
 
 need_table() {
   local t="$1"
   local exists
-  exists="$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='$t';")"
+  exists=$(psql "$DB_URL" -t -A -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '$t' AND table_schema = current_schema();")
   if [[ "$exists" != "1" ]]; then
-    echo "Error: required table '$t' not found in $DB_PATH" >&2
+    echo "Error: required table '$t' not found in database" >&2
     exit 1
   fi
 }
 
 need_table "_collections"
-collections_exists="$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='collections';")"
 
 created=0
 seeded=0
@@ -113,7 +107,7 @@ skipped=0
 for ((i = 1; i <= COUNT; i++)); do
   table_name="${PREFIX}_${i}"
 
-  table_exists="$(sqlite3 "$DB_PATH" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='$table_name';")"
+  table_exists=$(psql "$DB_URL" -t -A -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '$table_name' AND table_schema = current_schema();")
 
   if [[ "$table_exists" == "1" && "$RESET" -eq 0 ]]; then
     skipped=$((skipped + 1))
@@ -121,77 +115,53 @@ for ((i = 1; i <= COUNT; i++)); do
   fi
 
   if [[ "$RESET" -eq 1 ]]; then
-    sqlite3 "$DB_PATH" <<SQL
-DROP TABLE IF EXISTS "$table_name";
-DELETE FROM _collections WHERE name = '$table_name';
-SQL
-    if [[ "$collections_exists" == "1" ]]; then
-      sqlite3 "$DB_PATH" "DELETE FROM collections WHERE name = '$table_name';"
-    fi
+    psql "$DB_URL" -c "
+      DROP TABLE IF EXISTS \"$table_name\" CASCADE;
+      DELETE FROM _collections WHERE name = '$table_name';
+    " >/dev/null
   fi
 
-  sqlite3 "$DB_PATH" <<SQL
-CREATE TABLE IF NOT EXISTS "$table_name" (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT,
-  status TEXT,
-  score INTEGER,
-  is_active INTEGER,
-  created TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ')),
-  updated TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%fZ'))
-);
-CREATE INDEX IF NOT EXISTS idx_${table_name}_name ON "$table_name" (name);
-CREATE INDEX IF NOT EXISTS idx_${table_name}_status ON "$table_name" (status);
-SQL
+  psql "$DB_URL" -c "
+  CREATE TABLE IF NOT EXISTS \"$table_name\" (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT,
+    status TEXT,
+    score BIGINT,
+    is_active BOOLEAN,
+    created TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS idx_${table_name}_name ON \"$table_name\" (name);
+  CREATE INDEX IF NOT EXISTS idx_${table_name}_status ON \"$table_name\" (status);
+  " >/dev/null
 
-  # Keep JSON in the same compact shape as serde_json::to_string output.
+  # Keep JSON in the same shape as schema structures.
   fields_json='[{"name":"name","data_type":"PlainText","index":true},{"name":"status","data_type":"PlainText","index":true},{"name":"score","data_type":"Number","index":false},{"name":"is_active","data_type":"Bool","index":false}]'
   indexes_json='[{"name":"name","data_type":"PlainText","index":true},{"name":"status","data_type":"PlainText","index":true}]'
 
-  if [[ "$(sqlite3 "$DB_PATH" "SELECT json_valid('$fields_json');")" != "1" ]]; then
-    echo "Error: generated fields_json is not valid JSON" >&2
-    exit 1
-  fi
-
-  sqlite3 "$DB_PATH" <<SQL
-INSERT OR REPLACE INTO _collections (id, system, type, name, fields, indexes, options)
-VALUES (
-  lower(hex(randomblob(16))),
-  0,
-  'base',
-  '$table_name',
-  '$fields_json',
-  '$indexes_json',
-  '{}'
-);
-SQL
-
-  if [[ "$collections_exists" == "1" ]]; then
-    sqlite3 "$DB_PATH" <<SQL
-INSERT OR REPLACE INTO collections (id, name, description)
-VALUES (
-  lower(hex(randomblob(16))),
-  '$table_name',
-  'Generated test collection $table_name'
-);
-SQL
-  fi
+  psql "$DB_URL" -c "
+  INSERT INTO _collections (id, system, type, name, fields, indexes, options)
+  VALUES (
+    'r' || substring(md5(random()::text) from 1 for 14),
+    0,
+    'base',
+    '$table_name',
+    '$fields_json'::jsonb,
+    '$indexes_json'::jsonb,
+    '{}'::jsonb
+  ) ON CONFLICT (name) DO UPDATE SET fields = EXCLUDED.fields, indexes = EXCLUDED.indexes;
+  " >/dev/null
 
   if [[ "$ROWS" -gt 0 ]]; then
-    sqlite3 "$DB_PATH" <<SQL
-WITH RECURSIVE seq(x) AS (
-  SELECT 1
-  UNION ALL
-  SELECT x + 1 FROM seq WHERE x < $ROWS
-)
-INSERT INTO "$table_name" (name, status, score, is_active)
-SELECT
-  'name_' || x || '_' || lower(hex(randomblob(2))),
-  CASE abs(random()) % 3 WHEN 0 THEN 'new' WHEN 1 THEN 'active' ELSE 'archived' END,
-  abs(random()) % 1000,
-  abs(random()) % 2
-FROM seq;
-SQL
+    psql "$DB_URL" -c "
+    INSERT INTO \"$table_name\" (name, status, score, is_active)
+    SELECT
+      'name_' || x || '_' || substring(md5(random()::text) from 1 for 4),
+      (ARRAY['new', 'active', 'archived'])[floor(random() * 3 + 1)],
+      floor(random() * 1000)::bigint,
+      random() > 0.5
+    FROM generate_series(1, $ROWS) as x;
+    " >/dev/null
     seeded=$((seeded + ROWS))
   fi
 

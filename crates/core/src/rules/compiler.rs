@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::rules::parser::Expr;
 
+#[derive(Clone, Debug)]
 pub struct SqlContext {
     pub auth: Option<serde_json::Value>, // Maps "@request.auth.*" dynamically (JSON Object)
     pub query: HashMap<String, String>,  // Maps "@request.query.x" etc
@@ -63,8 +64,24 @@ impl RulesSqlCompiler {
                 let sql_left = self.compile(left)?;
                 let sql_right = self.compile(right)?;
                 let sql_op = match op.as_str() {
-                    "=" => "=",
-                    "!=" => "!=",
+                    "=" => {
+                        if matches!(**right, Expr::Null) {
+                            return Ok(format!("({} IS NULL)", sql_left));
+                        }
+                        if matches!(**left, Expr::Null) {
+                            return Ok(format!("({} IS NULL)", sql_right));
+                        }
+                        "="
+                    }
+                    "!=" => {
+                        if matches!(**right, Expr::Null) {
+                            return Ok(format!("({} IS NOT NULL)", sql_left));
+                        }
+                        if matches!(**left, Expr::Null) {
+                            return Ok(format!("({} IS NOT NULL)", sql_right));
+                        }
+                        "!="
+                    }
                     "<" => "<",
                     ">" => ">",
                     "<=" => "<=",
@@ -83,6 +100,15 @@ impl RulesSqlCompiler {
                 self.bindings.push(val.clone());
                 Ok(format!("${}", self.bindings.len()))
             }
+            Expr::Bool(b) => {
+                if *b {
+                    Ok("TRUE".to_string())
+                } else {
+                    Ok("FALSE".to_string())
+                }
+            }
+            Expr::Null => Ok("NULL".to_string()),
+            Expr::Number(val) => Ok(val.clone()),
         }
     }
 }
@@ -108,6 +134,36 @@ mod tests {
         let (sql, bindings) = compile_helper("status = 'active'", context).unwrap();
         assert_eq!(sql, "(\"status\" = $1)");
         assert_eq!(bindings, vec!["active".to_string()]);
+    }
+
+    #[test]
+    fn test_compile_boolean_literals() {
+        let context = SqlContext {
+            auth: None,
+            query: HashMap::new(),
+        };
+        let (sql, bindings) = compile_helper("active = true", context.clone()).unwrap();
+        assert_eq!(sql, "(\"active\" = TRUE)");
+        assert_eq!(bindings.len(), 0);
+
+        let (sql2, bindings2) = compile_helper("active = false", context).unwrap();
+        assert_eq!(sql2, "(\"active\" = FALSE)");
+        assert_eq!(bindings2.len(), 0);
+    }
+
+    #[test]
+    fn test_compile_null_literals() {
+        let context = SqlContext {
+            auth: None,
+            query: HashMap::new(),
+        };
+        let (sql, bindings) = compile_helper("owner_id = null", context.clone()).unwrap();
+        assert_eq!(sql, "(\"owner_id\" IS NULL)");
+        assert_eq!(bindings.len(), 0);
+
+        let (sql2, bindings2) = compile_helper("owner_id != null", context).unwrap();
+        assert_eq!(sql2, "(\"owner_id\" IS NOT NULL)");
+        assert_eq!(bindings2.len(), 0);
     }
 
     #[test]
@@ -198,6 +254,21 @@ mod tests {
         let res = compiler.compile(&unsafe_expr);
         assert!(res.is_err());
         assert!(res.unwrap_err().contains("Unsafe identifier"));
+    }
+
+    #[test]
+    fn test_compile_numeric_literals() {
+        let context = SqlContext {
+            auth: None,
+            query: HashMap::new(),
+        };
+        let (sql, bindings) = compile_helper("price >= 300", context.clone()).unwrap();
+        assert_eq!(sql, "(\"price\" >= 300)");
+        assert_eq!(bindings.len(), 0);
+
+        let (sql2, bindings2) = compile_helper("price < -10.5", context).unwrap();
+        assert_eq!(sql2, "(\"price\" < -10.5)");
+        assert_eq!(bindings2.len(), 0);
     }
 
     #[test]
