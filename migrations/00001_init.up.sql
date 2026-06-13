@@ -1,19 +1,6 @@
 -- ============================================================
--- Extensions
--- ============================================================
-
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- ============================================================
 -- System Tables
 -- ============================================================
-
--- _migrations: Migration history tracking
-CREATE TABLE IF NOT EXISTS _migrations (
-    id         TEXT PRIMARY KEY,
-    file       TEXT UNIQUE NOT NULL,
-    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
 
 -- _collections: Collection metadata & schema definitions
 -- Stores the structure of dynamic collections
