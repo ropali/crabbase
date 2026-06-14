@@ -2,6 +2,7 @@
 pub struct Collection {
     pub id: String,
     pub name: String,
-    pub system: bool,
-    pub fields: serde_json::Value,
+    pub collection_type: String,
+    pub records: u32,
+    pub modified: String,
 }

@@ -9,6 +9,8 @@ name = "crabbase_admin_ui"
 path = "src/main.rs"
 
 [dependencies]
+chrono = {workspace = true}
+
 # Yew framework with Client Side Rendering (CSR) feature
 yew = { version = "0.21.0", features = ["csr"] }
 
@@ -22,6 +24,8 @@ wasm-bindgen-futures = "0.4.42"
 # Gloo wrappers for web APIs (Timer, HTTP requests)
 gloo-net = "0.5.0"
 gloo-timers = "0.3.0"
+
+stylist = "0.15.1"
 
 # Web-sys features for DOM manipulation and input field interaction
 web-sys = { version = "0.3.69", features = [

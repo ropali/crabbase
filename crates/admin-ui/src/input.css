@@ -2,25 +2,780 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom Scrollbars */
-::-webkit-scrollbar {
+/**
+ * ============================================================================
+ * CRABBASE ADMIN - MAIN PAGE COLOR CSS & DESIGN TOKENS
+ * Complete color system extracted from the original theme.
+ * Includes: color palette, surface colors, state colors, typography,
+ * spacing, border radius, and custom component styles.
+ * ============================================================================
+ */
+
+/* ============================================
+   1. CSS CUSTOM PROPERTIES (ROOT VARIABLES)
+   ============================================ */
+:root {
+    /* Primary Colors */
+    --primary: #ab2815;
+    --primary-container: #ce412b;
+    --primary-fixed: #ffdad4;
+    --primary-fixed-dim: #ffb4a6;
+    --on-primary: #ffffff;
+    --on-primary-container: #fff8f7;
+    --on-primary-fixed: #3f0300;
+    --on-primary-fixed-variant: #8f1202;
+
+    /* Secondary Colors */
+    --secondary: #b4281c;
+    --secondary-container: #fe5d4a;
+    --secondary-fixed: #ffdad5;
+    --secondary-fixed-dim: #ffb4a8;
+    --on-secondary: #ffffff;
+    --on-secondary-container: #610001;
+    --on-secondary-fixed: #410000;
+    --on-secondary-fixed-variant: #910906;
+
+    /* Tertiary Colors */
+    --tertiary: #595a5f;
+    --tertiary-container: #717377;
+    --tertiary-fixed: #e2e2e7;
+    --tertiary-fixed-dim: #c6c6cb;
+    --on-tertiary: #ffffff;
+    --on-tertiary-container: #faf9ff;
+    --on-tertiary-fixed: #1a1c1f;
+    --on-tertiary-fixed-variant: #45474b;
+
+    /* Error Colors */
+    --error: #ba1a1a;
+    --error-container: #ffdad6;
+    --on-error: #ffffff;
+    --on-error-container: #93000a;
+
+    /* Surface Colors (Light Theme - Default) */
+    --background: #fff8f6;
+    --surface: #fff8f6;
+    --surface-bright: #fff8f6;
+    --surface-dim: #eed4d0;
+    --surface-container: #ffe9e5;
+    --surface-container-low: #fff0ee;
+    --surface-container-lowest: #ffffff;
+    --surface-container-high: #fde2dd;
+    --surface-container-highest: #f7ddd8;
+    --surface-variant: #f7ddd8;
+    --surface-tint: #b12c19;
+
+    /* On-Surface Colors */
+    --on-surface: #261816;
+    --on-surface-variant: #5a413c;
+
+    /* Inverse Surface (for dark mode) */
+    --inverse-surface: #3c2d2a;
+    --inverse-on-surface: #ffede9;
+    --inverse-primary: #ffb4a6;
+
+    /* Outline Colors */
+    --outline: #8e706b;
+    --outline-variant: #e2bfb8;
+
+    /* Typography */
+    --font-family-body: "Inter", sans-serif;
+    --font-family-headline: "Hanken Grotesk", sans-serif;
+    --font-family-code: "JetBrains Mono", monospace;
+
+    /* Font Sizes */
+    --text-body-md: 14px;
+    --text-body-sm: 13px;
+    --text-label-xs: 11px;
+    --text-headline-lg: 28px;
+    --text-headline-md: 20px;
+    --text-code-md: 13px;
+
+    /* Line Heights */
+    --line-height-body-md: 20px;
+    --line-height-body-sm: 18px;
+    --line-height-label-xs: 16px;
+    --line-height-headline-lg: 36px;
+    --line-height-headline-md: 28px;
+    --line-height-code-md: 18px;
+
+    /* Spacing */
+    --spacing-gutter: 1rem;
+    --spacing-cell-padding-h: 12px;
+    --spacing-cell-padding-v: 10px;
+    --spacing-margin-page: 1.5rem;
+    --spacing-drawer-width: 480px;
+    --spacing-sidebar-width: 240px;
+
+    /* Border Radius */
+    --radius-default: 0.125rem;
+    --radius-lg: 0.25rem;
+    --radius-xl: 0.5rem;
+    --radius-full: 0.75rem;
+}
+
+/* ============================================
+   2. DARK MODE COLORS (when .dark class is applied)
+   ============================================ */
+.dark {
+    /* Surface Colors (Dark Theme) */
+    --background: #1a1a1a;
+    --surface: #2c2c2c;
+    --surface-dim: #1e1e1e;
+    --surface-container: #2a2a2a;
+    --surface-container-low: #242424;
+    --surface-container-lowest: #121212;
+    --surface-container-high: #323232;
+    --surface-container-highest: #3a3a3a;
+
+    /* On-Surface Colors (Dark) */
+    --on-surface: #e0e0e0;
+    --on-surface-variant: #b0b0b0;
+
+    /* Adjust primary for dark mode */
+    --primary: #ffb4a6;
+    --primary-container: #8a2a1a;
+    --on-primary: #261816;
+
+    /* Adjust secondary for dark mode */
+    --secondary: #ffb4a8;
+    --secondary-container: #6b1a10;
+    --on-secondary: #261816;
+}
+
+/* ============================================
+   3. BASE BODY STYLES
+   ============================================ */
+body {
+    background-color: var(--background);
+    color: var(--on-surface);
+    font-family: var(--font-family-body);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================
+   4. TYPOGRAPHY CLASSES
+   ============================================ */
+/* Body Text */
+.text-body-md {
+    font-size: var(--text-body-md);
+    line-height: var(--line-height-body-md);
+    font-weight: 400;
+    font-family: var(--font-family-body);
+}
+
+.text-body-sm {
+    font-size: var(--text-body-sm);
+    line-height: var(--line-height-body-sm);
+    font-weight: 400;
+    font-family: var(--font-family-body);
+}
+
+/* Label Text */
+.text-label-xs {
+    font-size: var(--text-label-xs);
+    line-height: var(--line-height-label-xs);
+    font-weight: 600;
+    font-family: var(--font-family-body);
+    letter-spacing: 0.5px;
+}
+
+/* Headline Text */
+.text-headline-lg {
+    font-size: var(--text-headline-lg);
+    line-height: var(--line-height-headline-lg);
+    font-weight: 700;
+    font-family: var(--font-family-headline);
+}
+
+.text-headline-md {
+    font-size: var(--text-headline-md);
+    line-height: var(--line-height-headline-md);
+    font-weight: 600;
+    font-family: var(--font-family-headline);
+}
+
+/* Code Text */
+.text-code-md {
+    font-size: var(--text-code-md);
+    line-height: var(--line-height-code-md);
+    font-weight: 500;
+    font-family: var(--font-family-code);
+    letter-spacing: -0.01em;
+}
+
+/* ============================================
+   5. BACKGROUND & SURFACE UTILITIES
+   ============================================ */
+.bg-background {
+    background-color: var(--background);
+}
+.bg-surface {
+    background-color: var(--surface);
+}
+.bg-surface-bright {
+    background-color: var(--surface-bright);
+}
+.bg-surface-dim {
+    background-color: var(--surface-dim);
+}
+.bg-surface-container {
+    background-color: var(--surface-container);
+}
+.bg-surface-container-low {
+    background-color: var(--surface-container-low);
+}
+.bg-surface-container-lowest {
+    background-color: var(--surface-container-lowest);
+}
+.bg-surface-container-high {
+    background-color: var(--surface-container-high);
+}
+.bg-surface-container-highest {
+    background-color: var(--surface-container-highest);
+}
+.bg-surface-variant {
+    background-color: var(--surface-variant);
+}
+
+/* Primary Backgrounds */
+.bg-primary {
+    background-color: var(--primary);
+}
+.bg-primary-container {
+    background-color: var(--primary-container);
+}
+.bg-primary-fixed {
+    background-color: var(--primary-fixed);
+}
+.bg-primary-fixed-dim {
+    background-color: var(--primary-fixed-dim);
+}
+
+/* Secondary Backgrounds */
+.bg-secondary {
+    background-color: var(--secondary);
+}
+.bg-secondary-container {
+    background-color: var(--secondary-container);
+}
+.bg-secondary-fixed {
+    background-color: var(--secondary-fixed);
+}
+.bg-secondary-fixed-dim {
+    background-color: var(--secondary-fixed-dim);
+}
+
+/* Tertiary Backgrounds */
+.bg-tertiary {
+    background-color: var(--tertiary);
+}
+.bg-tertiary-container {
+    background-color: var(--tertiary-container);
+}
+.bg-tertiary-fixed {
+    background-color: var(--tertiary-fixed);
+}
+.bg-tertiary-fixed-dim {
+    background-color: var(--tertiary-fixed-dim);
+}
+
+/* Error Backgrounds */
+.bg-error {
+    background-color: var(--error);
+}
+.bg-error-container {
+    background-color: var(--error-container);
+}
+
+/* ============================================
+   6. TEXT COLOR UTILITIES
+   ============================================ */
+.text-on-surface {
+    color: var(--on-surface);
+}
+.text-on-surface-variant {
+    color: var(--on-surface-variant);
+}
+.text-on-primary {
+    color: var(--on-primary);
+}
+.text-on-primary-container {
+    color: var(--on-primary-container);
+}
+.text-on-primary-fixed {
+    color: var(--on-primary-fixed);
+}
+.text-on-primary-fixed-variant {
+    color: var(--on-primary-fixed-variant);
+}
+.text-on-secondary {
+    color: var(--on-secondary);
+}
+.text-on-secondary-container {
+    color: var(--on-secondary-container);
+}
+.text-on-secondary-fixed {
+    color: var(--on-secondary-fixed);
+}
+.text-on-secondary-fixed-variant {
+    color: var(--on-secondary-fixed-variant);
+}
+.text-on-tertiary {
+    color: var(--on-tertiary);
+}
+.text-on-tertiary-container {
+    color: var(--on-tertiary-container);
+}
+.text-on-error {
+    color: var(--on-error);
+}
+.text-on-error-container {
+    color: var(--on-error-container);
+}
+
+/* Outline Colors */
+.text-outline {
+    color: var(--outline);
+}
+.border-outline {
+    border-color: var(--outline);
+}
+.text-outline-variant {
+    color: var(--outline-variant);
+}
+.border-outline-variant {
+    border-color: var(--outline-variant);
+}
+
+/* Inverse Colors */
+.bg-inverse-surface {
+    background-color: var(--inverse-surface);
+}
+.text-inverse-on-surface {
+    color: var(--inverse-on-surface);
+}
+.text-inverse-primary {
+    color: var(--inverse-primary);
+}
+
+/* ============================================
+   7. BORDER RADIUS UTILITIES
+   ============================================ */
+.rounded-default {
+    border-radius: var(--radius-default);
+}
+.rounded-lg {
+    border-radius: var(--radius-lg);
+}
+.rounded-xl {
+    border-radius: var(--radius-xl);
+}
+.rounded-full {
+    border-radius: var(--radius-full);
+}
+
+/* ============================================
+   8. SPACING UTILITIES
+   ============================================ */
+.p-gutter {
+    padding: var(--spacing-gutter);
+}
+.px-gutter {
+    padding-left: var(--spacing-gutter);
+    padding-right: var(--spacing-gutter);
+}
+.py-gutter {
+    padding-top: var(--spacing-gutter);
+    padding-bottom: var(--spacing-gutter);
+}
+
+.m-gutter {
+    margin: var(--spacing-gutter);
+}
+.mx-gutter {
+    margin-left: var(--spacing-gutter);
+    margin-right: var(--spacing-gutter);
+}
+.my-gutter {
+    margin-top: var(--spacing-gutter);
+    margin-bottom: var(--spacing-gutter);
+}
+
+/* Cell padding for tables */
+.p-cell {
+    padding: var(--spacing-cell-padding-v) var(--spacing-cell-padding-h);
+}
+.px-cell {
+    padding-left: var(--spacing-cell-padding-h);
+    padding-right: var(--spacing-cell-padding-h);
+}
+.py-cell {
+    padding-top: var(--spacing-cell-padding-v);
+    padding-bottom: var(--spacing-cell-padding-v);
+}
+
+/* ============================================
+   9. CUSTOM SCROLLBAR STYLES
+   ============================================ */
+.custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
 }
-::-webkit-scrollbar-track {
-    background: #111827;
-}
-::-webkit-scrollbar-thumb {
-    background: #374151;
-    border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: #4b5563;
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
 }
 
-/* Glassmorphism panel styling */
-.glass-panel {
-    background: rgba(31, 41, 55, 0.45);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(75, 85, 99, 0.2);
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--outline-variant);
+    border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--outline);
+}
+
+/* ============================================
+   10. TABLE STICKY HEADER
+   ============================================ */
+.table-sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--surface-container-high);
+    backdrop-filter: blur(8px);
+}
+
+/* ============================================
+   11. MATERIAL ICONS STYLING
+   ============================================ */
+.material-symbols-outlined {
+    font-variation-settings:
+        "FILL" 0,
+        "wght" 400,
+        "GRAD" 0,
+        "opsz" 24;
+    vertical-align: middle;
+    display: inline-block;
+    line-height: 1;
+}
+
+/* Icon fill variation utility */
+.icon-filled {
+    font-variation-settings:
+        "FILL" 1,
+        "wght" 400,
+        "GRAD" 0,
+        "opsz" 24;
+}
+
+/* ============================================
+   12. INTERACTIVE STATES & TRANSITIONS
+   ============================================ */
+/* Hover effects */
+.hover-bg-surface-container-high:hover {
+    background-color: var(--surface-container-high);
+    transition: background-color 0.2s ease;
+}
+
+.hover-text-primary:hover {
+    color: var(--primary);
+    transition: color 0.2s ease;
+}
+
+.hover-border-primary:hover {
+    border-color: var(--primary);
+    transition: border-color 0.2s ease;
+}
+
+/* Active scale effect for buttons */
+.active-scale:active {
+    transform: scale(0.95);
+    transition: transform 0.1s ease;
+}
+
+/* Focus ring styles */
+.focus-ring-secondary:focus {
+    ring: 2px solid var(--secondary);
+    ring-offset: 2px;
+}
+
+/* ============================================
+   13. SIDEBAR SPECIFIC STYLES
+   ============================================ */
+.sidebar-nav-link {
+    transition: all 0.2s ease;
+    border-radius: var(--radius-lg);
+}
+
+.sidebar-nav-link.active {
+    background-color: var(--secondary-container);
+    color: var(--on-secondary-container);
+    font-weight: 700;
+    transform: translateX(4px);
+}
+
+.sidebar-nav-link:not(.active):hover {
+    background-color: var(--surface-container-high);
+    color: var(--primary);
+}
+
+/* ============================================
+   14. TOP APP BAR STYLES
+   ============================================ */
+.topbar-nav-link {
+    transition: all 0.2s ease;
+    padding-bottom: 0.25rem;
+}
+
+.topbar-nav-link.active {
+    font-weight: 700;
+    border-bottom-width: 2px;
+    border-bottom-color: var(--on-primary);
+    color: var(--on-primary);
+}
+
+.topbar-nav-link:not(.active):hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================
+   15. FOOTER STYLES
+   ============================================ */
+.footer-link {
+    transition: all 0.2s ease;
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+.footer-link:hover {
+    color: var(--primary);
+}
+
+/* ============================================
+   16. TABLE & DATA GRID STYLES
+   ============================================ */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    text-align: left;
+    padding: var(--spacing-cell-padding-v) var(--spacing-cell-padding-h);
+    font-size: var(--text-label-xs);
+    line-height: var(--line-height-label-xs);
+    font-weight: 600;
+    color: var(--on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.data-table td {
+    padding: var(--spacing-cell-padding-v) var(--spacing-cell-padding-h);
+    font-size: var(--text-body-sm);
+    line-height: var(--line-height-body-sm);
+    border-top: 1px solid var(--outline-variant);
+}
+
+.data-table tr:hover {
+    background-color: var(--surface-container-low);
+    transition: background-color 0.2s ease;
+}
+
+/* ============================================
+   17. FORM ELEMENT STYLES
+   ============================================ */
+.input-base {
+    width: 100%;
+    background-color: var(--surface-container-lowest);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-lg);
+    padding: 0.375rem 0.75rem;
+    font-size: var(--text-body-sm);
+    font-family: var(--font-family-body);
+    transition: all 0.2s ease;
+}
+
+.input-base:focus {
+    outline: none;
+    ring: 2px solid var(--secondary);
+    border-color: transparent;
+}
+
+/* ============================================
+   18. CARD & CONTAINER STYLES
+   ============================================ */
+.card {
+    background-color: var(--surface-container-lowest);
+    border: 1px solid var(--outline-variant);
+    border-radius: var(--radius-xl);
+    padding: 1.5rem;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.card-hover:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+    transition: box-shadow 0.2s ease;
+}
+
+/* ============================================
+   19. BUTTON STYLES
+   ============================================ */
+.btn-primary {
+    background-color: var(--primary);
+    color: var(--on-primary);
+    font-weight: 700;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-lg);
+    transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+    background-color: var(--primary-container);
+    transform: translateY(-1px);
+}
+
+.btn-primary:active {
+    transform: scale(0.98);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border: 1px solid var(--outline-variant);
+    color: var(--on-surface-variant);
+    font-weight: 700;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-lg);
+    transition: all 0.2s ease;
+}
+
+.btn-outline:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background-color: var(--surface-container-high);
+}
+
+/* ============================================
+   20. UTILITY CLASSES
+   ============================================ */
+/* Border utilities */
+.border-t {
+    border-top-width: 1px;
+}
+.border-b {
+    border-bottom-width: 1px;
+}
+.border-l {
+    border-left-width: 1px;
+}
+.border-r {
+    border-right-width: 1px;
+}
+
+/* Flex utilities */
+.flex-between {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.flex-center {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Screen reader only */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* ============================================
+   21. RESPONSIVE BREAKPOINTS
+   ============================================ */
+@media (max-width: 768px) {
+    :root {
+        --spacing-gutter: 0.75rem;
+        --text-headline-lg: 24px;
+        --line-height-headline-lg: 32px;
+    }
+
+    .hide-on-mobile {
+        display: none;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+    :root {
+        --spacing-gutter: 1rem;
+    }
+}
+
+/* ============================================
+   22. PRINT STYLES
+   ============================================ */
+@media print {
+    body {
+        background-color: white;
+        color: black;
+    }
+
+    .no-print {
+        display: none;
+    }
+}
+
+/* ============================================
+   23. ANIMATION KEYFRAMES
+   ============================================ */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+.animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

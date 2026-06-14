@@ -1,7 +1,7 @@
 pub mod components;
 pub mod models;
 
-use components::{MainPage, Sidebar, Titlebar};
+use components::{Footer, MainPage, Sidebar, Titlebar};
 use models::collection::Collection;
 use yew::prelude::*;
 
@@ -13,23 +13,16 @@ fn app() -> Html {
             Collection {
                 id: "users_col".to_string(),
                 name: "users".to_string(),
-                system: true,
-                fields: serde_json::json!({
-                    "id": "text",
-                    "email": "email",
-                    "name": "text"
-                }),
+                collection_type: "auth".to_string(),
+                records: 12,
+                modified: "2026-06-14T12:00:00Z".to_string(),
             },
             Collection {
                 id: "posts_col".to_string(),
                 name: "posts".to_string(),
-                system: false,
-                fields: serde_json::json!({
-                    "id": "text",
-                    "title": "text",
-                    "content": "text",
-                    "author_id": "relation"
-                }),
+                collection_type: "base".to_string(),
+                records: 45,
+                modified: "2026-06-14T12:30:00Z".to_string(),
             },
         ]
     });
@@ -53,16 +46,17 @@ fn app() -> Html {
         .unwrap_or_else(|| "Dashboard".to_string());
 
     html! {
-        <div class="flex h-screen bg-slate-950 font-sans select-none overflow-hidden text-slate-100">
-            <Sidebar
-                collections={(*collections).clone()}
-                selected_collection_id={(*selected_collection_id).clone()}
-                on_select={on_select}
-            />
-            <div class="flex-1 flex flex-col overflow-hidden">
-                <Titlebar title={active_title} />
+        <div class="flex flex-col h-screen overflow-hidden bg-background text-on-surface">
+            <Titlebar title={active_title} />
+            <div class="flex-grow flex flex-row overflow-hidden">
+                <Sidebar
+                    collections={(*collections).clone()}
+                    selected_collection_id={(*selected_collection_id).clone()}
+                    on_select={on_select}
+                />
                 <MainPage selected_collection={active_collection} />
             </div>
+            <Footer />
         </div>
     }
 }

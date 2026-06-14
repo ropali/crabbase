@@ -1,4 +1,10 @@
-use crate::models::collection::Collection;
+use crate::{
+    components::{
+        DataTable,
+        data_table::{DataRow, DataTableProps},
+    },
+    models::collection::Collection,
+};
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
@@ -8,27 +14,59 @@ pub struct MainPageProps {
 
 #[function_component(MainPage)]
 pub fn main_page(props: &MainPageProps) -> Html {
+    let data_table_props = DataTableProps {
+        headers: vec![
+            "ID".to_string(),
+            "Email".to_string(),
+            "Crated At".to_string(),
+            "Updated At".to_string(),
+        ],
+        data: vec![
+            DataRow {
+                value: vec![
+                    "1".to_string(),
+                    "abc@example.com".to_string(),
+                    "12/12/12".to_string(),
+                    "12/12/12".to_string(),
+                ],
+            },
+            DataRow {
+                value: vec![
+                    "2".to_string(),
+                    "abc@example.com".to_string(),
+                    "12/12/12".to_string(),
+                    "12/12/12".to_string(),
+                ],
+            },
+            DataRow {
+                value: vec![
+                    "3".to_string(),
+                    "abc@example.com".to_string(),
+                    "12/12/12".to_string(),
+                    "12/12/12".to_string(),
+                ],
+            },
+        ],
+        on_row_click: None,
+    };
     html! {
-        <div class="flex-1 bg-slate-950 p-6 overflow-y-auto">
+        <div class="flex-1 bg-[#FFFAF8] p-6 overflow-y-auto">
             {
-                if let Some(col) = &props.selected_collection {
+                if let Some(_col) = &props.selected_collection {
                     html! {
                         <div class="space-y-6">
-                            <div class="bg-slate-900 border border-slate-800 rounded-lg p-6">
-                                <h2 class="text-xl font-bold text-slate-100 mb-2">{ &col.name }</h2>
-                                <p class="text-sm text-slate-400">{"Collection ID: "} { &col.id }</p>
-                                <div class="mt-4">
-                                    <h3 class="text-sm font-semibold text-slate-300 mb-2">{"Fields Configuration"}</h3>
-                                    <pre class="bg-slate-950 p-4 rounded border border-slate-800 text-xs text-slate-300 overflow-x-auto">
-                                        { serde_json::to_string_pretty(&col.fields).unwrap_or_default() }
-                                    </pre>
-                                </div>
+                            <div class="bg-surface-container-lowest border border-outline-variant rounded-lg p-6 shadow-sm">
+                                <DataTable
+                                    headers={data_table_props.headers.clone()}
+                                    data={data_table_props.data.clone()}
+
+                                />
                             </div>
                         </div>
                     }
                 } else {
                     html! {
-                        <div class="flex flex-col items-center justify-center h-full text-slate-500">
+                        <div class="flex flex-col items-center justify-center h-full text-on-surface-variant opacity-60">
                             <p class="text-lg">{"Select a collection from the sidebar to view details"}</p>
                         </div>
                     }
