@@ -1,16 +1,10 @@
+use std::rc::Rc;
+
 use yew::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataRow {
     pub value: Vec<String>,
-}
-
-#[derive(Debug, Clone, Properties, PartialEq)]
-pub struct DataTableProps {
-    pub headers: Vec<String>,
-    pub data: Vec<DataRow>,
-    #[prop_or_default]
-    pub on_row_click: Option<Callback<String>>,
 }
 
 #[derive(Properties, PartialEq)]
@@ -27,58 +21,126 @@ pub struct HeaderProps {
     pub on_create: Callback<()>,
 }
 
+#[derive(Clone)]
+pub struct ColumnDef<T> {
+    pub key: String,
+    pub header: String,
+    pub sortable: bool,
+    pub icon: Option<&'static str>,
+    pub render: Rc<dyn Fn(&T) -> Html>,
+}
+
+#[derive(Properties)]
+pub struct DataTableProps<T: PartialEq + Clone + 'static> {
+    pub columns: Vec<ColumnDef<T>>,
+    pub data: Vec<T>,
+    #[prop_or_default]
+    pub selectable: bool,
+    #[prop_or_default]
+    pub on_row_click: Option<Callback<T>>,
+    #[prop_or_default]
+    pub on_sort: Option<Callback<String>>,
+}
+
+impl<T: PartialEq + Clone + 'static> PartialEq for DataTableProps<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+            && self.selectable == other.selectable
+            && self.columns.len() == other.columns.len()
+    }
+}
+
+impl<T: 'static> ColumnDef<T> {
+    pub fn new(key: &str, header: &str, render: impl Fn(&T) -> Html + 'static) -> Self {
+        Self {
+            key: key.to_string(),
+            header: header.to_string(),
+            sortable: false,
+            icon: None,
+            render: Rc::new(render),
+        }
+    }
+
+    pub fn sortable(mut self, sortable: bool) -> Self {
+        self.sortable = sortable;
+        self
+    }
+
+    pub fn icon(mut self, icon: &'static str) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+}
+
 #[function_component(DataTable)]
-pub fn data_table(props: &DataTableProps) -> Html {
+pub fn data_table<T: PartialEq + Clone + 'static>(props: &DataTableProps<T>) -> Html {
+    let on_row_click = props.on_row_click.clone();
+
     html! {
-        <div class="bg-surface-container-lowest border border-outline-variant rounded-2xl shadow-sm overflow-hidden">
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-surface-container-low border-b border-outline-variant">
-                            {
-                                props.headers.iter().map(|header| {
-                                    html! {
-                                        <th class="px-8 py-5 text-[11px] font-bold text-on-surface-variant uppercase tracking-[0.1em]">
-                                            <div class="flex items-center gap-2">
-                                                {header}
-                                            </div>
-                                        </th>
-                                    }
-                                }).collect::<Html>()
-                            }
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-outline-variant/30">
-                        {
-                            props.data.iter().map(|row| {
-                                let id = row.value.first().cloned().unwrap_or_default();
-
-                                let on_click = {
-                                    let on_row_click = props.on_row_click.clone();
-                                    let id = id.clone();
-                                    Callback::from(move |_| {
-                                        if let Some(ref cb) = on_row_click {
-                                            cb.emit(id.clone());
-                                        }
-                                    })
-                                };
-
-                                html! {
-                                    <tr class="hover:bg-surface-container-high/20 transition-all group cursor-pointer" onclick={on_click}>
-                                        {
-                                            row.value.iter().map(|cell_val| {
-                                                html! {
-                                                    <td class="px-8 py-6 text-on-surface font-medium">{cell_val}</td>
-                                                }
-                                            }).collect::<Html>()
-                                        }
-                                    </tr>
-                                }
-                            }).collect::<Html>()
+        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+            <table class="w-full text-left border-collapse">
+                <thead class="table-sticky-header bg-surface-container-high/30 backdrop-blur-md">
+                    <tr class="border-b border-outline-variant">
+                        if props.selectable {
+                            <th class="w-10 px-cell_padding_h py-cell_padding_v">
+                                <input type="checkbox" class="rounded border-outline-variant text-secondary focus:ring-secondary" />
+                            </th>
                         }
-                    </tbody>
-                </table>
-            </div>
+                        { for props.columns.iter().map(|col| {
+                            let on_sort = props.on_sort.clone();
+                            let key = col.key.clone();
+                            let onclick = if col.sortable {
+                                on_sort.map(|cb| Callback::from(move |_| cb.emit(key.clone())))
+                            } else {
+                                None
+                            };
+                            html! {
+                                <th
+                                    class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider cursor-pointer"
+                                    onclick={onclick}
+                                >
+                                    <div class="flex items-center gap-2">
+                                        if let Some(icon) = col.icon {
+                                            <span class="material-symbols-outlined text-sm">{ icon }</span>
+                                        }
+                                        { &col.header }
+                                    </div>
+                                </th>
+                            }
+                        }) }
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-outline-variant">
+                    { for props.data.iter().map(|row| {
+                        let row_clone = row.clone();
+                        let onclick = on_row_click.clone().map(|cb| {
+                            Callback::from(move |_| cb.emit(row_clone.clone()))
+                        });
+
+                        html! {
+                            <tr class="hover:bg-surface-container-low transition-colors group relative" onclick={onclick}>
+                                if props.selectable {
+                                    <td class="px-cell_padding_h py-cell_padding_v">
+                                        <div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        <input
+                                            type="checkbox"
+                                            class="rounded border-outline-variant text-secondary focus:ring-secondary"
+                                            onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}
+                                        />
+                                    </td>
+                                }
+                                { for props.columns.iter().map(|col| {
+                                    html! {
+                                        <td class="px-cell_padding_h py-cell_padding_v">
+                                            { (col.render)(row) }
+                                        </td>
+                                    }
+                                }) }
+                            </tr>
+                        }
+                    }) }
+                </tbody>
+            </table>
         </div>
     }
 }
