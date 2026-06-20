@@ -105,7 +105,8 @@ impl CollectionRepository {
 
         Ok(Collection {
             id: col_id,
-            name: collection.name,
+            name: collection.name.clone(),
+            system: collection.name.starts_with("_"),
             fields: collection.columns.clone(),
             indexes: collection
                 .columns

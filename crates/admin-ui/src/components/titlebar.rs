@@ -16,8 +16,6 @@ pub fn titlebar(props: &TitlebarProps) -> Html {
                 <div class="font-headline-md text-headline-md font-bold text-on-primary dark:text-on-primary-container tracking-tight">
                   {"CRABBASE"}
                 </div>
-                <span class="text-on-primary/50 text-xs">{"/"}</span>
-                <span class="text-on-primary/90 text-sm font-medium">{ &props.title }</span>
               </div>
 
               /* Desktop navigation links */

@@ -91,28 +91,47 @@ pub struct CollectionOptions {
     pub auth_token: Option<OptionalData>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Collection {
     pub id: String,
     pub name: String,
-
-    #[sqlx(json)]
+    pub system: bool,
     pub fields: Vec<Column>,
-
-    #[sqlx(json)]
     pub indexes: Vec<Column>,
-
     // Rules
     pub list_rule: Option<String>,
     pub view_rule: Option<String>,
     pub create_rule: Option<String>,
     pub update_rule: Option<String>,
     pub delete_rule: Option<String>,
-
-    #[sqlx(json)]
     pub options: CollectionOptions,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
+}
+
+impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for Collection {
+    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
+        let system_int: i32 = row.try_get("system")?;
+        let fields: sqlx::types::Json<Vec<Column>> = row.try_get("fields")?;
+        let indexes: sqlx::types::Json<Vec<Column>> = row.try_get("indexes")?;
+        let options: sqlx::types::Json<CollectionOptions> = row.try_get("options")?;
+
+        Ok(Collection {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            system: system_int != 0,
+            fields: fields.0,
+            indexes: indexes.0,
+            list_rule: row.try_get("list_rule")?,
+            view_rule: row.try_get("view_rule")?,
+            create_rule: row.try_get("create_rule")?,
+            update_rule: row.try_get("update_rule")?,
+            delete_rule: row.try_get("delete_rule")?,
+            options: options.0,
+            created: row.try_get("created")?,
+            updated: row.try_get("updated")?,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
