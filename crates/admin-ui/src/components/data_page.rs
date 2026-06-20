@@ -1,7 +1,7 @@
 use yew::prelude::*;
 
 use crate::components::{DataTable, PageHeader, data_table::ColumnDef};
-use crate::models::collection::Collection;
+use crate::models::collection::Collection as CollectionModel;
 
 #[derive(Clone, PartialEq)]
 struct UserRecord {
@@ -16,8 +16,8 @@ struct UserRecord {
 }
 
 #[derive(Properties, PartialEq)]
-pub struct MainPageProps {
-    pub selected_collection: Option<Collection>,
+pub struct DataPageProps {
+    pub selected_collection: Option<CollectionModel>,
 }
 
 fn badge(text: &str, true_style: bool) -> Html {
@@ -36,8 +36,8 @@ fn badge(text: &str, true_style: bool) -> Html {
     }
 }
 
-#[function_component(MainPage)]
-pub fn main_page(props: &MainPageProps) -> Html {
+#[function_component(DataPage)]
+pub fn data_page(props: &DataPageProps) -> Html {
     let records = use_state(|| {
         vec![
             UserRecord {
