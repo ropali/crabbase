@@ -1,6 +1,7 @@
-use std::collections::BTreeMap;
-use std::rc::Rc;
 use yew::prelude::*;
+
+use super::column::ColumnDef;
+use super::row::DynamicRow;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataRow {
@@ -22,83 +23,19 @@ pub struct HeaderProps {
 }
 
 #[derive(Properties, PartialEq, Clone)]
-pub struct DataTableProps<T: PartialEq + Clone + 'static> {
-    pub columns: Vec<ColumnDef<T>>,
-    pub data: Vec<T>,
+pub struct DataTableProps {
+    pub columns: Vec<ColumnDef>,
+    pub data: Vec<DynamicRow>,
     #[prop_or_default]
     pub selectable: bool,
     #[prop_or_default]
-    pub on_row_click: Option<Callback<T>>,
+    pub on_row_click: Option<Callback<DynamicRow>>,
     #[prop_or_default]
     pub on_sort: Option<Callback<String>>,
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum CellValue {
-    Text(String),
-    Number(f64),
-    Bool(bool),
-    Null,
-}
-
-impl CellValue {
-    pub fn as_str(&self) -> String {
-        match self {
-            CellValue::Text(s) => s.clone(),
-            CellValue::Number(n) => n.to_string(),
-            CellValue::Bool(b) => b.to_string(),
-            CellValue::Null => "N/A".to_string(),
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct DynamicRow {
-    pub values: BTreeMap<String, CellValue>,
-}
-
-#[derive(Clone)]
-pub struct ColumnDef<T> {
-    pub key: String,
-    pub header: String,
-    pub icon: Option<&'static str>,
-    pub sortable: bool,
-    pub render: Rc<dyn Fn(&T) -> Html>,
-}
-
-impl<T> PartialEq for ColumnDef<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.key == other.key
-            && self.header == other.header
-            && self.icon == other.icon
-            && self.sortable == other.sortable
-    }
-}
-
-impl<T> ColumnDef<T> {
-    pub fn new(key: &str, header: &str, render: impl Fn(&T) -> Html + 'static) -> Self {
-        Self {
-            key: key.to_string(),
-            header: header.to_string(),
-            icon: None,
-            render: Rc::new(render),
-            sortable: false,
-        }
-    }
-
-    pub fn icon(mut self, icon: &'static str) -> Self {
-        self.icon = Some(icon);
-        self
-    }
-
-    pub fn sortable(mut self, sortable: bool) -> Self {
-        self.sortable = sortable;
-        self
-    }
-}
-
 #[function_component(DataTable)]
-pub fn data_table<T: PartialEq + Clone + 'static>(props: &DataTableProps<T>) -> Html {
+pub fn data_table(props: &DataTableProps) -> Html {
     let on_row_click = props.on_row_click.clone();
 
     html! {
@@ -155,9 +92,10 @@ pub fn data_table<T: PartialEq + Clone + 'static>(props: &DataTableProps<T>) -> 
                                     </td>
                                 }
                                 { for props.columns.iter().map(|col| {
+                                    let cell_val = row.get(&col.key);
                                     html! {
                                         <td class="px-cell_padding_h py-cell_padding_v">
-                                            { (col.render)(row) }
+                                            { (col.render)(cell_val) }
                                         </td>
                                     }
                                 }) }

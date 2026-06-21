@@ -3,29 +3,13 @@ use yew::prelude::*;
 use crate::api::client::ApiClient;
 use crate::components::{
     DataTable, PageHeader,
-    data_table::{CellValue, ColumnDef, DynamicRow},
+    data_table::{CellValue, DynamicRow, schema::columns_from_schema},
 };
 use crate::models::collection::{Collection as CollectionModel, Record};
 
 #[derive(Properties, PartialEq)]
 pub struct DataPageProps {
     pub selected_collection: Option<CollectionModel>,
-}
-
-fn badge(text: &str, true_style: bool) -> Html {
-    if true_style {
-        html! {
-            <span class="bg-[#e6f4ea] text-[#1e7e34] px-2 py-0.5 rounded font-label-xs text-label-xs">
-                { text }
-            </span>
-        }
-    } else {
-        html! {
-            <span class="bg-surface-container-highest text-on-surface-variant px-2 py-0.5 rounded font-label-xs text-label-xs">
-                { text }
-            </span>
-        }
-    }
 }
 
 fn record_to_dynamic_row(r: Record, col: &CollectionModel) -> DynamicRow {
@@ -72,6 +56,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
             if let Some(col_name) = current_col_name {
                 let col_name = col_name.clone();
                 let selected_col = selected_col.clone();
+
                 wasm_bindgen_futures::spawn_local(async move {
                     let client = ApiClient::new("/api".to_string(), None);
                     match client.get_records(&col_name).await {
@@ -106,75 +91,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
     let on_create = Callback::from(|_| {});
 
     let columns = if let Some(col) = &props.selected_collection {
-        let mut cols = Vec::new();
-
-        // Add "id" column first
-        cols.push(
-            ColumnDef::new("id", "id", |r: &DynamicRow| {
-                let val = r.values.get("id").map(|v| v.as_str()).unwrap_or_default();
-                html! {
-                    <span class="font-code-md text-code-md bg-surface-container-high/50 px-2 py-0.5 rounded border border-outline-variant/30 text-on-surface">
-                        { val }
-                    </span>
-                }
-            }).icon("key").sortable(true)
-        );
-
-        // Add dynamically each field of the collection
-        for field in &col.fields {
-            let key = field.name.clone();
-            let key_clone = key.clone();
-            let header = field.name.clone();
-
-            // Choose icon depending on data type
-            let icon = match field.data_type.as_str() {
-                "Email" => Some("mail"),
-                "Bool" => Some("check_box"),
-                "Number" => Some("tag"),
-                "Relation" => Some("link"),
-                "Datetime" | "AutoDatetime" => Some("schedule"),
-                _ => Some("notes"),
-            };
-
-            let mut col_def = ColumnDef::new(&key, &header, move |r: &DynamicRow| {
-                if let Some(cell_val) = r.values.get(&key_clone) {
-                    match cell_val {
-                        CellValue::Bool(b) => badge(if *b { "True" } else { "False" }, *b),
-                        CellValue::Null => {
-                            html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> }
-                        }
-                        _ => {
-                            html! { <span class="font-body-sm text-body-sm">{ cell_val.as_str() }</span> }
-                        }
-                    }
-                } else {
-                    html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> }
-                }
-            });
-
-            if let Some(ic) = icon {
-                col_def = col_def.icon(ic);
-            }
-            cols.push(col_def);
-        }
-
-        // Add "created" column
-        cols.push(
-            ColumnDef::new("created", "created", |r: &DynamicRow| {
-                let val = r.values.get("created").map(|v| v.as_str()).unwrap_or_default();
-                html! { <span class="font-label-xs text-label-xs text-on-surface-variant">{ val }</span> }
-            }).icon("schedule").sortable(true)
-        );
-
-        // Add "updated" column
-        cols.push(
-            ColumnDef::new("updated", "updated", |r: &DynamicRow| {
-                let val = r.values.get("updated").map(|v| v.as_str()).unwrap_or_default();
-                html! { <span class="font-label-xs text-label-xs text-on-surface-variant">{ val }</span> }
-            }).icon("update").sortable(true)
-        );
-
-        cols
+        columns_from_schema(col)
     } else {
         Vec::new()
     };
@@ -191,7 +108,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
                                 on_create={on_create}
                             />
                             <div class="flex-1 overflow-auto px-6 pb-6 custom-scrollbar">
-                                <DataTable<DynamicRow>
+                                <DataTable
                                     columns={columns}
                                     data={(*records).clone()}
                                     selectable={true}
