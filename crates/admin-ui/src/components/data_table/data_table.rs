@@ -32,78 +32,169 @@ pub struct DataTableProps {
     pub on_row_click: Option<Callback<DynamicRow>>,
     #[prop_or_default]
     pub on_sort: Option<Callback<String>>,
+
+    // Optional pagination props
+    #[prop_or_default]
+    pub current_page: Option<usize>,
+    #[prop_or_default]
+    pub total_items: Option<usize>,
+    #[prop_or_default]
+    pub items_per_page: Option<usize>,
+    #[prop_or_default]
+    pub on_page_change: Option<Callback<usize>>,
 }
 
 #[function_component(DataTable)]
 pub fn data_table(props: &DataTableProps) -> Html {
     let on_row_click = props.on_row_click.clone();
 
+    let pagination_footer = if let (
+        Some(current_page),
+        Some(total_items),
+        Some(items_per_page),
+        Some(on_page_change),
+    ) = (
+        props.current_page,
+        props.total_items,
+        props.items_per_page,
+        &props.on_page_change,
+    ) {
+        let total_pages = (total_items + items_per_page - 1) / items_per_page;
+        let start_item = if total_items == 0 {
+            0
+        } else {
+            (current_page - 1) * items_per_page + 1
+        };
+        let end_item = std::cmp::min(current_page * items_per_page, total_items);
+
+        let on_prev = {
+            let on_page_change = on_page_change.clone();
+            Callback::from(move |_| {
+                if current_page > 1 {
+                    on_page_change.emit(current_page - 1);
+                }
+            })
+        };
+
+        let on_next = {
+            let on_page_change = on_page_change.clone();
+            Callback::from(move |_| {
+                if current_page < total_pages {
+                    on_page_change.emit(current_page + 1);
+                }
+            })
+        };
+
+        let is_prev_disabled = current_page <= 1;
+        let is_next_disabled = current_page >= total_pages || total_pages == 0;
+
+        let prev_class = if is_prev_disabled {
+            "text-on-surface-variant/40 cursor-not-allowed bg-surface-container-high/30 px-3 py-1.5 rounded-lg border border-outline-variant flex items-center gap-1 font-label-xs text-label-xs"
+        } else {
+            "text-on-surface hover:bg-surface-container-high active:scale-95 transition-all bg-surface-container-lowest px-3 py-1.5 rounded-lg border border-outline-variant flex items-center gap-1 font-label-xs text-label-xs"
+        };
+
+        let next_class = if is_next_disabled {
+            "text-on-surface-variant/40 cursor-not-allowed bg-surface-container-high/30 px-3 py-1.5 rounded-lg border border-outline-variant flex items-center gap-1 font-label-xs text-label-xs"
+        } else {
+            "text-on-surface hover:bg-surface-container-high active:scale-95 transition-all bg-surface-container-lowest px-3 py-1.5 rounded-lg border border-outline-variant flex items-center gap-1 font-label-xs text-label-xs"
+        };
+
+        html! {
+            <div class="px-6 py-4 flex items-center justify-between border-t border-outline-variant bg-surface-container-low/20">
+                <div class="text-body-sm font-body-sm text-on-surface-variant">
+                    { format!("Showing {}-{} of {} records", start_item, end_item, total_items) }
+                </div>
+                <div class="flex items-center gap-4">
+                    <span class="text-body-sm font-body-sm text-on-surface-variant">
+                        { format!("Page {} of {}", current_page, if total_pages == 0 { 1 } else { total_pages }) }
+                    </span>
+                    <div class="flex gap-2">
+                        <button onclick={on_prev} disabled={is_prev_disabled} class={prev_class}>
+                            <span class="material-symbols-outlined text-sm">{"chevron_left"}</span>
+                            {"Prev"}
+                        </button>
+                        <button onclick={on_next} disabled={is_next_disabled} class={next_class}>
+                            {"Next"}
+                            <span class="material-symbols-outlined text-sm">{"chevron_right"}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    } else {
+        html! {}
+    };
+
     html! {
-        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
-            <table class="w-full text-left border-collapse">
-                <thead class="table-sticky-header bg-surface-container-high/30 backdrop-blur-md">
-                    <tr class="border-b border-outline-variant">
-                        if props.selectable {
-                            <th class="w-10 px-cell_padding_h py-cell_padding_v">
-                                <input type="checkbox" class="rounded border-outline-variant text-secondary focus:ring-secondary" />
-                            </th>
-                        }
-                        { for props.columns.iter().map(|col| {
-                            let on_sort = props.on_sort.clone();
-                            let key = col.key.clone();
-                            let onclick = if col.sortable {
-                                on_sort.map(|cb| Callback::from(move |_| cb.emit(key.clone())))
-                            } else {
-                                None
-                            };
-                            html! {
-                                <th
-                                    class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider cursor-pointer"
-                                    onclick={onclick}
-                                >
-                                    <div class="flex items-center gap-2">
-                                        if let Some(icon) = col.icon {
-                                            <span class="material-symbols-outlined text-sm">{ icon }</span>
-                                        }
-                                        { &col.header }
-                                    </div>
+        <div class="flex-1 flex flex-col min-h-0 bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
+            <div class="flex-grow overflow-y-auto custom-scrollbar">
+                <table class="w-full text-left border-collapse">
+                    <thead class="table-sticky-header bg-surface-container-high/90 backdrop-blur-md sticky top-0 z-10">
+                        <tr class="border-b border-outline-variant">
+                            if props.selectable {
+                                <th class="w-10 px-cell_padding_h py-cell_padding_v">
+                                    <input type="checkbox" class="rounded border-outline-variant text-secondary focus:ring-secondary" />
                                 </th>
                             }
-                        }) }
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-outline-variant">
-                    { for props.data.iter().map(|row| {
-                        let row_clone = row.clone();
-                        let onclick = on_row_click.clone().map(|cb| {
-                            Callback::from(move |_| cb.emit(row_clone.clone()))
-                        });
-
-                        html! {
-                            <tr class="hover:bg-surface-container-low transition-colors group relative" onclick={onclick}>
-                                if props.selectable {
-                                    <td class="px-cell_padding_h py-cell_padding_v">
-                                        <div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                        <input
-                                            type="checkbox"
-                                            class="rounded border-outline-variant text-secondary focus:ring-secondary"
-                                            onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}
-                                        />
-                                    </td>
+                            { for props.columns.iter().map(|col| {
+                                let on_sort = props.on_sort.clone();
+                                let key = col.key.clone();
+                                let onclick = if col.sortable {
+                                    on_sort.map(|cb| Callback::from(move |_| cb.emit(key.clone())))
+                                } else {
+                                    None
+                                };
+                                html! {
+                                    <th
+                                        class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider cursor-pointer"
+                                        onclick={onclick}
+                                    >
+                                        <div class="flex items-center gap-2">
+                                            if let Some(icon) = col.icon {
+                                                <span class="material-symbols-outlined text-sm">{ icon }</span>
+                                            }
+                                            { &col.header }
+                                        </div>
+                                    </th>
                                 }
-                                { for props.columns.iter().map(|col| {
-                                    let cell_val = row.get(&col.key);
-                                    html! {
+                            }) }
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-outline-variant">
+                        { for props.data.iter().map(|row| {
+                            let row_clone = row.clone();
+                            let onclick = on_row_click.clone().map(|cb| {
+                                Callback::from(move |_| cb.emit(row_clone.clone()))
+                            });
+
+                            html! {
+                                <tr class="hover:bg-surface-container-low transition-colors group relative" onclick={onclick}>
+                                    if props.selectable {
                                         <td class="px-cell_padding_h py-cell_padding_v">
-                                            { (col.render)(cell_val) }
+                                            <div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                            <input
+                                                type="checkbox"
+                                                class="rounded border-outline-variant text-secondary focus:ring-secondary"
+                                                onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}
+                                            />
                                         </td>
                                     }
-                                }) }
-                            </tr>
-                        }
-                    }) }
-                </tbody>
-            </table>
+                                    { for props.columns.iter().map(|col| {
+                                        let cell_val = row.get(&col.key);
+                                        html! {
+                                            <td class="px-cell_padding_h py-cell_padding_v">
+                                                { (col.render)(cell_val) }
+                                            </td>
+                                        }
+                                    }) }
+                                </tr>
+                            }
+                        }) }
+                    </tbody>
+                </table>
+            </div>
+            { pagination_footer }
         </div>
     }
 }

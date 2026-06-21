@@ -45,21 +45,46 @@ pub fn data_page(props: &DataPageProps) -> Html {
     let drawer_open = use_state(|| false);
     let err_state = use_state(|| None::<String>);
 
+    let current_page = use_state(|| 1usize);
+    let total_items = use_state(|| 0usize);
+    let items_per_page = use_state(|| 30usize);
+
+    // Reset current page when the collection changes
+    {
+        let current_page = current_page.clone();
+        let col_name = props
+            .selected_collection
+            .as_ref()
+            .map(|col| col.name.clone());
+        use_effect_with(col_name, move |_| {
+            current_page.set(1);
+            || ()
+        });
+    }
+
+    // Fetch records when collection or page changes
     {
         let records = records.clone();
         let err = err_state.clone();
+        let total_items = total_items.clone();
+        let items_per_page = items_per_page.clone();
         let selected_col = props.selected_collection.clone();
         let col_name = selected_col.as_ref().map(|col| col.name.clone());
+        let page_val = *current_page;
 
-        use_effect_with(col_name.clone(), move |current_col_name| {
+        use_effect_with((col_name, page_val), move |(current_col_name, page)| {
             let records = records.clone();
+            let total_items = total_items.clone();
+            let items_per_page = items_per_page.clone();
+            let err = err.clone();
+            let selected_col = selected_col.clone();
+            let page = *page;
+
             if let Some(col_name) = current_col_name {
                 let col_name = col_name.clone();
-                let selected_col = selected_col.clone();
-
                 wasm_bindgen_futures::spawn_local(async move {
                     let client = ApiClient::new("/api".to_string(), None);
-                    match client.get_records(&col_name).await {
+                    match client.get_records(&col_name, Some(page), Some(30)).await {
                         Ok(res) => {
                             if let Some(col) = selected_col {
                                 let mapped: Vec<DynamicRow> = res
@@ -68,6 +93,8 @@ pub fn data_page(props: &DataPageProps) -> Html {
                                     .map(|r| record_to_dynamic_row(r, &col))
                                     .collect();
                                 records.set(mapped);
+                                total_items.set(res.total);
+                                items_per_page.set(res.per_page);
                             }
                         }
                         Err(e) => {
@@ -77,6 +104,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
                 });
             } else {
                 records.set(Vec::new());
+                total_items.set(0);
             }
             || ()
         });
@@ -89,6 +117,13 @@ pub fn data_page(props: &DataPageProps) -> Html {
 
     let on_search = Callback::from(|_query: String| {});
     let on_create = Callback::from(|_| {});
+
+    let on_page_change = {
+        let current_page = current_page.clone();
+        Callback::from(move |page: usize| {
+            current_page.set(page);
+        })
+    };
 
     let columns = if let Some(col) = &props.selected_collection {
         columns_from_schema(col)
@@ -107,12 +142,16 @@ pub fn data_page(props: &DataPageProps) -> Html {
                                 on_search={on_search}
                                 on_create={on_create}
                             />
-                            <div class="flex-1 overflow-auto px-6 pb-6 custom-scrollbar">
+                            <div class="flex-1 flex flex-col min-h-0 px-6 pb-6">
                                 <DataTable
                                     columns={columns}
                                     data={(*records).clone()}
                                     selectable={true}
                                     on_row_click={on_row_click}
+                                    current_page={*current_page}
+                                    total_items={*total_items}
+                                    items_per_page={*items_per_page}
+                                    on_page_change={on_page_change}
                                 />
                             </div>
                         </>

@@ -46,8 +46,22 @@ impl ApiClient {
     pub async fn get_records(
         &self,
         collection_name: &str,
+        page: Option<usize>,
+        per_page: Option<usize>,
     ) -> Result<RecordsResponse, gloo_net::Error> {
-        self.request("GET", &format!("/collections/{}/records", collection_name))
+        let mut url = format!("/collections/{}/records", collection_name);
+        let mut query = Vec::new();
+        if let Some(p) = page {
+            query.push(format!("page={}", p));
+        }
+        if let Some(pp) = per_page {
+            query.push(format!("per_page={}", pp));
+        }
+        if !query.is_empty() {
+            url = format!("{}?{}", url, query.join("&"));
+        }
+
+        self.request("GET", &url)
             .send()
             .await?
             .json::<RecordsResponse>()
