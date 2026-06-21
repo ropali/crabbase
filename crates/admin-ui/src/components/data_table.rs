@@ -1,5 +1,5 @@
+use std::collections::BTreeMap;
 use std::rc::Rc;
-
 use yew::prelude::*;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,16 +21,7 @@ pub struct HeaderProps {
     pub on_create: Callback<()>,
 }
 
-#[derive(Clone)]
-pub struct ColumnDef<T> {
-    pub key: String,
-    pub header: String,
-    pub sortable: bool,
-    pub icon: Option<&'static str>,
-    pub render: Rc<dyn Fn(&T) -> Html>,
-}
-
-#[derive(Properties)]
+#[derive(Properties, PartialEq, Clone)]
 pub struct DataTableProps<T: PartialEq + Clone + 'static> {
     pub columns: Vec<ColumnDef<T>>,
     pub data: Vec<T>,
@@ -42,32 +33,66 @@ pub struct DataTableProps<T: PartialEq + Clone + 'static> {
     pub on_sort: Option<Callback<String>>,
 }
 
-impl<T: PartialEq + Clone + 'static> PartialEq for DataTableProps<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-            && self.selectable == other.selectable
-            && self.columns.len() == other.columns.len()
+#[derive(Clone, PartialEq, Debug)]
+pub enum CellValue {
+    Text(String),
+    Number(f64),
+    Bool(bool),
+    Null,
+}
+
+impl CellValue {
+    pub fn as_str(&self) -> String {
+        match self {
+            CellValue::Text(s) => s.clone(),
+            CellValue::Number(n) => n.to_string(),
+            CellValue::Bool(b) => b.to_string(),
+            CellValue::Null => "N/A".to_string(),
+        }
     }
 }
 
-impl<T: 'static> ColumnDef<T> {
+#[derive(Clone, PartialEq, Debug)]
+pub struct DynamicRow {
+    pub values: BTreeMap<String, CellValue>,
+}
+
+#[derive(Clone)]
+pub struct ColumnDef<T> {
+    pub key: String,
+    pub header: String,
+    pub icon: Option<&'static str>,
+    pub sortable: bool,
+    pub render: Rc<dyn Fn(&T) -> Html>,
+}
+
+impl<T> PartialEq for ColumnDef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+            && self.header == other.header
+            && self.icon == other.icon
+            && self.sortable == other.sortable
+    }
+}
+
+impl<T> ColumnDef<T> {
     pub fn new(key: &str, header: &str, render: impl Fn(&T) -> Html + 'static) -> Self {
         Self {
             key: key.to_string(),
             header: header.to_string(),
-            sortable: false,
             icon: None,
             render: Rc::new(render),
+            sortable: false,
         }
-    }
-
-    pub fn sortable(mut self, sortable: bool) -> Self {
-        self.sortable = sortable;
-        self
     }
 
     pub fn icon(mut self, icon: &'static str) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    pub fn sortable(mut self, sortable: bool) -> Self {
+        self.sortable = sortable;
         self
     }
 }

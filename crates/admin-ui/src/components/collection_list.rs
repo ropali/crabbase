@@ -1,7 +1,9 @@
 use yew::prelude::*;
+use yew_router::prelude::*;
 
 use crate::api::client::ApiClient;
 use crate::models::collection::Collection;
+use crate::routes::Route;
 
 #[derive(Properties, PartialEq)]
 pub struct CollectionListProps {
@@ -15,6 +17,8 @@ pub struct CollectionListProps {
 pub fn collection_list(props: &CollectionListProps) -> Html {
     let collections = use_state(Vec::<Collection>::new);
     let err = use_state(|| None::<String>);
+
+    let navigator = use_navigator().expect("Router context not found");
 
     {
         let collections = collections.clone();
@@ -58,9 +62,13 @@ pub fn collection_list(props: &CollectionListProps) -> Html {
                     display_collections.iter().map(|col| {
                         let id = col.id.clone();
                         let on_click = {
+                            let nav = navigator.clone();
                             let on_select = props.on_select.clone();
                             let col = col.clone();
-                            Callback::from(move |_| on_select.emit(col.clone()))
+                            Callback::from(move |_| {
+                                on_select.emit(col.clone());
+                                nav.push(&Route::Collection { name: col.name.clone() });
+                                })
                         };
                         let is_selected = props.selected_collection_id.as_ref() == Some(&id);
                         let class = if is_selected {

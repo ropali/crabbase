@@ -1,4 +1,4 @@
-use crate::models::collection::CollectionListResponse;
+use crate::models::collection::{Collection, CollectionListResponse, RecordsResponse};
 use gloo_net::http::{Request, RequestBuilder};
 
 pub struct ApiClient {
@@ -32,6 +32,25 @@ impl ApiClient {
             .send()
             .await?
             .json::<CollectionListResponse>()
+            .await
+    }
+
+    pub async fn get_collection_by_name(&self, name: &str) -> Result<Collection, gloo_net::Error> {
+        self.request("GET", &format!("/collections/{}", name))
+            .send()
+            .await?
+            .json::<Collection>()
+            .await
+    }
+
+    pub async fn get_records(
+        &self,
+        collection_name: &str,
+    ) -> Result<RecordsResponse, gloo_net::Error> {
+        self.request("GET", &format!("/collections/{}/records", collection_name))
+            .send()
+            .await?
+            .json::<RecordsResponse>()
             .await
     }
 }

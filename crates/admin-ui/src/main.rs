@@ -1,10 +1,12 @@
 pub mod api;
 pub mod components;
 pub mod models;
+pub mod routes;
 
-use components::{Footer, MainPage, Sidebar, Titlebar};
+use components::{DataPage, Footer, Sidebar, Titlebar};
 use models::collection::Collection;
 use yew::prelude::*;
+use yew_router::prelude::*;
 
 #[function_component(App)]
 fn app() -> Html {
@@ -25,6 +27,7 @@ fn app() -> Html {
         .unwrap_or_else(|| "Dashboard".to_string());
 
     html! {
+        <BrowserRouter>
         <div class="flex flex-col h-screen overflow-hidden bg-background text-on-surface">
             <Titlebar title={active_title} />
             <div class="flex-grow flex flex-row overflow-hidden">
@@ -32,10 +35,11 @@ fn app() -> Html {
                     selected_collection_id={selected_collection_id}
                     on_select={on_select}
                 />
-                <MainPage selected_collection={(*selected_collection).clone()} />
+                <DataPage selected_collection={(*selected_collection).clone()} />
             </div>
             <Footer />
         </div>
+        </BrowserRouter>
     }
 }
 
