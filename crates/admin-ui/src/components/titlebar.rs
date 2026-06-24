@@ -6,9 +6,9 @@ pub struct TitlebarProps {
 }
 
 #[function_component(Titlebar)]
-pub fn titlebar(props: &TitlebarProps) -> Html {
+pub fn titlebar(_props: &TitlebarProps) -> Html {
     html! {
-        <header class="bg-primary dark:bg-primary-container text-on-primary dark:text-on-primary-container border-b border-outline-variant flex justify-between items-center w-full px-gutter h-12 z-50 shadow-sm" id="crabbase-topbar">
+        <header class="bg-primary dark:bg-primary-container text-on-primary dark:text-on-primary-container border-b border-outline-variant flex justify-between items-center w-full px-gutter h-12 z-50 shadow-sm shrink-0" id="crabbase-topbar">
             /* Left section: Brand + Navigation */
             <div class="flex items-center gap-6">
               /* Crabbase logo / brand name & active page title */
