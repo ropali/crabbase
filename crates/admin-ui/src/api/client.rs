@@ -67,4 +67,17 @@ impl ApiClient {
             .json::<RecordsResponse>()
             .await
     }
+
+    pub async fn delete_record(
+        &self,
+        collection_name: &str,
+        id: &str,
+    ) -> Result<serde_json::Value, gloo_net::Error> {
+        let url = format!("/collections/{}/records/{}", collection_name, id);
+        self.request("DELETE", &url)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
 }

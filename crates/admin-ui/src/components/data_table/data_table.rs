@@ -1,5 +1,10 @@
+use std::collections::HashSet;
+
+use web_sys::HtmlInputElement;
+use web_sys::wasm_bindgen::JsCast;
 use yew::prelude::*;
 
+use super::cell_value::CellValue;
 use super::column::ColumnDef;
 use super::row::DynamicRow;
 
@@ -33,6 +38,12 @@ pub struct DataTableProps {
     #[prop_or_default]
     pub on_sort: Option<Callback<String>>,
 
+    #[prop_or_default]
+    pub on_select_all: Option<Callback<bool>>,
+
+    #[prop_or_default]
+    pub on_select_one: Option<Callback<(String, bool)>>,
+
     // Optional pagination props
     #[prop_or_default]
     pub current_page: Option<usize>,
@@ -42,11 +53,26 @@ pub struct DataTableProps {
     pub items_per_page: Option<usize>,
     #[prop_or_default]
     pub on_page_change: Option<Callback<usize>>,
+
+    #[prop_or_default]
+    pub selected_ids: HashSet<String>,
 }
 
 #[function_component(DataTable)]
 pub fn data_table(props: &DataTableProps) -> Html {
     let on_row_click = props.on_row_click.clone();
+
+    let on_select_all = props.on_select_all.clone();
+
+    let on_header_change = Callback::from(move |e: Event| {
+        if let Some(cb) = &on_select_all {
+            if let Some(target) = e.target() {
+                if let Ok(input) = target.dyn_into::<HtmlInputElement>() {
+                    cb.emit(input.checked());
+                }
+            }
+        }
+    });
 
     let pagination_footer = if let (
         Some(current_page),
@@ -134,7 +160,12 @@ pub fn data_table(props: &DataTableProps) -> Html {
                         <tr class="border-b border-outline-variant">
                             if props.selectable {
                                 <th class="w-10 px-cell_padding_h py-cell_padding_v">
-                                    <input type="checkbox" class="rounded border-outline-variant text-secondary focus:ring-secondary" />
+                                    <input
+                                    type="checkbox"
+                                    checked={!props.data.is_empty() && props.selected_ids.len() == props.data.len()}
+                                    class="rounded border-outline-variant text-secondary focus:ring-secondary"
+                                        onchange={on_header_change}
+                                    />
                                 </th>
                             }
                             { for props.columns.iter().map(|col| {
@@ -168,6 +199,24 @@ pub fn data_table(props: &DataTableProps) -> Html {
                                 Callback::from(move |_| cb.emit(row_clone.clone()))
                             });
 
+                            let row_id = match row.get("id") {
+                                CellValue::Text(id) => id.clone(),
+                                _ => "".to_string(),
+                            };
+                            let is_checked = props.selected_ids.contains(&row_id);
+
+                            let on_select_one = props.on_select_one.clone();
+                            let row_id_clone = row_id.clone();
+                            let on_change = Callback::from(move |e: Event| {
+                                if let Some(cb) = &on_select_one {
+                                    if let Some(target) = e.target() {
+                                        if let Ok(input) = target.dyn_into::<HtmlInputElement>() {
+                                            cb.emit((row_id_clone.clone(), input.checked()));
+                                        }
+                                    }
+                                }
+                            });
+
                             html! {
                                 <tr class="hover:bg-surface-container-low transition-colors group relative" onclick={onclick}>
                                     if props.selectable {
@@ -176,6 +225,8 @@ pub fn data_table(props: &DataTableProps) -> Html {
                                             <input
                                                 type="checkbox"
                                                 class="rounded border-outline-variant text-secondary focus:ring-secondary"
+                                                checked={is_checked}
+                                                onchange={on_change}
                                                 onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}
                                             />
                                         </td>

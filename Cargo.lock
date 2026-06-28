@@ -397,6 +397,7 @@ dependencies = [
  "chrono",
  "gloo-net 0.7.0",
  "gloo-timers 0.4.0",
+ "js-sys",
  "serde",
  "serde_json",
  "stylist",

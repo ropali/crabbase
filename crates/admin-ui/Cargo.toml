@@ -30,8 +30,17 @@ stylist = "0.15.1"
 yew-router = "0.20.0"
 
 # Web-sys features for DOM manipulation and input field interaction
+js-sys = "0.3.69"
 web-sys = { version = "0.3.69", features = [
   "HtmlInputElement",
   "HtmlSelectElement",
   "Event",
+  "Url",
+  "Blob",
+  "BlobPropertyBag",
+  "HtmlAnchorElement",
+  "Document",
+  "Element",
+  "Node",
+  "Window",
 ] }
