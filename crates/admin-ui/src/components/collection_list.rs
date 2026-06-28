@@ -11,6 +11,8 @@ pub struct CollectionListProps {
     pub on_select: Callback<Collection>,
     #[prop_or_default]
     pub is_system: bool,
+    #[prop_or_default]
+    pub refresh_trigger: usize,
 }
 
 #[function_component(CollectionList)]
@@ -23,8 +25,9 @@ pub fn collection_list(props: &CollectionListProps) -> Html {
     {
         let collections = collections.clone();
         let err = err.clone();
+        let refresh_trigger = props.refresh_trigger;
 
-        use_effect_with((), move |_| {
+        use_effect_with(refresh_trigger, move |_| {
             wasm_bindgen_futures::spawn_local(async move {
                 // Trunk handles proxying "/api" requests to "http://localhost:8989/api"
                 let client = ApiClient::new("/api".to_string(), None);

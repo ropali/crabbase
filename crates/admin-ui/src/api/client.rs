@@ -1,4 +1,7 @@
-use crate::models::collection::{Collection, CollectionListResponse, RecordsResponse};
+use crate::models::{
+    collection::{Collection, CollectionListResponse, CreateCollectionRequest, RecordsResponse},
+    record::CreateRecordRequest,
+};
 use gloo_net::http::{Request, RequestBuilder};
 
 pub struct ApiClient {
@@ -25,6 +28,18 @@ impl ApiClient {
             req = req.header("Authorization", &format!("Bearer {}", jwt));
         }
         req
+    }
+
+    pub async fn create_collection(
+        &self,
+        body: CreateCollectionRequest,
+    ) -> Result<Collection, gloo_net::Error> {
+        self.request("POST", "/collections")
+            .json(&body)?
+            .send()
+            .await?
+            .json::<Collection>()
+            .await
     }
 
     pub async fn get_collections(&self) -> Result<CollectionListResponse, gloo_net::Error> {
@@ -75,6 +90,21 @@ impl ApiClient {
     ) -> Result<serde_json::Value, gloo_net::Error> {
         let url = format!("/collections/{}/records/{}", collection_name, id);
         self.request("DELETE", &url)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
+
+    pub async fn create_record(
+        &self,
+        collection_name: &str,
+        body: CreateRecordRequest,
+    ) -> Result<serde_json::Value, gloo_net::Error> {
+        let url = format!("/collections/{}/records", collection_name);
+
+        self.request("POST", &url)
+            .json(&body)?
             .send()
             .await?
             .json::<serde_json::Value>()

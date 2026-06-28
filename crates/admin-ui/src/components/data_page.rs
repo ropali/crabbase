@@ -5,7 +5,7 @@ use yew::prelude::*;
 
 use crate::api::client::ApiClient;
 use crate::components::{
-    DataTable, PageHeader,
+    CreateRecordDrawer, DataTable, PageHeader,
     data_table::{CellValue, DynamicRow, schema::columns_from_schema},
 };
 use crate::models::collection::{Collection as CollectionModel, Record};
@@ -128,7 +128,29 @@ pub fn data_page(props: &DataPageProps) -> Html {
     });
 
     let on_search = Callback::from(|_query: String| {});
-    let on_create = Callback::from(|_| {});
+
+    let on_create = {
+        let drawer_open = drawer_open.clone();
+        Callback::from(move |_| {
+            drawer_open.set(true);
+        })
+    };
+
+    let on_drawer_close = {
+        let drawer_open = drawer_open.clone();
+        Callback::from(move |_| {
+            drawer_open.set(false);
+        })
+    };
+
+    let on_drawer_success = {
+        let drawer_open = drawer_open.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            refresh_trigger.set(*refresh_trigger + 1);
+            drawer_open.set(false);
+        })
+    };
 
     let on_page_change = {
         let current_page = current_page.clone();
@@ -327,6 +349,20 @@ pub fn data_page(props: &DataPageProps) -> Html {
                                                 </button>
                                             </div>
                                         </div>
+                                    }
+                                } else {
+                                    html! {}
+                                }
+                            }
+                            {
+                                if *drawer_open {
+                                    html! {
+                                        <CreateRecordDrawer
+                                            collection_name={col.name.clone()}
+                                            collection_fields={col.fields.clone()}
+                                            on_close={on_drawer_close}
+                                            on_success={on_drawer_success}
+                                        />
                                     }
                                 } else {
                                     html! {}

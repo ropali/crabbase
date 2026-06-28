@@ -40,6 +40,12 @@ pub struct Collection {
     pub created: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateCollectionRequest {
+    pub name: String,
+    pub columns: Vec<Field>,
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct CollectionListResponse {
     pub items: Vec<Collection>,

@@ -6,10 +6,20 @@ use yew::prelude::*;
 pub struct SidebarProps {
     pub selected_collection_id: Option<String>,
     pub on_select: Callback<Collection>,
+    pub on_create_click: Callback<()>,
+    #[prop_or_default]
+    pub refresh_trigger: usize,
 }
 
 #[function_component(Sidebar)]
 pub fn sidebar(props: &SidebarProps) -> Html {
+    let on_create_click = {
+        let cb = props.on_create_click.clone();
+        Callback::from(move |_| {
+            cb.emit(());
+        })
+    };
+
     let stylesheet = stylist::style!(
         r#"
         .material-symbols-outlined {
@@ -61,12 +71,13 @@ pub fn sidebar(props: &SidebarProps) -> Html {
             </div>
 
             /* Navigation links (with active state, system section, exactly as original) */
-            <nav class="flex flex-col gap-1 overflow-y-auto flex-1 custom-scrollbar">
+            <nav class="flex flex-col gap-1 overflow-y-auto overflow-x-hidden flex-1 custom-scrollbar">
               /* List of Collections */
               <CollectionList
                   is_system={false}
                   selected_collection_id={props.selected_collection_id.clone()}
                   on_select={props.on_select.clone()}
+                  refresh_trigger={props.refresh_trigger}
               />
 
               /* System section divider */
@@ -79,12 +90,13 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                   is_system={true}
                   selected_collection_id={props.selected_collection_id.clone()}
                   on_select={props.on_select.clone()}
+                  refresh_trigger={props.refresh_trigger}
               />
 
 
             </nav>
 
-            <button id="new-collection-sidebar-btn" class="mt-auto bg-surface-container-highest hover:bg-outline-variant text-on-surface-variant font-bold border border-outline-variant rounded-lg px-3 py-2.5 flex items-center justify-center gap-2 transition-all active:scale-95">
+            <button onclick={on_create_click} id="new-collection-sidebar-btn" class="mt-auto bg-surface-container-highest hover:bg-outline-variant text-on-surface-variant font-bold border border-outline-variant rounded-lg px-3 py-2.5 flex items-center justify-center gap-2 transition-all active:scale-95">
               <span class="material-symbols-outlined text-sm">{"add"}</span>
               <span class="font-label-xs text-label-xs">{"New collection"}</span>
             </button>

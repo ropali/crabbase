@@ -779,3 +779,30 @@ body {
 .animate-pulse {
     animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Custom Drawer and Border Utilities */
+.industrial-border {
+    border: 1px solid #E2E0DD;
+}
+
+.drawer-mask {
+    backdrop-filter: blur(2px);
+    background-color: rgba(38, 24, 22, 0.2);
+}
+
+@keyframes slideInFromRight {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+.animate-slide-in-right {
+    animation: slideInFromRight 0.3s ease-out;
+}
+
+.bg-blur {
+    backdrop-filter: blur(4px);
+}
