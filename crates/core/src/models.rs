@@ -100,6 +100,9 @@ pub struct Collection {
     pub id: String,
     pub name: String,
     pub system: bool,
+
+    #[serde[rename = "collection_type"]]
+    pub collection_type: String,
     pub fields: Vec<Column>,
     pub indexes: Vec<Column>,
     // Rules
@@ -134,6 +137,7 @@ impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for Collection {
             options: options.0,
             created: row.try_get("created")?,
             updated: row.try_get("updated")?,
+            collection_type: row.try_get("type")?,
         })
     }
 }
@@ -189,6 +193,13 @@ pub struct Column {
     pub data_type: DataTypes,
     #[serde(default)]
     pub index: bool,
+
+    #[serde(default)]
+    pub hidden: bool,
+
+    #[serde(default)]
+    pub required: bool,
+
     #[serde(default)]
     pub related_to: Option<String>,
 }
@@ -246,6 +257,7 @@ where
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateCollectionRequest {
     pub name: String,
+    pub collection_type: String,
     pub columns: Vec<Column>,
 }
 

@@ -93,10 +93,16 @@ impl CollectionRepository {
 
         let sql = format!(
             r#"
-                INSERT INTO _collections(id, system, name, fields, indexes, options)
-                VALUES ('{}', {}, '{}', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
+                INSERT INTO _collections(id, system, name, type, fields, indexes, options)
+                VALUES ('{}', {}, '{}', '{}', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
             "#,
-            col_id, 0, collection.name, columns_json, indexs_json, options_json
+            col_id,
+            0,
+            collection.name,
+            collection.collection_type,
+            columns_json,
+            indexs_json,
+            options_json
         );
 
         sqlx::query(&sql).execute(&mut *tx).await?;
@@ -124,6 +130,7 @@ impl CollectionRepository {
             create_rule: None,
             update_rule: None,
             delete_rule: None,
+            collection_type: collection.collection_type.to_string(),
         })
     }
 
