@@ -44,6 +44,8 @@ pub struct Collection {
 pub struct CreateCollectionRequest {
     pub name: String,
     pub columns: Vec<Field>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection_type: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

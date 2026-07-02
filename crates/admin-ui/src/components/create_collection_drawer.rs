@@ -9,6 +9,17 @@ pub struct CustomField {
     pub name: String,
     pub data_type: String,
     pub required: bool,
+    pub expanded: bool,
+    pub min_len: Option<usize>,
+    pub max_len: Option<usize>,
+    pub validation_pattern: String,
+    pub autogenerate_pattern: String,
+    pub min_val: Option<f64>,
+    pub max_val: Option<f64>,
+    pub help_text: String,
+    pub presentable: bool,
+    pub hidden: bool,
+    pub related_to: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +49,8 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
     let indexes = use_state(|| Vec::<CustomIndex>::new());
     let next_index_id = use_state(|| 0usize);
 
+    let available_collections = use_state(Vec::<crate::models::collection::Collection>::new);
+
     // API Rules states
     let list_rule = use_state(|| "public".to_string());
     let list_expr = use_state(|| "".to_string());
@@ -49,6 +62,19 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
     let update_expr = use_state(|| "".to_string());
     let delete_rule = use_state(|| "admin".to_string());
     let delete_expr = use_state(|| "".to_string());
+
+    {
+        let available_collections = available_collections.clone();
+        use_effect_with((), move |_| {
+            wasm_bindgen_futures::spawn_local(async move {
+                let client = ApiClient::new("/api".to_string(), None);
+                if let Ok(res) = client.get_collections().await {
+                    available_collections.set(res.items);
+                }
+            });
+            || ()
+        });
+    }
 
     let on_close_click = {
         let on_close = props.on_close.clone();
@@ -103,6 +129,17 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                 name: "".to_string(),
                 data_type: "Text".to_string(),
                 required: false,
+                expanded: false,
+                min_len: None,
+                max_len: None,
+                validation_pattern: "".to_string(),
+                autogenerate_pattern: "".to_string(),
+                min_val: None,
+                max_val: None,
+                help_text: "".to_string(),
+                presentable: true,
+                hidden: false,
+                related_to: None,
             });
             fields.set(current);
             next_field_id.set(*next_field_id + 1);
@@ -167,6 +204,226 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                     if f.id == id {
                         CustomField {
                             required: req,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let toggle_field_expand = {
+        let fields = fields.clone();
+        Callback::from(move |id: usize| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            expanded: !f.expanded,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_min_len = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, Option<usize>)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            min_len: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_max_len = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, Option<usize>)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            max_len: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_validation = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, String)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            validation_pattern: val.clone(),
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_autogenerate = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, String)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            autogenerate_pattern: val.clone(),
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_min_val = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, Option<f64>)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            min_val: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_max_val = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, Option<f64>)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            max_val: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_help_text = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, String)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            help_text: val.clone(),
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_presentable = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, bool)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            presentable: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_hidden = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, bool)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            hidden: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_related_to = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, Option<String>)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            related_to: val.clone(),
                             ..f.clone()
                         }
                     } else {
@@ -252,6 +509,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
         let indexes = indexes.clone();
         let on_success = props.on_success.clone();
         let error_msg = error_msg.clone();
+        let collection_type = collection_type.clone();
 
         Callback::from(move |_| {
             let name_val = (*name).clone();
@@ -259,6 +517,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
             let indexes_val = (*indexes).clone();
             let on_success = on_success.clone();
             let error_msg = error_msg.clone();
+            let collection_type_val = (*collection_type).clone();
 
             if name_val.is_empty() {
                 error_msg.set(Some("Collection name is required".to_string()));
@@ -273,7 +532,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                     .flat_map(|idx| idx.fields.split(',').map(|s| s.trim().to_string()))
                     .collect();
 
-                let columns = fields_val
+                let mut columns = fields_val
                     .into_iter()
                     .filter(|f| !f.name.is_empty())
                     .map(|f| {
@@ -282,14 +541,35 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                             name: f.name,
                             data_type: f.data_type,
                             index: is_indexed,
-                            related_to: None,
+                            related_to: f.related_to,
                         }
                     })
                     .collect::<Vec<_>>();
 
+                if collection_type_val == "Auth" {
+                    let auth_fields = vec![
+                        ("password", "Text"),
+                        ("tokenKey", "Text"),
+                        ("email", "Text"),
+                        ("emailVisibility", "Bool"),
+                        ("verified", "Bool"),
+                    ];
+                    for (af_name, af_type) in auth_fields {
+                        if !columns.iter().any(|c| c.name == af_name) {
+                            columns.push(crate::models::collection::Field {
+                                name: af_name.to_string(),
+                                data_type: af_type.to_string(),
+                                index: false,
+                                related_to: None,
+                            });
+                        }
+                    }
+                }
+
                 let payload = CreateCollectionRequest {
                     name: name_val,
                     columns,
+                    collection_type: Some(collection_type_val.to_lowercase()),
                 };
 
                 match client.create_collection(payload).await {
@@ -444,6 +724,92 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                             </div>
 
                                             {
+                                                if *collection_type == "Auth" {
+                                                    html! {
+                                                        <>
+                                                            <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border opacity-70">
+                                                                <span class="material-symbols-outlined text-on-surface-variant/60">{"text_fields"}</span>
+                                                                <input type="text" value="password" disabled=true class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant py-0.5 font-code-md text-code-md text-on-surface-variant/60" />
+                                                                <div class="flex items-center gap-3">
+                                                                    <select disabled=true class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface-variant/60 cursor-not-allowed focus:outline-none">
+                                                                        <option selected=true>{"Text"}</option>
+                                                                    </select>
+                                                                    <button disabled=true class="px-2 py-1 border rounded text-[10px] font-bold bg-primary-container/20 border-primary text-primary cursor-not-allowed">
+                                                                        {"REQ"}
+                                                                    </button>
+                                                                    <div class="text-[11px] font-bold text-on-surface-variant bg-white px-2 py-1 border border-outline-variant rounded">
+                                                                        {"Auth"}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border opacity-70">
+                                                                <span class="material-symbols-outlined text-on-surface-variant/60">{"text_fields"}</span>
+                                                                <input type="text" value="tokenKey" disabled=true class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant py-0.5 font-code-md text-code-md text-on-surface-variant/60" />
+                                                                <div class="flex items-center gap-3">
+                                                                    <select disabled=true class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface-variant/60 cursor-not-allowed focus:outline-none">
+                                                                        <option selected=true>{"Text"}</option>
+                                                                    </select>
+                                                                    <button disabled=true class="px-2 py-1 border rounded text-[10px] font-bold bg-primary-container/20 border-primary text-primary cursor-not-allowed">
+                                                                        {"REQ"}
+                                                                    </button>
+                                                                    <div class="text-[11px] font-bold text-on-surface-variant bg-white px-2 py-1 border border-outline-variant rounded">
+                                                                        {"Auth"}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border opacity-70">
+                                                                <span class="material-symbols-outlined text-on-surface-variant/60">{"text_fields"}</span>
+                                                                <input type="text" value="email" disabled=true class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant py-0.5 font-code-md text-code-md text-on-surface-variant/60" />
+                                                                <div class="flex items-center gap-3">
+                                                                    <select disabled=true class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface-variant/60 cursor-not-allowed focus:outline-none">
+                                                                        <option selected=true>{"Text"}</option>
+                                                                    </select>
+                                                                    <button disabled=true class="px-2 py-1 border rounded text-[10px] font-bold bg-primary-container/20 border-primary text-primary cursor-not-allowed">
+                                                                        {"REQ"}
+                                                                    </button>
+                                                                    <div class="text-[11px] font-bold text-on-surface-variant bg-white px-2 py-1 border border-outline-variant rounded">
+                                                                        {"Auth"}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border opacity-70">
+                                                                <span class="material-symbols-outlined text-on-surface-variant/60">{"check_box"}</span>
+                                                                <input type="text" value="emailVisibility" disabled=true class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant py-0.5 font-code-md text-code-md text-on-surface-variant/60" />
+                                                                <div class="flex items-center gap-3">
+                                                                    <select disabled=true class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface-variant/60 cursor-not-allowed focus:outline-none">
+                                                                        <option selected=true>{"Bool"}</option>
+                                                                    </select>
+                                                                    <button disabled=true class="px-2 py-1 border rounded text-[10px] font-bold bg-transparent border-outline-variant text-on-surface-variant/60 cursor-not-allowed">
+                                                                        {"REQ"}
+                                                                    </button>
+                                                                    <div class="text-[11px] font-bold text-on-surface-variant bg-white px-2 py-1 border border-outline-variant rounded">
+                                                                        {"Auth"}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border opacity-70">
+                                                                <span class="material-symbols-outlined text-on-surface-variant/60">{"check_box"}</span>
+                                                                <input type="text" value="verified" disabled=true class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant py-0.5 font-code-md text-code-md text-on-surface-variant/60" />
+                                                                <div class="flex items-center gap-3">
+                                                                    <select disabled=true class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface-variant/60 cursor-not-allowed focus:outline-none">
+                                                                        <option selected=true>{"Bool"}</option>
+                                                                    </select>
+                                                                    <button disabled=true class="px-2 py-1 border rounded text-[10px] font-bold bg-transparent border-outline-variant text-on-surface-variant/60 cursor-not-allowed">
+                                                                        {"REQ"}
+                                                                    </button>
+                                                                    <div class="text-[11px] font-bold text-on-surface-variant bg-white px-2 py-1 border border-outline-variant rounded">
+                                                                        {"Auth"}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </>
+                                                    }
+                                                } else {
+                                                    html! {}
+                                                }
+                                            }
+
+                                            {
                                                 fields.iter().map(|f| {
                                                     let f_id = f.id;
                                                     let f_name = f.name.clone();
@@ -469,7 +835,15 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                     let on_req_toggle = {
                                                         let update_field_required = update_field_required.clone();
                                                         let f_req = f_req;
-                                                        Callback::from(move |_| {
+                                                        Callback::from(move |_: MouseEvent| {
+                                                            update_field_required.emit((f_id, !f_req));
+                                                        })
+                                                    };
+
+                                                    let on_req_change = {
+                                                        let update_field_required = update_field_required.clone();
+                                                        let f_req = f_req;
+                                                        Callback::from(move |_: Event| {
                                                             update_field_required.emit((f_id, !f_req));
                                                         })
                                                     };
@@ -481,6 +855,99 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                         })
                                                     };
 
+                                                    let on_toggle_expand = {
+                                                        let toggle_field_expand = toggle_field_expand.clone();
+                                                        Callback::from(move |_| {
+                                                            toggle_field_expand.emit(f_id);
+                                                        })
+                                                    };
+
+                                                    let on_min_len_change = {
+                                                        let update_field_min_len = update_field_min_len.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            let val = input.value().parse::<usize>().ok();
+                                                            update_field_min_len.emit((f_id, val));
+                                                        })
+                                                    };
+
+                                                    let on_max_len_change = {
+                                                        let update_field_max_len = update_field_max_len.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            let val = input.value().parse::<usize>().ok();
+                                                            update_field_max_len.emit((f_id, val));
+                                                        })
+                                                    };
+
+                                                    let on_validation_change = {
+                                                        let update_field_validation = update_field_validation.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            update_field_validation.emit((f_id, input.value()));
+                                                        })
+                                                    };
+
+                                                    let on_autogenerate_change = {
+                                                        let update_field_autogenerate = update_field_autogenerate.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            update_field_autogenerate.emit((f_id, input.value()));
+                                                        })
+                                                    };
+
+                                                    let on_min_val_change = {
+                                                        let update_field_min_val = update_field_min_val.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            let val = input.value().parse::<f64>().ok();
+                                                            update_field_min_val.emit((f_id, val));
+                                                        })
+                                                    };
+
+                                                    let on_max_val_change = {
+                                                        let update_field_max_val = update_field_max_val.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            let val = input.value().parse::<f64>().ok();
+                                                            update_field_max_val.emit((f_id, val));
+                                                        })
+                                                    };
+
+                                                    let on_help_text_change = {
+                                                        let update_field_help_text = update_field_help_text.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            update_field_help_text.emit((f_id, input.value()));
+                                                        })
+                                                    };
+
+                                                    let on_presentable_change = {
+                                                        let update_field_presentable = update_field_presentable.clone();
+                                                        let f_presentable = f.presentable;
+                                                        Callback::from(move |_| {
+                                                            update_field_presentable.emit((f_id, !f_presentable));
+                                                        })
+                                                    };
+
+                                                    let on_hidden_change = {
+                                                        let update_field_hidden = update_field_hidden.clone();
+                                                        let f_hidden = f.hidden;
+                                                        Callback::from(move |_| {
+                                                            update_field_hidden.emit((f_id, !f_hidden));
+                                                        })
+                                                    };
+
+                                                    let on_related_to_change = {
+                                                        let update_field_related_to = update_field_related_to.clone();
+                                                        Callback::from(move |ev: Event| {
+                                                            let select: web_sys::HtmlSelectElement = ev.target_unchecked_into();
+                                                            let val = select.value();
+                                                            let val_opt = if val.is_empty() { None } else { Some(val) };
+                                                            update_field_related_to.emit((f_id, val_opt));
+                                                        })
+                                                    };
+
                                                     let icon = match f_type.to_lowercase().as_str() {
                                                         "number" => "123",
                                                         "bool" => "check_box",
@@ -489,29 +956,184 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                         _ => "text_fields"
                                                     };
 
-                                                    html! {
-                                                        <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border hover:border-outline transition-colors" key={f_id}>
-                                                            <span class="material-symbols-outlined text-on-surface-variant">{icon}</span>
-                                                            <input type="text" value={f_name} oninput={on_name_change} placeholder="field_name" class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant hover:border-outline focus:border-primary focus:outline-none py-0.5 font-code-md text-code-md text-on-surface" />
-
-                                                            <div class="flex items-center gap-3">
-                                                                <select value={f_type} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
-                                                                    <option value="Text">{"Text"}</option>
-                                                                    <option value="Number">{"Number"}</option>
-                                                                    <option value="Bool">{"Bool"}</option>
-                                                                    <option value="Json">{"JSON"}</option>
-                                                                    <option value="Relation">{"Relation"}</option>
-                                                                </select>
-
-                                                                <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>
-                                                                    {"REQ"}
-                                                                </button>
-
-                                                                <button onclick={on_remove} class="text-on-surface-variant hover:text-error transition-colors p-1">
-                                                                    <span class="material-symbols-outlined text-[18px]">{"delete"}</span>
-                                                                </button>
+                                                    let config_grid = match f_type.as_str() {
+                                                        "Text" => html! {
+                                                            <div class="grid grid-cols-2 gap-4">
+                                                                <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                    <div class="flex items-center gap-1 mb-1">
+                                                                        <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Min length"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                    </div>
+                                                                    <input type="number" min="0" value={f.min_len.map(|v| v.to_string()).unwrap_or_default()} oninput={on_min_len_change} placeholder="No min limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
+                                                                </div>
+                                                                <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                    <div class="flex items-center gap-1 mb-1">
+                                                                        <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Max length"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                    </div>
+                                                                    <input type="number" min="0" value={f.max_len.map(|v| v.to_string()).unwrap_or_default()} oninput={on_max_len_change} placeholder="Default to max 5000 characters" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
+                                                                </div>
+                                                                <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                    <div class="flex items-center gap-1 mb-1">
+                                                                        <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Validation pattern"}</span>
+                                                                    </div>
+                                                                    <input type="text" value={f.validation_pattern.clone()} oninput={on_validation_change} placeholder="Ex. ^[a-z0-9]+$" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none font-code-md text-code-md" />
+                                                                </div>
+                                                                <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                    <div class="flex items-center gap-1 mb-1">
+                                                                        <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Autogenerate pattern"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                    </div>
+                                                                    <input type="text" value={f.autogenerate_pattern.clone()} oninput={on_autogenerate_change} placeholder="Ex. [a-z0-9]{30}" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none font-code-md text-code-md" />
+                                                                </div>
                                                             </div>
-                                                        </div>
+                                                        },
+                                                        "Number" => html! {
+                                                            <div class="grid grid-cols-2 gap-4">
+                                                                <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                    <div class="flex items-center gap-1 mb-1">
+                                                                        <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Min value"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                    </div>
+                                                                    <input type="number" step="any" value={f.min_val.map(|v| v.to_string()).unwrap_or_default()} oninput={on_min_val_change} placeholder="No min limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
+                                                                </div>
+                                                                <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                    <div class="flex items-center gap-1 mb-1">
+                                                                        <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Max value"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                    </div>
+                                                                    <input type="number" step="any" value={f.max_val.map(|v| v.to_string()).unwrap_or_default()} oninput={on_max_val_change} placeholder="No max limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
+                                                                </div>
+                                                            </div>
+                                                        },
+                                                        "Relation" => {
+                                                            let current_rel = f.related_to.clone().unwrap_or_default();
+                                                            html! {
+                                                                <div class="grid grid-cols-2 gap-4">
+                                                                    <div class="bg-surface-container-low p-3 rounded-lg industrial-border col-span-2">
+                                                                        <div class="flex items-center gap-1 mb-1">
+                                                                            <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Related collection"}</span>
+                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"link"}</span>
+                                                                        </div>
+                                                                        <select value={current_rel} onchange={on_related_to_change} class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface cursor-pointer focus:outline-none">
+                                                                            <option value="">{"Select collection..."}</option>
+                                                                            {
+                                                                                available_collections.iter().map(|col| {
+                                                                                    html! {
+                                                                                        <option value={col.name.clone()}>{col.name.clone()}</option>
+                                                                                    }
+                                                                                }).collect::<Html>()
+                                                                            }
+                                                                        </select>
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        },
+                                                        _ => html! {}
+                                                    };
+
+                                                    let f_help_text = f.help_text.clone();
+                                                    let f_presentable = f.presentable;
+                                                    let f_hidden = f.hidden;
+
+                                                    let config_panel = if f.expanded {
+                                                        html! {
+                                                            <div class="p-4 flex flex-col gap-4 bg-white border-t border-outline-variant">
+                                                                {config_grid}
+
+                                                                <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                    <div class="flex items-center gap-1 mb-1">
+                                                                        <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Help text"}</span>
+                                                                    </div>
+                                                                    <input type="text" value={f_help_text} oninput={on_help_text_change} placeholder="Help text" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
+                                                                </div>
+
+                                                                <div class="flex items-center justify-between">
+                                                                    <div class="flex items-center gap-6">
+                                                                        <label class="flex items-center gap-2 cursor-pointer">
+                                                                            <input type="checkbox" checked={f_req} onchange={on_req_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary" />
+                                                                            <span class="text-body-sm text-on-surface">{"Required (!='')"}</span>
+                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        </label>
+                                                                        <label class="flex items-center gap-2 cursor-pointer relative">
+                                                                            <input type="checkbox" checked={f_presentable} onchange={on_presentable_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary" />
+                                                                            <span class="text-body-sm text-on-surface">{"Presentable"}</span>
+                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        </label>
+                                                                        <label class="flex items-center gap-2 cursor-pointer">
+                                                                            <input type="checkbox" checked={f_hidden} onchange={on_hidden_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary" />
+                                                                            <span class="text-body-sm text-on-surface">{"Hidden"}</span>
+                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        </label>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    } else {
+                                                        html! {}
+                                                    };
+
+                                                    if f.expanded {
+                                                        html! {
+                                                            <div class="bg-surface-container-low rounded industrial-border overflow-hidden" key={f_id}>
+                                                                <div class="flex items-center gap-4 p-3 border-b border-outline-variant bg-surface-container-highest/30">
+                                                                    <span class="material-symbols-outlined text-on-surface-variant">{icon}</span>
+                                                                    <input type="text" value={f_name} oninput={on_name_change} placeholder="field_name" class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant hover:border-outline focus:border-primary focus:outline-none py-0.5 font-code-md text-code-md text-on-surface" />
+
+                                                                    <div class="flex items-center gap-3">
+                                                                        <select value={f_type.clone()} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
+                                                                            <option value="Text" selected={f_type == "Text"}>{"Text"}</option>
+                                                                            <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
+                                                                            <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
+                                                                            <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                            <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
+                                                                        </select>
+
+                                                                        <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>
+                                                                            {"REQ"}
+                                                                        </button>
+
+                                                                        <button onclick={on_toggle_expand} class="text-primary transition-colors p-1">
+                                                                            <span class="material-symbols-outlined text-[18px]">{"settings"}</span>
+                                                                        </button>
+
+                                                                        <button onclick={on_remove} class="text-on-surface-variant hover:text-error transition-colors p-1">
+                                                                            <span class="material-symbols-outlined text-[18px]">{"delete"}</span>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                {config_panel}
+                                                            </div>
+                                                        }
+                                                    } else {
+                                                        html! {
+                                                            <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border hover:border-outline transition-colors" key={f_id}>
+                                                                <span class="material-symbols-outlined text-on-surface-variant">{icon}</span>
+                                                                <input type="text" value={f_name} oninput={on_name_change} placeholder="field_name" class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant hover:border-outline focus:border-primary focus:outline-none py-0.5 font-code-md text-code-md text-on-surface" />
+
+                                                                <div class="flex items-center gap-3">
+                                                                    <select value={f_type.clone()} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
+                                                                        <option value="Text" selected={f_type == "Text"}>{"Text"}</option>
+                                                                        <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
+                                                                        <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
+                                                                        <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                        <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
+                                                                    </select>
+
+                                                                    <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>
+                                                                        {"REQ"}
+                                                                    </button>
+
+                                                                    <button onclick={on_toggle_expand} class="text-on-surface-variant hover:text-primary transition-colors p-1">
+                                                                        <span class="material-symbols-outlined text-[18px]">{"settings"}</span>
+                                                                    </button>
+
+                                                                    <button onclick={on_remove} class="text-on-surface-variant hover:text-error transition-colors p-1">
+                                                                        <span class="material-symbols-outlined text-[18px]">{"delete"}</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        }
                                                     }
                                                 }).collect::<Html>()
                                             }
