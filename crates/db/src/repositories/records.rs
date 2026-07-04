@@ -355,17 +355,20 @@ mod tests {
                 data_type: DataTypes::PlainText,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "views".into(),
                 data_type: DataTypes::Number,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
         ];
         let create_col = CreateCollectionRequest {
             name: "articles".into(),
             columns: columns.clone(),
+            collection_type: None,
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -393,10 +396,12 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
         let create_col = CreateCollectionRequest {
             name: "items".into(),
             columns: columns.clone(),
+            collection_type: None,
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -425,10 +430,12 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
         let create_col = CreateCollectionRequest {
             name: "items".into(),
             columns: columns.clone(),
+            collection_type: None,
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -464,17 +471,20 @@ mod tests {
                 data_type: DataTypes::PlainText,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "views".into(),
                 data_type: DataTypes::Number,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
         ];
         let create_col = CreateCollectionRequest {
             name: "blogs".into(),
             columns: columns.clone(),
+            collection_type: None,
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -513,10 +523,12 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
         let create_col = CreateCollectionRequest {
             name: "trash".into(),
             columns: columns.clone(),
+            collection_type: None,
         };
         col_repo.create(create_col).await.unwrap();
 

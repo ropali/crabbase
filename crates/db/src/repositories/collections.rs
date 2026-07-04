@@ -6,7 +6,7 @@ use crabbase_core::{
     errors::RepositoryError,
     models::{
         Collection, CollectionListResponse, CollectionOptions, Column, CreateCollectionRequest,
-        UpdateCollectionRequest,
+        DataTypes, UpdateCollectionRequest,
     },
     utils::string_utils::random_str,
 };
@@ -37,6 +37,26 @@ impl CollectionRepository {
         validate_identifier(&collection.name)?;
         validate_columns(&collection.columns)?;
 
+        for col in &collection.columns {
+            if col.data_type == DataTypes::Relation {
+                if let Some(ref target) = col.related_to {
+                    if target != &collection.name && !self.exists(target).await {
+                        return Err(RepositoryError::OtherError(format!(
+                            "related collection '{}' does not exist",
+                            target
+                        )));
+                    }
+                }
+            }
+        }
+
+        let col_type = collection
+            .collection_type
+            .clone()
+            .unwrap_or_else(|| "base".to_string());
+
+        let mut tx = self.db.begin().await?;
+
         let columns = collection
             .columns
             .iter()
@@ -46,18 +66,16 @@ impl CollectionRepository {
 
         let table_sql = format!(
             r#"
-            CREATE TABLE IF NOT EXISTS "{}"
-            (
-                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                {},
-                created TIMESTAMPTZ NOT NULL DEFAULT now(),
-                updated TIMESTAMPTZ NOT NULL DEFAULT now()
-            );
-        "#,
+                CREATE TABLE IF NOT EXISTS "{}"
+                (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    {},
+                    created TIMESTAMPTZ NOT NULL DEFAULT now(),
+                    updated TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+            "#,
             collection.name, columns
         );
-
-        let mut tx = self.db.begin().await?;
 
         sqlx::query(&table_sql).execute(&mut *tx).await?;
 
@@ -96,13 +114,7 @@ impl CollectionRepository {
                 INSERT INTO _collections(id, system, name, type, fields, indexes, options)
                 VALUES ('{}', {}, '{}', '{}', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
             "#,
-            col_id,
-            0,
-            collection.name,
-            collection.collection_type,
-            columns_json,
-            indexs_json,
-            options_json
+            col_id, 0, collection.name, col_type, columns_json, indexs_json, options_json
         );
 
         sqlx::query(&sql).execute(&mut *tx).await?;
@@ -130,7 +142,7 @@ impl CollectionRepository {
             create_rule: None,
             update_rule: None,
             delete_rule: None,
-            collection_type: collection.collection_type.to_string(),
+            collection_type: col_type,
         })
     }
 
@@ -199,6 +211,19 @@ impl CollectionRepository {
         let next_fields = payload.columns.unwrap_or_else(|| current.fields.clone());
         validate_columns(&next_fields)?;
 
+        for col in &next_fields {
+            if col.data_type == DataTypes::Relation {
+                if let Some(ref target) = col.related_to {
+                    if target != &next_name && !self.exists(target).await {
+                        return Err(RepositoryError::OtherError(format!(
+                            "related collection '{}' does not exist",
+                            target
+                        )));
+                    }
+                }
+            }
+        }
+
         let next_indexes: Vec<Column> = next_fields.iter().filter(|c| c.index).cloned().collect();
 
         if current.name != next_name || current.fields != next_fields {
@@ -239,6 +264,12 @@ impl CollectionRepository {
         // Begin a transaction and run all mutating queries within it using the same connection
         let mut tx = self.db.begin().await?;
 
+        // Retrieve collection metadata before delete to check type
+        let col = sqlx::query_as::<_, Collection>("SELECT * FROM _collections WHERE name = $1")
+            .bind(&name)
+            .fetch_optional(&mut *tx)
+            .await?;
+
         // Execute the delete within the transaction
         let affected = sqlx::query(sql).bind(&name).execute(&mut *tx).await?;
 
@@ -248,9 +279,15 @@ impl CollectionRepository {
             return Err(RepositoryError::NotFound(name));
         }
 
-        // Drop the collection table within the same transaction
-        let drop_sql = format!("DROP TABLE \"{}\"", name);
-        sqlx::query(&drop_sql).execute(&mut *tx).await?;
+        if let Some(c) = col {
+            if c.collection_type == "view" {
+                let drop_sql = format!("DROP VIEW IF EXISTS \"{}\"", name);
+                sqlx::query(&drop_sql).execute(&mut *tx).await?;
+            } else {
+                let drop_sql = format!("DROP TABLE \"{}\"", name);
+                sqlx::query(&drop_sql).execute(&mut *tx).await?;
+            }
+        }
 
         tx.commit().await?;
 
@@ -317,6 +354,24 @@ fn validate_columns(columns: &[Column]) -> Result<(), RepositoryError> {
                 "duplicate column '{}'",
                 column.name
             )));
+        }
+
+        if column.data_type == DataTypes::Relation {
+            match &column.related_to {
+                None => {
+                    return Err(RepositoryError::OtherError(format!(
+                        "relation column '{}' must specify a related collection",
+                        column.name
+                    )));
+                }
+                Some(target) if target.trim().is_empty() => {
+                    return Err(RepositoryError::OtherError(format!(
+                        "relation column '{}' must specify a related collection",
+                        column.name
+                    )));
+                }
+                _ => {}
+            }
         }
     }
 
@@ -447,11 +502,13 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
 
         let req = CreateCollectionRequest {
             name: "testcol".to_string(),
             columns: columns.clone(),
+            collection_type: None,
         };
 
         let created = repo.create(req).await.unwrap();
@@ -469,11 +526,13 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
 
         let req = CreateCollectionRequest {
             name: "getcol".to_string(),
             columns: columns.clone(),
+            collection_type: None,
         };
 
         repo.create(req).await.unwrap();
@@ -492,11 +551,13 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
 
         let req = CreateCollectionRequest {
             name: "listcol".to_string(),
             columns: columns.clone(),
+            collection_type: None,
         };
 
         repo.create(req).await.unwrap();
@@ -515,11 +576,13 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
 
         let req = CreateCollectionRequest {
             name: "oldname".to_string(),
             columns: columns.clone(),
+            collection_type: None,
         };
 
         repo.create(req).await.unwrap();
@@ -546,11 +609,13 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
 
         let req = CreateCollectionRequest {
             name: "todelete".to_string(),
             columns: columns.clone(),
+            collection_type: None,
         };
 
         repo.create(req).await.unwrap();
@@ -573,10 +638,12 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
         let req_related = CreateCollectionRequest {
             name: "other_table".to_string(),
             columns: related_columns,
+            collection_type: None,
         };
         repo.create(req_related).await.unwrap();
 
@@ -586,78 +653,91 @@ mod tests {
                 data_type: DataTypes::PlainText,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "rich_field".into(),
                 data_type: DataTypes::RichText,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "num_field".into(),
                 data_type: DataTypes::Number,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "bool_field".into(),
                 data_type: DataTypes::Bool,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "email_field".into(),
                 data_type: DataTypes::Email,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "url_field".into(),
                 data_type: DataTypes::Url,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "dt_field".into(),
                 data_type: DataTypes::Datetime,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "autodt_field".into(),
                 data_type: DataTypes::AutoDatetime("now".into()),
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "file_field".into(),
                 data_type: DataTypes::File,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "relation_field".into(),
                 data_type: DataTypes::Relation,
                 index: false,
                 related_to: Some("other_table".into()),
+                ..Default::default()
             },
             Column {
                 name: "select_field".into(),
                 data_type: DataTypes::Select,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "json_field".into(),
                 data_type: DataTypes::Json,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "geo_field".into(),
                 data_type: DataTypes::GeoPoint,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             // include an indexed column to ensure indexes are recorded
             Column {
@@ -665,12 +745,14 @@ mod tests {
                 data_type: DataTypes::PlainText,
                 index: true,
                 related_to: None,
+                ..Default::default()
             },
         ];
 
         let req = CreateCollectionRequest {
             name: "types_test".to_string(),
             columns: columns.clone(),
+            collection_type: None,
         };
 
         let created = repo.create(req).await.unwrap();
@@ -696,10 +778,12 @@ mod tests {
             data_type: DataTypes::PlainText,
             index: false,
             related_to: None,
+            ..Default::default()
         }];
         let req_related = CreateCollectionRequest {
             name: "other_table".to_string(),
             columns: related_columns,
+            collection_type: None,
         };
         repo.create(req_related).await.unwrap();
 
@@ -710,17 +794,20 @@ mod tests {
                 data_type: DataTypes::PlainText,
                 index: false,
                 related_to: None,
+                ..Default::default()
             },
             Column {
                 name: "relation_field".to_string(),
                 data_type: DataTypes::Relation,
                 index: false,
                 related_to: Some("other_table".to_string()),
+                ..Default::default()
             },
         ];
         let req = CreateCollectionRequest {
             name: "my_table".to_string(),
             columns,
+            collection_type: None,
         };
         repo.create(req).await.unwrap();
 
@@ -755,5 +842,70 @@ mod tests {
         let fk = &fks[0];
         assert_eq!(fk.referenced_table, "other_table");
         assert_eq!(fk.column_name, "relation_field");
+    }
+
+    #[tokio::test]
+    async fn test_relation_validation() {
+        let pool = setup_pool("col_relation_validation").await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        // Test 1: relation column with None related_to
+        let columns1 = vec![Column {
+            name: "rel_field".to_string(),
+            data_type: DataTypes::Relation,
+            related_to: None,
+            ..Default::default()
+        }];
+        let req1 = CreateCollectionRequest {
+            name: "table1".to_string(),
+            columns: columns1,
+            collection_type: None,
+        };
+        let err1 = repo.create(req1).await.unwrap_err();
+        assert!(
+            err1.to_string()
+                .contains("must specify a related collection"),
+            "Expected 'must specify a related collection' error, got: {}",
+            err1
+        );
+
+        // Test 2: relation column with empty related_to
+        let columns2 = vec![Column {
+            name: "rel_field".to_string(),
+            data_type: DataTypes::Relation,
+            related_to: Some("  ".to_string()),
+            ..Default::default()
+        }];
+        let req2 = CreateCollectionRequest {
+            name: "table2".to_string(),
+            columns: columns2,
+            collection_type: None,
+        };
+        let err2 = repo.create(req2).await.unwrap_err();
+        assert!(
+            err2.to_string()
+                .contains("must specify a related collection"),
+            "Expected 'must specify a related collection' error, got: {}",
+            err2
+        );
+
+        // Test 3: relation column pointing to a non-existent table
+        let columns3 = vec![Column {
+            name: "rel_field".to_string(),
+            data_type: DataTypes::Relation,
+            related_to: Some("non_existent_table".to_string()),
+            ..Default::default()
+        }];
+        let req3 = CreateCollectionRequest {
+            name: "table3".to_string(),
+            columns: columns3,
+            collection_type: None,
+        };
+        let err3 = repo.create(req3).await.unwrap_err();
+        assert!(
+            err3.to_string().contains("does not exist"),
+            "Expected 'does not exist' error, got: {}",
+            err3
+        );
     }
 }

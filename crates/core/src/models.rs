@@ -150,8 +150,9 @@ pub struct CollectionListResponse {
     pub per_page: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub enum DataTypes {
+    #[default]
     PlainText,
     RichText,
     Number,
@@ -186,7 +187,7 @@ impl DataTypes {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Default, PartialEq)]
 pub struct Column {
     pub name: String,
     #[serde(deserialize_with = "deserialize_data_type", alias = "type")]
@@ -257,7 +258,8 @@ where
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateCollectionRequest {
     pub name: String,
-    pub collection_type: String,
+    #[serde(default)]
+    pub collection_type: Option<String>,
     pub columns: Vec<Column>,
 }
 

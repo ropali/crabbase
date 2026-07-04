@@ -524,6 +524,18 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                 return;
             }
 
+            for f in &fields_val {
+                if !f.name.is_empty() && f.data_type == "Relation" {
+                    if f.related_to.is_none() || f.related_to.as_ref().unwrap().is_empty() {
+                        error_msg.set(Some(format!(
+                            "Field '{}' of type Relation must specify a related collection",
+                            f.name
+                        )));
+                        return;
+                    }
+                }
+            }
+
             wasm_bindgen_futures::spawn_local(async move {
                 let client = ApiClient::new("/api".to_string(), None);
 
@@ -1015,12 +1027,13 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                             <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Related collection"}</span>
                                                                             <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"link"}</span>
                                                                         </div>
-                                                                        <select value={current_rel} onchange={on_related_to_change} class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface cursor-pointer focus:outline-none">
-                                                                            <option value="">{"Select collection..."}</option>
+                                                                        <select value={current_rel.clone()} onchange={on_related_to_change} class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface cursor-pointer focus:outline-none">
+                                                                            <option value="" selected={current_rel.is_empty()}>{"Select collection..."}</option>
                                                                             {
                                                                                 available_collections.iter().map(|col| {
+                                                                                    let is_selected = current_rel == col.name;
                                                                                     html! {
-                                                                                        <option value={col.name.clone()}>{col.name.clone()}</option>
+                                                                                        <option value={col.name.clone()} selected={is_selected}>{col.name.clone()}</option>
                                                                                     }
                                                                                 }).collect::<Html>()
                                                                             }

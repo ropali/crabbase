@@ -117,7 +117,7 @@ impl From<sqlx::Error> for RepositoryError {
 
                 let lower = message.to_ascii_lowercase();
 
-                if lower.contains("unique constraint failed") {
+                if lower.contains("unique constraint") {
                     return RepositoryError::DuplicateKey(
                         "Duplicate value violates unique constraint.".to_string(),
                     );
