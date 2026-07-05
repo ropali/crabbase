@@ -263,8 +263,18 @@ pub struct CreateCollectionRequest {
     pub columns: Vec<Column>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateCollectionRequest {
     pub name: Option<String>,
     pub columns: Option<Vec<Column>>,
+    #[serde(default)]
+    pub list_rule: Option<String>,
+    #[serde(default)]
+    pub view_rule: Option<String>,
+    #[serde(default)]
+    pub create_rule: Option<String>,
+    #[serde(default)]
+    pub update_rule: Option<String>,
+    #[serde(default)]
+    pub delete_rule: Option<String>,
 }

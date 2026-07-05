@@ -38,14 +38,14 @@ impl CollectionRepository {
         validate_columns(&collection.columns)?;
 
         for col in &collection.columns {
-            if col.data_type == DataTypes::Relation {
-                if let Some(ref target) = col.related_to {
-                    if target != &collection.name && !self.exists(target).await {
-                        return Err(RepositoryError::OtherError(format!(
-                            "related collection '{}' does not exist",
-                            target
-                        )));
-                    }
+            if col.data_type == DataTypes::Relation
+                && let Some(ref target) = col.related_to
+            {
+                if target != &collection.name && !self.exists(target).await {
+                    return Err(RepositoryError::OtherError(format!(
+                        "related collection '{}' does not exist",
+                        target
+                    )));
                 }
             }
         }
@@ -243,12 +243,23 @@ impl CollectionRepository {
             RepositoryError::OtherError(format!("unable to serialize indexes: {e}"))
         })?;
 
+        let next_list_rule = payload.list_rule.or(current.list_rule);
+        let next_view_rule = payload.view_rule.or(current.view_rule);
+        let next_create_rule = payload.create_rule.or(current.create_rule);
+        let next_update_rule = payload.update_rule.or(current.update_rule);
+        let next_delete_rule = payload.delete_rule.or(current.delete_rule);
+
         sqlx::query(
-            "UPDATE _collections SET name = $1, fields = $2::jsonb, indexes = $3::jsonb, updated = now() WHERE id = $4",
+            "UPDATE _collections SET name = $1, fields = $2::jsonb, indexes = $3::jsonb, list_rule = $4, view_rule = $5, create_rule = $6, update_rule = $7, delete_rule = $8, updated = now() WHERE id = $9",
         )
         .bind(&next_name)
         .bind(&next_fields_json)
         .bind(&next_indexes_json)
+        .bind(next_list_rule)
+        .bind(next_view_rule)
+        .bind(next_create_rule)
+        .bind(next_update_rule)
+        .bind(next_delete_rule)
         .bind(&current.id)
         .execute(&mut *tx)
         .await?;
@@ -590,6 +601,7 @@ mod tests {
         let update_req = UpdateCollectionRequest {
             name: Some("newname".to_string()),
             columns: None,
+            ..Default::default()
         };
 
         let updated = repo

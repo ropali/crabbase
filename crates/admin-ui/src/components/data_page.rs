@@ -5,7 +5,7 @@ use yew::prelude::*;
 
 use crate::api::client::ApiClient;
 use crate::components::{
-    CreateRecordDrawer, DataTable, PageHeader,
+    CreateRecordDrawer, DataTable, EditCollectionDrawer, EditRecordDrawer, PageHeader,
     data_table::{CellValue, DynamicRow, schema::columns_from_schema},
 };
 use crate::models::collection::{Collection as CollectionModel, Record};
@@ -13,6 +13,8 @@ use crate::models::collection::{Collection as CollectionModel, Record};
 #[derive(Properties, PartialEq)]
 pub struct DataPageProps {
     pub selected_collection: Option<CollectionModel>,
+    pub on_collection_updated: Callback<CollectionModel>,
+    pub on_collection_deleted: Callback<()>,
 }
 
 fn record_to_dynamic_row(r: Record, col: &CollectionModel) -> DynamicRow {
@@ -46,6 +48,9 @@ fn record_to_dynamic_row(r: Record, col: &CollectionModel) -> DynamicRow {
 pub fn data_page(props: &DataPageProps) -> Html {
     let records = use_state(Vec::<DynamicRow>::new);
     let drawer_open = use_state(|| false);
+    let is_edit_drawer_open = use_state(|| false);
+    let selected_record = use_state(|| None::<DynamicRow>);
+    let is_edit_record_drawer_open = use_state(|| false);
     let err_state = use_state(|| None::<String>);
 
     let current_page = use_state(|| 1usize);
@@ -59,6 +64,9 @@ pub fn data_page(props: &DataPageProps) -> Html {
     {
         let current_page = current_page.clone();
         let selected_rows_ids = selected_rows_ids.clone();
+        let is_edit_drawer_open = is_edit_drawer_open.clone();
+        let selected_record = selected_record.clone();
+        let is_edit_record_drawer_open = is_edit_record_drawer_open.clone();
         let col_name = props
             .selected_collection
             .as_ref()
@@ -66,6 +74,9 @@ pub fn data_page(props: &DataPageProps) -> Html {
         use_effect_with(col_name, move |_| {
             current_page.set(1);
             selected_rows_ids.set(std::collections::HashSet::new());
+            is_edit_drawer_open.set(false);
+            selected_record.set(None);
+            is_edit_record_drawer_open.set(false);
             || ()
         });
     }
@@ -122,10 +133,34 @@ pub fn data_page(props: &DataPageProps) -> Html {
         );
     }
 
-    let drawer_open_clone = drawer_open.clone();
-    let on_row_click = Callback::from(move |_row: DynamicRow| {
-        drawer_open_clone.set(true);
-    });
+    let on_row_click = {
+        let selected_record = selected_record.clone();
+        let is_edit_record_drawer_open = is_edit_record_drawer_open.clone();
+        Callback::from(move |row: DynamicRow| {
+            selected_record.set(Some(row));
+            is_edit_record_drawer_open.set(true);
+        })
+    };
+
+    let on_edit_record_drawer_close = {
+        let is_edit_record_drawer_open = is_edit_record_drawer_open.clone();
+        let selected_record = selected_record.clone();
+        Callback::from(move |_| {
+            is_edit_record_drawer_open.set(false);
+            selected_record.set(None);
+        })
+    };
+
+    let on_edit_record_drawer_success = {
+        let is_edit_record_drawer_open = is_edit_record_drawer_open.clone();
+        let selected_record = selected_record.clone();
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            is_edit_record_drawer_open.set(false);
+            selected_record.set(None);
+            refresh_trigger.set(*refresh_trigger + 1);
+        })
+    };
 
     let on_search = Callback::from(|_query: String| {});
 
@@ -149,6 +184,45 @@ pub fn data_page(props: &DataPageProps) -> Html {
         Callback::from(move |_| {
             refresh_trigger.set(*refresh_trigger + 1);
             drawer_open.set(false);
+        })
+    };
+
+    let on_edit_click = {
+        let is_edit_drawer_open = is_edit_drawer_open.clone();
+        Callback::from(move |_| {
+            is_edit_drawer_open.set(true);
+        })
+    };
+
+    let on_edit_drawer_close = {
+        let is_edit_drawer_open = is_edit_drawer_open.clone();
+        Callback::from(move |_| {
+            is_edit_drawer_open.set(false);
+        })
+    };
+
+    let on_edit_drawer_success = {
+        let is_edit_drawer_open = is_edit_drawer_open.clone();
+        let on_collection_updated = props.on_collection_updated.clone();
+        Callback::from(move |col: CollectionModel| {
+            is_edit_drawer_open.set(false);
+            on_collection_updated.emit(col);
+        })
+    };
+
+    let on_edit_drawer_deleted = {
+        let is_edit_drawer_open = is_edit_drawer_open.clone();
+        let on_collection_deleted = props.on_collection_deleted.clone();
+        Callback::from(move |_| {
+            is_edit_drawer_open.set(false);
+            on_collection_deleted.emit(());
+        })
+    };
+
+    let on_refresh = {
+        let refresh_trigger = refresh_trigger.clone();
+        Callback::from(move |_| {
+            refresh_trigger.set(*refresh_trigger + 1);
         })
     };
 
@@ -307,6 +381,8 @@ pub fn data_page(props: &DataPageProps) -> Html {
                                 collection_name={col.name.clone()}
                                 on_search={on_search}
                                 on_create={on_create}
+                                on_settings={on_edit_click}
+                                on_refresh={on_refresh}
                             />
                             <div class="flex-1 flex flex-col min-h-0 px-6 pb-6">
                                 <DataTable
@@ -363,6 +439,39 @@ pub fn data_page(props: &DataPageProps) -> Html {
                                             on_close={on_drawer_close}
                                             on_success={on_drawer_success}
                                         />
+                                    }
+                                } else {
+                                    html! {}
+                                }
+                            }
+                            {
+                                if *is_edit_drawer_open {
+                                    html! {
+                                        <EditCollectionDrawer
+                                            collection={col.clone()}
+                                            on_close={on_edit_drawer_close}
+                                            on_success={on_edit_drawer_success}
+                                            on_deleted={on_edit_drawer_deleted}
+                                        />
+                                    }
+                                } else {
+                                    html! {}
+                                }
+                            }
+                            {
+                                if *is_edit_record_drawer_open {
+                                    if let Some(record) = &*selected_record {
+                                        html! {
+                                            <EditRecordDrawer
+                                                collection_name={col.name.clone()}
+                                                collection_fields={col.fields.clone()}
+                                                record={record.clone()}
+                                                on_close={on_edit_record_drawer_close}
+                                                on_success={on_edit_record_drawer_success}
+                                            />
+                                        }
+                                    } else {
+                                        html! {}
                                     }
                                 } else {
                                     html! {}

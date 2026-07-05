@@ -44,6 +44,24 @@ fn app() -> Html {
         })
     };
 
+    let on_collection_updated = {
+        let selected_collection = selected_collection.clone();
+        let collections_refresh_trigger = collections_refresh_trigger.clone();
+        Callback::from(move |col: Collection| {
+            selected_collection.set(Some(col));
+            collections_refresh_trigger.set(*collections_refresh_trigger + 1);
+        })
+    };
+
+    let on_collection_deleted = {
+        let selected_collection = selected_collection.clone();
+        let collections_refresh_trigger = collections_refresh_trigger.clone();
+        Callback::from(move |_| {
+            selected_collection.set(None);
+            collections_refresh_trigger.set(*collections_refresh_trigger + 1);
+        })
+    };
+
     let selected_collection_id = (*selected_collection).as_ref().map(|col| col.id.clone());
 
     let active_title = (*selected_collection)
@@ -62,7 +80,11 @@ fn app() -> Html {
                     on_create_click={on_create_click}
                     refresh_trigger={*collections_refresh_trigger}
                 />
-                <DataPage selected_collection={(*selected_collection).clone()} />
+                <DataPage
+                    selected_collection={(*selected_collection).clone()}
+                    on_collection_updated={on_collection_updated}
+                    on_collection_deleted={on_collection_deleted}
+                />
                 {
                     if *is_create_drawer_open {
                         html! {

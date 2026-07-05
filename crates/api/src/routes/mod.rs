@@ -17,8 +17,7 @@ pub fn get_app_routes(state: AppState) -> Router {
     let api = Router::new()
         .nest(
             "/collections",
-            collections::get_routes(state.clone())
-                .route_layer(from_fn_with_state(state.clone(), require_admin)),
+            collections::get_routes(state.clone()), // .route_layer(from_fn_with_state(state.clone(), require_admin)),
         )
         .route("/openapi.json", get(openapi_json))
         .route("/docs", get(swagger_ui))

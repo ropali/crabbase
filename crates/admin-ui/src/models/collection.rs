@@ -35,6 +35,16 @@ pub struct Collection {
     pub fields: Vec<Field>,
     #[serde(default)]
     pub collection_type: String,
+    #[serde(default)]
+    pub list_rule: Option<String>,
+    #[serde(default)]
+    pub view_rule: Option<String>,
+    #[serde(default)]
+    pub create_rule: Option<String>,
+    #[serde(default)]
+    pub update_rule: Option<String>,
+    #[serde(default)]
+    pub delete_rule: Option<String>,
 
     pub updated: String,
     pub created: String,
@@ -46,6 +56,24 @@ pub struct CreateCollectionRequest {
     pub columns: Vec<Field>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub collection_type: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateCollectionRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub columns: Option<Vec<Field>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delete_rule: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]

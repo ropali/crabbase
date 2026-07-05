@@ -8,6 +8,10 @@ pub struct HeaderProps {
     pub on_create: Callback<()>,
     #[prop_or_default]
     pub on_api_preview: Option<Callback<()>>,
+    #[prop_or_default]
+    pub on_settings: Option<Callback<()>>,
+    #[prop_or_default]
+    pub on_refresh: Option<Callback<()>>,
 }
 
 #[function_component(PageHeader)]
@@ -16,6 +20,8 @@ pub fn page_header(props: &HeaderProps) -> Html {
     let on_search = props.on_search.clone();
     let on_create = props.on_create.clone();
     let on_api_preview = props.on_api_preview.clone();
+    let on_settings = props.on_settings.clone();
+    let on_refresh = props.on_refresh.clone();
 
     let handle_search = {
         let search_input_ref = search_input_ref.clone();
@@ -37,6 +43,18 @@ pub fn page_header(props: &HeaderProps) -> Html {
         }
     });
 
+    let handle_settings = Callback::from(move |_| {
+        if let Some(ref cb) = on_settings {
+            cb.emit(());
+        }
+    });
+
+    let handle_refresh = Callback::from(move |_| {
+        if let Some(ref cb) = on_refresh {
+            cb.emit(());
+        }
+    });
+
     html! {
         <>
             <div class="px-6 py-4 flex items-center justify-between">
@@ -44,8 +62,8 @@ pub fn page_header(props: &HeaderProps) -> Html {
                     <span class="text-on-surface-variant">{"Collections"}</span>
                     <span class="text-outline">{"/"}</span>
                     <span class="font-bold text-on-surface">{ &props.collection_name }</span>
-                    <button class="material-symbols-outlined text-outline-variant hover:text-primary transition-colors ml-2">{"settings"}</button>
-                    <button class="material-symbols-outlined text-outline-variant hover:text-primary transition-colors">{"refresh"}</button>
+                    <button onclick={handle_settings} class="material-symbols-outlined text-outline-variant hover:text-primary transition-colors ml-2">{"settings"}</button>
+                    <button onclick={handle_refresh} class="material-symbols-outlined text-outline-variant hover:text-primary transition-colors">{"refresh"}</button>
                 </div>
                 <div class="flex items-center gap-3">
                     <button onclick={handle_api_preview} class="border border-outline-variant bg-surface-container-lowest text-on-surface-variant font-bold px-4 py-1.5 rounded-lg font-label-xs text-label-xs hover:bg-surface-container-high transition-colors flex items-center gap-2">

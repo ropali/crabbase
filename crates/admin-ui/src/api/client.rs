@@ -110,4 +110,42 @@ impl ApiClient {
             .json::<serde_json::Value>()
             .await
     }
+
+    pub async fn update_collection(
+        &self,
+        name: &str,
+        body: crate::models::collection::UpdateCollectionRequest,
+    ) -> Result<crate::models::collection::Collection, gloo_net::Error> {
+        let url = format!("/collections/{}", name);
+        self.request("PATCH", &url)
+            .json(&body)?
+            .send()
+            .await?
+            .json::<crate::models::collection::Collection>()
+            .await
+    }
+
+    pub async fn delete_collection(
+        &self,
+        name: &str,
+    ) -> Result<serde_json::Value, gloo_net::Error> {
+        let url = format!("/collections/{}", name);
+        self.request("DELETE", &url)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
+
+    pub async fn truncate_collection(
+        &self,
+        name: &str,
+    ) -> Result<serde_json::Value, gloo_net::Error> {
+        let url = format!("/collections/{}/truncate", name);
+        self.request("POST", &url)
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
 }
