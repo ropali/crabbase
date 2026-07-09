@@ -93,17 +93,25 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                     id,
                     name: f.name.clone(),
                     data_type: f.data_type.clone(),
-                    required: false,
+                    required: f.required,
                     expanded: false,
-                    min_len: None,
-                    max_len: None,
-                    validation_pattern: "".to_string(),
+                    min_len: if f.data_type == "Text" { f.min } else { None },
+                    max_len: if f.data_type == "Text" { f.max } else { None },
+                    validation_pattern: f.pattern.clone().unwrap_or_default(),
                     autogenerate_pattern: "".to_string(),
-                    min_val: None,
-                    max_val: None,
+                    min_val: if f.data_type == "Number" {
+                        f.min.map(|v| v as f64)
+                    } else {
+                        None
+                    },
+                    max_val: if f.data_type == "Number" {
+                        f.max.map(|v| v as f64)
+                    } else {
+                        None
+                    },
                     help_text: "".to_string(),
                     presentable: true,
-                    hidden: false,
+                    hidden: f.hidden,
                     related_to: f.related_to.clone(),
                 })
                 .collect::<Vec<_>>();
@@ -637,11 +645,28 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                     .filter(|f| !f.name.is_empty())
                     .map(|f| {
                         let is_indexed = index_field_names.contains(&f.name);
+                        let (min, max) = match f.data_type.as_str() {
+                            "Text" => (f.min_len, f.max_len),
+                            "Number" => {
+                                (f.min_val.map(|v| v as usize), f.max_val.map(|v| v as usize))
+                            }
+                            _ => (None, None),
+                        };
+                        let pattern = if f.validation_pattern.is_empty() {
+                            None
+                        } else {
+                            Some(f.validation_pattern.clone())
+                        };
                         crate::models::collection::Field {
                             name: f.name,
                             data_type: f.data_type,
                             index: is_indexed,
                             related_to: f.related_to,
+                            required: f.required,
+                            hidden: f.hidden,
+                            min,
+                            max,
+                            pattern,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -1242,9 +1267,9 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                                 <p class="text-[11px] text-on-surface-variant/75">{desc}</p>
                                                             </div>
                                                             <select value={(*r_type).clone()} onchange={select_rule_type} class="bg-surface-container-low border border-outline-variant px-3 py-1 rounded text-xs font-bold text-on-surface cursor-pointer focus:outline-none">
-                                                                <option value="public">{"Everyone (public)"}</option>
-                                                                <option value="admin">{"Admin only"}</option>
-                                                                <option value="custom">{"Custom rule"}</option>
+                                                                <option value="public" selected={*r_type == "public"}>{"Everyone (public)"}</option>
+                                                                <option value="admin" selected={*r_type == "admin"}>{"Admin only"}</option>
+                                                                <option value="custom" selected={*r_type == "custom"}>{"Custom rule"}</option>
                                                             </select>
                                                         </div>
 

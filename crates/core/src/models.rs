@@ -202,6 +202,15 @@ pub struct Column {
     pub required: bool,
 
     #[serde(default)]
+    pub min: Option<usize>,
+
+    #[serde(default)]
+    pub max: Option<usize>,
+
+    #[serde(default)]
+    pub pattern: Option<String>,
+
+    #[serde(default)]
     pub related_to: Option<String>,
 }
 

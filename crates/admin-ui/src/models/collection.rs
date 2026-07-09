@@ -7,6 +7,16 @@ pub struct Field {
     pub data_type: String,
     pub index: bool,
     pub related_to: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
 }
 
 fn deserialize_data_type<'de, D>(deserializer: D) -> Result<String, D::Error>

@@ -2,8 +2,11 @@ use std::collections::HashMap;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
-use crate::components::data_table::{CellValue, DynamicRow};
-use crate::models::collection::Field;
+use crate::{
+    api::client::ApiClient,
+    components::data_table::{CellValue, DynamicRow},
+    models::{collection::Field, record::UpdateRecordRequest},
+};
 
 #[derive(Properties, PartialEq)]
 pub struct EditRecordDrawerProps {
@@ -169,15 +172,29 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
     };
 
     let on_submit = {
+        let col_name = props.collection_name.clone();
+        let collection_fields = props.collection_fields.clone();
+        let record_id = record_id.clone();
+
+        let email = email.clone();
         let password = password.clone();
         let confirm_password = confirm_password.clone();
+        let username = username.clone();
+        let name = name.clone();
+        let website = website.clone();
+        let verified = verified.clone();
         let is_users = props.collection_name == "users" || props.collection_name == "_superusers";
+
+        let fields = fields.clone();
         let on_success = props.on_success.clone();
         let error_msg = error_msg.clone();
 
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
 
+            let col_name = col_name.clone();
+            let collection_fields = collection_fields.clone();
+            let record_id = record_id.clone();
             let on_success = on_success.clone();
             let error_msg = error_msg.clone();
 
@@ -186,10 +203,69 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                 return;
             }
 
+            let mut data_map = serde_json::Map::new();
+
+            if is_users {
+                data_map.insert(
+                    "email".to_string(),
+                    serde_json::Value::String((*email).clone()),
+                );
+                if !password.is_empty() {
+                    data_map.insert(
+                        "password".to_string(),
+                        serde_json::Value::String((*password).clone()),
+                    );
+                }
+                data_map.insert(
+                    "username".to_string(),
+                    serde_json::Value::String((*username).clone()),
+                );
+                data_map.insert(
+                    "name".to_string(),
+                    serde_json::Value::String((*name).clone()),
+                );
+                data_map.insert(
+                    "website".to_string(),
+                    serde_json::Value::String((*website).clone()),
+                );
+                data_map.insert("verified".to_string(), serde_json::Value::Bool(*verified));
+            } else {
+                for f in &collection_fields {
+                    if let Some(val) = fields.get(&f.name) {
+                        let json_val = match f.data_type.to_lowercase().as_str() {
+                            "bool" => {
+                                let b = val == "true";
+                                serde_json::Value::Bool(b)
+                            }
+                            "number" => {
+                                if let Ok(n) = val.parse::<f64>() {
+                                    if let Some(num) = serde_json::Number::from_f64(n) {
+                                        serde_json::Value::Number(num)
+                                    } else {
+                                        serde_json::Value::Null
+                                    }
+                                } else {
+                                    serde_json::Value::Null
+                                }
+                            }
+                            _ => serde_json::Value::String(val.clone()),
+                        };
+                        data_map.insert(f.name.clone(), json_val);
+                    }
+                }
+            }
+
             wasm_bindgen_futures::spawn_local(async move {
-                // Mock API call to update record - UI only representation
-                error_msg.set(None);
-                on_success.emit(());
+                let client = ApiClient::new("/api".to_string(), None);
+                let payload = UpdateRecordRequest { data: data_map };
+
+                match client.update_record(&col_name, &record_id, payload).await {
+                    Ok(_) => {
+                        error_msg.set(None);
+                        on_success.emit(())
+                    }
+                    Err(err) => error_msg.set(Some(format!("API Error: {}", err))),
+                }
             });
         })
     };

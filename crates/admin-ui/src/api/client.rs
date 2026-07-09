@@ -1,6 +1,6 @@
 use crate::models::{
     collection::{Collection, CollectionListResponse, CreateCollectionRequest, RecordsResponse},
-    record::CreateRecordRequest,
+    record::{CreateRecordRequest, UpdateRecordRequest},
 };
 use gloo_net::http::{Request, RequestBuilder};
 
@@ -104,6 +104,22 @@ impl ApiClient {
         let url = format!("/collections/{}/records", collection_name);
 
         self.request("POST", &url)
+            .json(&body)?
+            .send()
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
+
+    pub async fn update_record(
+        &self,
+        collection_name: &str,
+        id: &str,
+        body: UpdateRecordRequest,
+    ) -> Result<serde_json::Value, gloo_net::Error> {
+        let url = format!("/collections/{}/records/{}", collection_name, id);
+
+        self.request("PATCH", &url)
             .json(&body)?
             .send()
             .await?

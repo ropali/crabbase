@@ -549,11 +549,28 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                     .filter(|f| !f.name.is_empty())
                     .map(|f| {
                         let is_indexed = index_field_names.contains(&f.name);
+                        let (min, max) = match f.data_type.as_str() {
+                            "Text" => (f.min_len, f.max_len),
+                            "Number" => {
+                                (f.min_val.map(|v| v as usize), f.max_val.map(|v| v as usize))
+                            }
+                            _ => (None, None),
+                        };
+                        let pattern = if f.validation_pattern.is_empty() {
+                            None
+                        } else {
+                            Some(f.validation_pattern.clone())
+                        };
                         crate::models::collection::Field {
                             name: f.name,
                             data_type: f.data_type,
                             index: is_indexed,
                             related_to: f.related_to,
+                            required: f.required,
+                            hidden: f.hidden,
+                            min,
+                            max,
+                            pattern,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -573,6 +590,11 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                 data_type: af_type.to_string(),
                                 index: false,
                                 related_to: None,
+                                required: false,
+                                hidden: false,
+                                min: None,
+                                max: None,
+                                pattern: None,
                             });
                         }
                     }
@@ -1250,9 +1272,9 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                 <p class="text-[11px] text-on-surface-variant/75">{desc}</p>
                                                             </div>
                                                             <select value={(*r_type).clone()} onchange={select_rule_type} class="bg-surface-container-low border border-outline-variant px-3 py-1 rounded text-xs font-bold text-on-surface cursor-pointer focus:outline-none">
-                                                                <option value="public">{"Everyone (public)"}</option>
-                                                                <option value="admin">{"Admin only"}</option>
-                                                                <option value="custom">{"Custom rule"}</option>
+                                                                <option value="public" selected={*r_type == "public"}>{"Everyone (public)"}</option>
+                                                                <option value="admin" selected={*r_type == "admin"}>{"Admin only"}</option>
+                                                                <option value="custom" selected={*r_type == "custom"}>{"Custom rule"}</option>
                                                             </select>
                                                         </div>
 

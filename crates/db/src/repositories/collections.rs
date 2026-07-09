@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use chrono::Utc;
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
@@ -227,7 +229,7 @@ impl CollectionRepository {
         let next_indexes: Vec<Column> = next_fields.iter().filter(|c| c.index).cloned().collect();
 
         if current.name != next_name || current.fields != next_fields {
-            rebuild_collection_table(
+            migrate_collection_table(
                 &mut tx,
                 &current.name,
                 &next_name,
@@ -389,66 +391,156 @@ fn validate_columns(columns: &[Column]) -> Result<(), RepositoryError> {
     Ok(())
 }
 
-async fn rebuild_collection_table(
+async fn migrate_collection_table(
     tx: &mut sqlx::Transaction<'_, Postgres>,
     current_name: &str,
     next_name: &str,
     current_fields: &[Column],
     next_fields: &[Column],
 ) -> Result<(), RepositoryError> {
-    let temp_name = format!("{}_tmp_{}", next_name, Uuid::new_v4().simple());
+    if current_name != next_name {
+        let rename_sql = format!(
+            "ALTER TABLE \"{}\" RENAME TO \"{}\"",
+            current_name, next_name
+        );
 
-    let next_column_defs = next_fields
+        sqlx::query(&rename_sql).execute(&mut **tx).await?;
+    }
+
+    let current_map: HashMap<&str, &Column> = current_fields
         .iter()
-        .map(|c| c.to_sql_definition())
-        .collect::<Vec<_>>()
-        .join(", ");
+        .map(|c| (c.name.as_str(), c))
+        .collect();
 
-    let create_sql = format!(
-        "CREATE TABLE \"{}\" (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), {}, created TIMESTAMPTZ NOT NULL DEFAULT now(), updated TIMESTAMPTZ NOT NULL DEFAULT now())",
-        temp_name, next_column_defs
-    );
-    sqlx::query(&create_sql).execute(&mut **tx).await?;
+    let next_map: HashMap<&str, &Column> =
+        next_fields.iter().map(|c| (c.name.as_str(), c)).collect();
 
-    let current_set: std::collections::HashSet<&str> =
-        current_fields.iter().map(|c| c.name.as_str()).collect();
-    let shared = next_fields
-        .iter()
-        .filter(|c| current_set.contains(c.name.as_str()))
-        .map(|c| format!("\"{}\"", c.name))
-        .collect::<Vec<_>>();
+    // Drop columns that are no longer presents in the updated schema
 
-    let mut insert_columns = vec!["\"id\"".to_string()];
-    insert_columns.extend(shared.clone());
-    insert_columns.push("\"created\"".to_string());
-    insert_columns.push("\"updated\"".to_string());
-    let insert_clause = insert_columns.join(", ");
+    for cur_col in current_fields {
+        if !next_map.contains_key(cur_col.name.as_str()) {
+            // Drop index if exist
+            let drop_idx = format!(
+                "DROP INDEX IF EXISTS \"idx_{}_{}\"",
+                current_name, cur_col.name
+            );
 
-    let copy_sql = format!(
-        "INSERT INTO \"{}\" ({}) SELECT {} FROM \"{}\"",
-        temp_name, insert_clause, insert_clause, current_name
-    );
-    sqlx::query(&copy_sql).execute(&mut **tx).await?;
+            sqlx::query(&drop_idx).execute(&mut **tx).await?;
 
-    let drop_sql = format!("DROP TABLE \"{}\"", current_name);
-    sqlx::query(&drop_sql).execute(&mut **tx).await?;
+            // Drop column
+            let drop_col = format!(
+                "ALTER TABLE \"{}\" DROP COLUMN \"{}\"",
+                next_name, cur_col.name
+            );
 
-    let rename_sql = format!("ALTER TABLE \"{}\" RENAME TO \"{}\"", temp_name, next_name);
-    sqlx::query(&rename_sql).execute(&mut **tx).await?;
+            sqlx::query(&drop_col).execute(&mut **tx).await?;
+        }
+    }
 
-    let index_sql = next_fields
-        .iter()
-        .filter(|c| c.index)
-        .map(|c| {
-            format!(
-                "CREATE INDEX IF NOT EXISTS \"idx_{}_{}\" ON \"{}\" (\"{}\")",
-                next_name, c.name, next_name, c.name
-            )
-        })
-        .collect::<Vec<_>>();
+    for next_col in next_fields {
+        match current_map.get(next_col.name.as_str()) {
+            None => {
+                // Column is new: Add it
+                let add_col = format!(
+                    "ALTER TABLE \"{}\" ADD COLUMN {}",
+                    next_name,
+                    next_col.to_sql_definition()
+                );
 
-    for sql in index_sql {
-        sqlx::query(&sql).execute(&mut **tx).await?;
+                sqlx::query(&add_col).execute(&mut **tx).await?;
+
+                // Create the index if enabled
+                if next_col.index {
+                    let create_idx = format!(
+                        "CREATE INDEX IF NOT EXISTS \"idx_{}_{}\" ON \"{}\" (\"{}\")",
+                        next_name, next_col.name, next_name, next_col.name
+                    );
+
+                    sqlx::query(&create_idx).execute(&mut **tx).await?;
+                }
+            }
+            Some(current_col) => {
+                // Check if data type or relation constraint changed
+                let type_changed = current_col.data_type != next_col.data_type
+                    || current_col.related_to != next_col.related_to;
+
+                if type_changed {
+                    // Drop old index
+                    if current_col.index {
+                        let drop_idx = format!(
+                            "DROP INDEX IF EXISTS \"idx_{}_{}\"",
+                            current_name, current_col.name
+                        );
+
+                        sqlx::query(&drop_idx).execute(&mut **tx).await?;
+                    }
+
+                    // Drop and recreate the column to handle the type mapping and FK ref cleanly
+                    let drop_col = format!(
+                        "ALTER TABLE \"{}\" DROP COLUMN \"{}\"",
+                        next_name, next_col.name
+                    );
+
+                    sqlx::query(&drop_col).execute(&mut **tx).await?;
+
+                    let add_col = format!(
+                        "ALTER TABLE \"{}\" ADD COLUMN {}",
+                        next_name,
+                        next_col.to_sql_definition()
+                    );
+
+                    sqlx::query(&add_col).execute(&mut **tx).await?;
+
+                    // Recreate index if needed
+                    if next_col.index {
+                        let create_idx = format!(
+                            "CREATE INDEX IF NOT EXISTS \"idx_{}_{}\" ON \"{}\" (\"{}\")",
+                            next_name, next_col.name, next_name, next_col.name
+                        );
+
+                        sqlx::query(&create_idx).execute(&mut **tx).await?;
+                    }
+                } else {
+                    // Check if only index status changed
+                    if current_col.index != next_col.index {
+                        if next_col.index {
+                            let create_idx = format!(
+                                "CREATE INDEX IF NOT EXISTS \"idx_{}_{}\" ON \"{}\" (\"{}\")",
+                                next_name, next_col.name, next_name, next_col.name
+                            );
+                            sqlx::query(&create_idx).execute(&mut **tx).await?;
+                        } else {
+                            let drop_idx = format!(
+                                "DROP INDEX IF EXISTS \"idx_{}_{}\"",
+                                current_name, next_col.name
+                            );
+                            sqlx::query(&drop_idx).execute(&mut **tx).await?;
+
+                            let drop_idx_new = format!(
+                                "DROP INDEX IF EXISTS \"idx_{}_{}\"",
+                                next_name, next_col.name
+                            );
+                            sqlx::query(&drop_idx_new).execute(&mut **tx).await?;
+                        }
+                    }
+
+                    // If table name changed but index remains active, recreate index with the new table name
+                    if current_name != next_name && next_col.index {
+                        let drop_idx = format!(
+                            "DROP INDEX IF EXISTS \"idx_{}_{}\"",
+                            current_name, next_col.name
+                        );
+                        sqlx::query(&drop_idx).execute(&mut **tx).await?;
+
+                        let create_idx = format!(
+                            "CREATE INDEX IF NOT EXISTS \"idx_{}_{}\" ON \"{}\" (\"{}\")",
+                            next_name, next_col.name, next_name, next_col.name
+                        );
+                        sqlx::query(&create_idx).execute(&mut **tx).await?;
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -918,6 +1010,116 @@ mod tests {
             err3.to_string().contains("does not exist"),
             "Expected 'does not exist' error, got: {}",
             err3
+        );
+    }
+
+    #[tokio::test]
+    async fn test_update_collection_schema_changes() {
+        let pool = setup_pool("col_update_collection_schema_changes").await;
+        let repo = CollectionRepository::new(pool.clone());
+
+        // 1. Create initial collection
+        let columns = vec![
+            Column {
+                name: "title".to_string(),
+                data_type: DataTypes::PlainText,
+                index: false,
+                related_to: None,
+                ..Default::default()
+            },
+            Column {
+                name: "count".to_string(),
+                data_type: DataTypes::Number,
+                index: true,
+                related_to: None,
+                ..Default::default()
+            },
+        ];
+
+        let req = CreateCollectionRequest {
+            name: "test_schema".to_string(),
+            columns: columns.clone(),
+            collection_type: None,
+        };
+
+        repo.create(req).await.unwrap();
+
+        // 2. Perform updates:
+        // - Add a new column "is_active" (Bool, index=true)
+        // - Delete the "count" column
+        // - Change "title" to index=true (index status change)
+        let updated_columns = vec![
+            Column {
+                name: "title".to_string(),
+                data_type: DataTypes::PlainText,
+                index: true,
+                related_to: None,
+                ..Default::default()
+            },
+            Column {
+                name: "is_active".to_string(),
+                data_type: DataTypes::Bool,
+                index: true,
+                related_to: None,
+                ..Default::default()
+            },
+        ];
+
+        let update_req = UpdateCollectionRequest {
+            name: None,
+            columns: Some(updated_columns.clone()),
+            ..Default::default()
+        };
+
+        let updated = repo
+            .update("test_schema".to_string(), update_req)
+            .await
+            .unwrap();
+
+        assert_eq!(updated.fields, updated_columns);
+
+        // Verify database columns using system catalog query
+        #[derive(sqlx::FromRow, Debug)]
+        struct ColumnInfo {
+            column_name: String,
+            data_type: String,
+        }
+
+        let db_cols: Vec<ColumnInfo> = sqlx::query_as::<_, ColumnInfo>(
+            "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'test_schema'"
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        let col_names: Vec<String> = db_cols.iter().map(|c| c.column_name.clone()).collect();
+        assert!(col_names.contains(&"id".to_string()));
+        assert!(col_names.contains(&"title".to_string()));
+        assert!(col_names.contains(&"is_active".to_string()));
+        assert!(!col_names.contains(&"count".to_string()));
+
+        // Verify index exists on test_schema.title and test_schema.is_active
+        let indexes: Vec<String> = sqlx::query_scalar::<_, String>(
+            "SELECT indexname FROM pg_indexes WHERE tablename = 'test_schema'",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+        assert!(
+            indexes
+                .iter()
+                .any(|idx| idx.contains("idx_test_schema_title"))
+        );
+        assert!(
+            indexes
+                .iter()
+                .any(|idx| idx.contains("idx_test_schema_is_active"))
+        );
+        assert!(
+            !indexes
+                .iter()
+                .any(|idx| idx.contains("idx_test_schema_count"))
         );
     }
 }
