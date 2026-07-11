@@ -461,6 +461,7 @@ dependencies = [
 name = "crabbase_db"
 version = "0.1.0"
 dependencies = [
+ "bcrypt",
  "chrono",
  "crabbase_core",
  "serde",

@@ -5,13 +5,15 @@ use tracing::info;
 use crate::repositories::collections::CollectionRepository;
 use crabbase_core::{
     errors::RepositoryError,
-    models::{CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
+    models::{Collection, CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
     rules::{
         compiler::{RulesSqlCompiler, SqlContext},
         parser::{RuleParser, tokenize},
     },
-    utils::string_utils::quote_ident,
+    utils::string_utils::{quote_ident, random_str},
 };
+
+use bcrypt;
 
 #[derive(Debug, Clone)]
 pub struct RecordsRepository {
@@ -114,9 +116,9 @@ impl RecordsRepository {
     pub async fn create_record(
         &self,
         collection: String,
-        body: CreateRecordRequest,
+        mut body: CreateRecordRequest,
     ) -> Result<Record, RepositoryError> {
-        let obj = &body.data;
+        let obj = &mut body.data;
 
         if obj.is_empty() {
             return Err(RepositoryError::NotFound("Empty Input".to_string()));
@@ -125,12 +127,32 @@ impl RecordsRepository {
         let col_repo = CollectionRepository::new(self.db.clone());
         let exist = col_repo.exists(&collection).await;
 
-        info!("TABLE EXIST {}: {}", collection, exist);
-
         if !exist {
             return Err(RepositoryError::NotFound(
                 "Collection does not exist".to_string(),
             ));
+        }
+
+        let col = col_repo.get_by_name(&collection).await?;
+
+        if col.collection_type.eq_ignore_ascii_case("auth") {
+            if let Some(serde_json::Value::String(plain_pw)) = obj.get("password") {
+                let hashed_pw = bcrypt::hash(plain_pw, bcrypt::DEFAULT_COST).map_err(|e| {
+                    RepositoryError::OtherError(format!("Failed to hash password: {e}"))
+                })?;
+
+                obj.insert("password".to_string(), serde_json::Value::String(hashed_pw));
+            }
+
+            // IF token_key value is not present then generate one
+            let is_missing_or_null = obj.get("tokenKey").map_or(true, |v| v.is_null());
+
+            if is_missing_or_null {
+                obj.insert(
+                    "tokenKey".to_string(),
+                    serde_json::Value::String(random_str(None)),
+                );
+            }
         }
 
         let columns: Vec<&String> = obj.keys().collect();
@@ -145,7 +167,7 @@ impl RecordsRepository {
         let mut separated = query_builder.separated(",");
 
         for col in &columns {
-            separated.push(col);
+            separated.push(quote_ident(col));
         }
 
         separated.push_unseparated(") VALUES (");
@@ -200,7 +222,7 @@ impl RecordsRepository {
         &self,
         collection: &str,
         id: &str,
-        payload: UpdateRecordRequest,
+        mut payload: UpdateRecordRequest,
     ) -> Result<Record, RepositoryError> {
         let col_repo = CollectionRepository::new(self.db.clone());
 
@@ -216,8 +238,29 @@ impl RecordsRepository {
             ));
         }
 
+        let col = col_repo.get_by_name(&collection).await?;
+
         // Validate record existence and return NotFound before attempting update.
-        let _ = self.get_record(collection, id).await?;
+        let existing_record = self.get_record(collection, id).await?;
+
+        if col.collection_type.eq_ignore_ascii_case("auth") {
+            if let Some(serde_json::Value::String(plain_pw)) = payload.data.get("password") {
+                let existing_pw_hash = existing_record
+                    .data
+                    .get("password")
+                    .and_then(|v| v.as_str());
+
+                if existing_pw_hash != Some(plain_pw) {
+                    let hashed_pw = bcrypt::hash(plain_pw, bcrypt::DEFAULT_COST).map_err(|e| {
+                        RepositoryError::OtherError(format!("Failed to hash password: {e}"))
+                    })?;
+
+                    payload
+                        .data
+                        .insert("password".to_string(), serde_json::Value::String(hashed_pw));
+                }
+            }
+        }
 
         let quoted_table = quote_ident(collection);
         let mut query_builder =
@@ -262,8 +305,6 @@ impl RecordsRepository {
             .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
 
         query_builder.push(" WHERE id = ").push_bind(id_uuid);
-
-        info!("SQL: {}", query_builder.sql());
 
         let res = query_builder.build().execute(&self.db).await?;
 
@@ -459,6 +500,107 @@ mod tests {
             updated.data.get("title").and_then(|v| v.as_str()),
             Some("updated")
         );
+    }
+
+    #[tokio::test]
+    async fn test_update_record_password_hashing() {
+        let pool = setup_pool("rec_update_pw_hash").await;
+        let col_repo = CollectionRepository::new(pool.clone());
+        let columns = vec![
+            Column {
+                name: "email".into(),
+                data_type: DataTypes::Email,
+                index: true,
+                ..Default::default()
+            },
+            Column {
+                name: "password".into(),
+                data_type: DataTypes::PlainText,
+                ..Default::default()
+            },
+            Column {
+                name: "tokenKey".into(),
+                data_type: DataTypes::PlainText,
+                ..Default::default()
+            },
+        ];
+        let create_col = CreateCollectionRequest {
+            name: "users".into(),
+            columns,
+            collection_type: Some("auth".to_string()),
+        };
+        col_repo.create(create_col).await.unwrap();
+
+        let repo = RecordsRepository::new(pool.clone());
+        let mut data = Map::new();
+        data.insert(
+            "email".to_string(),
+            Value::String("test@crabbase.io".to_string()),
+        );
+        data.insert(
+            "password".to_string(),
+            Value::String("mysecretpw".to_string()),
+        );
+        let create_req = CreateRecordRequest { data };
+        let created = repo
+            .create_record("users".to_string(), create_req)
+            .await
+            .unwrap();
+
+        let first_pw_hash = created
+            .data
+            .get("password")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_ne!(first_pw_hash, "mysecretpw");
+        assert!(bcrypt::verify("mysecretpw", &first_pw_hash).unwrap());
+
+        // Now update the password
+        let mut upd_map = Map::new();
+        upd_map.insert(
+            "password".to_string(),
+            Value::String("newsecretpw".to_string()),
+        );
+        let upd = UpdateRecordRequest { data: upd_map };
+        let updated = repo
+            .update_record("users", &created.id.to_string(), upd)
+            .await
+            .unwrap();
+
+        let second_pw_hash = updated
+            .data
+            .get("password")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_ne!(second_pw_hash, "newsecretpw");
+        assert_ne!(second_pw_hash, first_pw_hash);
+        assert!(bcrypt::verify("newsecretpw", &second_pw_hash).unwrap());
+
+        // Now perform an update with the same hash
+        let mut upd_same_map = Map::new();
+        upd_same_map.insert(
+            "password".to_string(),
+            Value::String(second_pw_hash.clone()),
+        );
+        let upd_same = UpdateRecordRequest { data: upd_same_map };
+        let updated_same = repo
+            .update_record("users", &created.id.to_string(), upd_same)
+            .await
+            .unwrap();
+
+        let third_pw_hash = updated_same
+            .data
+            .get("password")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(third_pw_hash, second_pw_hash);
+        assert!(bcrypt::verify("newsecretpw", &third_pw_hash).unwrap());
     }
 
     #[tokio::test]

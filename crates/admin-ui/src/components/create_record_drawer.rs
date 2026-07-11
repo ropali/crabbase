@@ -178,6 +178,8 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                             _ => serde_json::Value::String(val.clone()),
                         };
                         data_map.insert(f.name.clone(), json_val);
+                    } else if f.data_type.to_lowercase() == "bool" {
+                        data_map.insert(f.name.clone(), serde_json::Value::Bool(false));
                     }
                 }
             }
