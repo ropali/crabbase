@@ -8,3 +8,5 @@ logs/*
 .idea
 
 .env
+
+crates/admin-ui/dist/*

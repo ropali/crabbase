@@ -1,0 +1,46 @@
+[package]
+name = "crabbase_admin_ui"
+version = "0.1.0"
+edition = "2024"
+
+# Ensure Cargo understands this is primarily a binary target for Trunk
+[[bin]]
+name = "crabbase_admin_ui"
+path = "src/main.rs"
+
+[dependencies]
+chrono = { workspace = true }
+
+# Yew framework with Client Side Rendering (CSR) feature
+yew = { version = "0.23.0", features = ["csr"] }
+
+# Serialization / Deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async futures executor for wasm
+wasm-bindgen-futures = "0.4.42"
+
+# Gloo wrappers for web APIs (Timer, HTTP requests)
+gloo-net = "0.7.0"
+gloo-timers = "0.4.0"
+
+stylist = "0.15.1"
+
+yew-router = "0.20.0"
+
+# Web-sys features for DOM manipulation and input field interaction
+js-sys = "0.3.69"
+web-sys = { version = "0.3.69", features = [
+  "HtmlInputElement",
+  "HtmlSelectElement",
+  "Event",
+  "Url",
+  "Blob",
+  "BlobPropertyBag",
+  "HtmlAnchorElement",
+  "Document",
+  "Element",
+  "Node",
+  "Window",
+] }

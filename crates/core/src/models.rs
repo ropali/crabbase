@@ -56,6 +56,10 @@ impl Record {
             return Value::String(v);
         }
 
+        if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(col_name) {
+            return Value::String(v.to_rfc3339());
+        }
+
         Value::Null
     }
 }
@@ -91,28 +95,51 @@ pub struct CollectionOptions {
     pub auth_token: Option<OptionalData>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Collection {
     pub id: String,
     pub name: String,
+    pub system: bool,
 
-    #[sqlx(json)]
+    #[serde[rename = "collection_type"]]
+    pub collection_type: String,
     pub fields: Vec<Column>,
-
-    #[sqlx(json)]
     pub indexes: Vec<Column>,
-
     // Rules
     pub list_rule: Option<String>,
     pub view_rule: Option<String>,
     pub create_rule: Option<String>,
     pub update_rule: Option<String>,
     pub delete_rule: Option<String>,
-
-    #[sqlx(json)]
     pub options: CollectionOptions,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
+}
+
+impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for Collection {
+    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
+        let system_int: i32 = row.try_get("system")?;
+        let fields: sqlx::types::Json<Vec<Column>> = row.try_get("fields")?;
+        let indexes: sqlx::types::Json<Vec<Column>> = row.try_get("indexes")?;
+        let options: sqlx::types::Json<CollectionOptions> = row.try_get("options")?;
+
+        Ok(Collection {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            system: system_int != 0,
+            fields: fields.0,
+            indexes: indexes.0,
+            list_rule: row.try_get("list_rule")?,
+            view_rule: row.try_get("view_rule")?,
+            create_rule: row.try_get("create_rule")?,
+            update_rule: row.try_get("update_rule")?,
+            delete_rule: row.try_get("delete_rule")?,
+            options: options.0,
+            created: row.try_get("created")?,
+            updated: row.try_get("updated")?,
+            collection_type: row.try_get("type")?,
+        })
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -123,8 +150,9 @@ pub struct CollectionListResponse {
     pub per_page: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub enum DataTypes {
+    #[default]
     PlainText,
     RichText,
     Number,
@@ -159,13 +187,29 @@ impl DataTypes {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Default, PartialEq)]
 pub struct Column {
     pub name: String,
     #[serde(deserialize_with = "deserialize_data_type", alias = "type")]
     pub data_type: DataTypes,
     #[serde(default)]
     pub index: bool,
+
+    #[serde(default)]
+    pub hidden: bool,
+
+    #[serde(default)]
+    pub required: bool,
+
+    #[serde(default)]
+    pub min: Option<usize>,
+
+    #[serde(default)]
+    pub max: Option<usize>,
+
+    #[serde(default)]
+    pub pattern: Option<String>,
+
     #[serde(default)]
     pub related_to: Option<String>,
 }
@@ -223,11 +267,23 @@ where
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateCollectionRequest {
     pub name: String,
+    #[serde(default)]
+    pub collection_type: Option<String>,
     pub columns: Vec<Column>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateCollectionRequest {
     pub name: Option<String>,
     pub columns: Option<Vec<Column>>,
+    #[serde(default)]
+    pub list_rule: Option<String>,
+    #[serde(default)]
+    pub view_rule: Option<String>,
+    #[serde(default)]
+    pub create_rule: Option<String>,
+    #[serde(default)]
+    pub update_rule: Option<String>,
+    #[serde(default)]
+    pub delete_rule: Option<String>,
 }

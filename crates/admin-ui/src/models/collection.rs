@@ -1,0 +1,111 @@
+use serde::{Deserialize, Deserializer, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Field {
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_data_type")]
+    pub data_type: String,
+    pub index: bool,
+    pub related_to: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    #[serde(default)]
+    pub hidden: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pattern: Option<String>,
+}
+
+fn deserialize_data_type<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::String(s) => Ok(s),
+        serde_json::Value::Object(map) => {
+            if let Some(key) = map.keys().next() {
+                Ok(key.clone())
+            } else {
+                Ok("Unknown".to_string())
+            }
+        }
+        _ => Ok("Unknown".to_string()),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Collection {
+    pub id: String,
+    pub name: String,
+    pub system: bool,
+    pub fields: Vec<Field>,
+    #[serde(default)]
+    pub collection_type: String,
+    #[serde(default)]
+    pub list_rule: Option<String>,
+    #[serde(default)]
+    pub view_rule: Option<String>,
+    #[serde(default)]
+    pub create_rule: Option<String>,
+    #[serde(default)]
+    pub update_rule: Option<String>,
+    #[serde(default)]
+    pub delete_rule: Option<String>,
+
+    pub updated: String,
+    pub created: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CreateCollectionRequest {
+    pub name: String,
+    pub columns: Vec<Field>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub collection_type: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UpdateCollectionRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub columns: Option<Vec<Field>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub list_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub update_rule: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delete_rule: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct CollectionListResponse {
+    pub items: Vec<Collection>,
+    pub total: u64,
+    pub page: u64,
+    pub per_page: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct Record {
+    pub id: String,
+    pub data: serde_json::Value,
+    pub created: String,
+    pub updated: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct RecordsResponse {
+    pub items: Vec<Record>,
+    pub total: usize,
+    pub page: usize,
+    pub per_page: usize,
+}
