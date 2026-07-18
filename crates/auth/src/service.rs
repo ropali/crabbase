@@ -72,7 +72,7 @@ impl AuthService {
         })?;
 
         let is_valid =
-            verify_password(password, &user.password_hash).map_err(|_| APIError::Unauthorized)?;
+            verify_password(password, &user.password).map_err(|_| APIError::Unauthorized)?;
 
         if !is_valid {
             return Err(APIError::Unauthorized);
@@ -166,11 +166,14 @@ mod tests {
     async fn test_verify_session_superuser() {
         let (service, pool) = setup_service("auth_verify_session_superuser").await;
 
+        let admin_uuid_1 = uuid::Uuid::parse_str("936da01f-9abd-4d9d-80c7-02af85c822a8").unwrap();
+        let admin_uuid_2 = uuid::Uuid::parse_str("f47ac10b-58cc-4372-a567-0e02b2c3d479").unwrap();
+
         // 1. Setup a verified superuser
         sqlx::query(
-            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
-        .bind("admin_id_1")
+        .bind(admin_uuid_1)
         .bind("admin1@example.com")
         .bind("hash")
         .bind("token")
@@ -181,9 +184,9 @@ mod tests {
 
         // 2. Setup an unverified superuser
         sqlx::query(
-            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
-        .bind("admin_id_2")
+        .bind(admin_uuid_2)
         .bind("admin2@example.com")
         .bind("hash")
         .bind("token")
@@ -195,38 +198,38 @@ mod tests {
         // Test verified superuser session verification
         let claims_verified = Claims {
             token_type: "auth".to_string(),
-            id: "admin_id_1".to_string(),
+            id: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             collection_id: "_superusers".to_string(),
             refreashable: Some(false),
-            sub: "admin_id_1".to_string(),
+            sub: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             exp: 0,
             iat: 0,
         };
         let user = service.verify_session(&claims_verified).await.unwrap();
-        assert_eq!(user.id, "admin_id_1");
+        assert_eq!(user.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
         assert_eq!(user.email, "admin1@example.com");
         assert!(user.verified);
 
         // Test with collection_id as "admin"
         let claims_admin = Claims {
             token_type: "auth".to_string(),
-            id: "admin_id_1".to_string(),
+            id: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             collection_id: "admin".to_string(),
             refreashable: Some(false),
-            sub: "admin_id_1".to_string(),
+            sub: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             exp: 0,
             iat: 0,
         };
         let user_admin = service.verify_session(&claims_admin).await.unwrap();
-        assert_eq!(user_admin.id, "admin_id_1");
+        assert_eq!(user_admin.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
 
         // Test unverified superuser session verification
         let claims_unverified = Claims {
             token_type: "auth".to_string(),
-            id: "admin_id_2".to_string(),
+            id: "f47ac10b-58cc-4372-a567-0e02b2c3d479".to_string(),
             collection_id: "_superusers".to_string(),
             refreashable: Some(false),
-            sub: "admin_id_2".to_string(),
+            sub: "f47ac10b-58cc-4372-a567-0e02b2c3d479".to_string(),
             exp: 0,
             iat: 0,
         };
@@ -239,10 +242,10 @@ mod tests {
         // Test non-existent superuser session verification
         let claims_nonexistent = Claims {
             token_type: "auth".to_string(),
-            id: "nonexistent_admin".to_string(),
+            id: "ba8f95c5-cc1a-4fa6-a70e-f0bcfd96c9e0".to_string(),
             collection_id: "_superusers".to_string(),
             refreashable: Some(false),
-            sub: "nonexistent_admin".to_string(),
+            sub: "ba8f95c5-cc1a-4fa6-a70e-f0bcfd96c9e0".to_string(),
             exp: 0,
             iat: 0,
         };
@@ -259,7 +262,7 @@ mod tests {
             CREATE TABLE IF NOT EXISTS users (
                 id             TEXT PRIMARY KEY NOT NULL,
                 email          TEXT UNIQUE NOT NULL,
-                password_hash  TEXT NOT NULL,
+                password       TEXT NOT NULL,
                 token_key      TEXT NOT NULL,
                 email_visible  BOOLEAN NOT NULL DEFAULT FALSE,
                 verified       BOOLEAN NOT NULL DEFAULT FALSE,
@@ -280,7 +283,7 @@ mod tests {
 
         // 1. Setup a verified user
         sqlx::query(
-            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO users (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
         .bind("user_id_1")
         .bind("user1@example.com")
@@ -293,7 +296,7 @@ mod tests {
 
         // 2. Setup an unverified user
         sqlx::query(
-            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO users (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
         .bind("user_id_2")
         .bind("user2@example.com")
@@ -359,11 +362,13 @@ mod tests {
         let password = "admin_secure_password";
         let hash = hash_password(password).unwrap();
 
+        let admin_uuid_1 = uuid::Uuid::parse_str("936da01f-9abd-4d9d-80c7-02af85c822a8").unwrap();
+
         // Setup a superuser
         sqlx::query(
-            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
-        .bind("admin_id_1")
+        .bind(admin_uuid_1)
         .bind("admin@example.com")
         .bind(hash)
         .bind("token")
@@ -401,7 +406,7 @@ mod tests {
             .await
             .unwrap();
         let claims = verify_token(&token, "super-secret-key", "token").unwrap();
-        assert_eq!(claims.id, "admin_id_1");
+        assert_eq!(claims.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
         assert_eq!(claims.collection_id, "admin_col_id");
 
         // 3. Test login fail - wrong password
@@ -431,7 +436,7 @@ mod tests {
 
         // Setup a user
         sqlx::query(
-            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO users (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
         .bind("user_id_1")
         .bind("user@example.com")

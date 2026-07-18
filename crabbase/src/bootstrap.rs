@@ -112,11 +112,10 @@ async fn setup_superuser(
             let pw = password.expect("Admin password not set while creating superuser");
             let password_hash = crabbase_auth::auth::hash_password(&pw)?;
             let token_key = random_str(None);
-            let id = format!("r{}", uuid::Uuid::new_v4().simple());
-            let id = id.chars().take(15).collect::<String>();
+            let id = uuid::Uuid::new_v4();
 
             sqlx::query(
-                        "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)",
+                        "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)",
                     )
                     .bind(id)
                     .bind(&email)

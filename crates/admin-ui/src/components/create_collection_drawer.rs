@@ -578,7 +578,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                 if collection_type_val == "Auth" {
                     let auth_fields = vec![
                         ("password", "Text"),
-                        ("tokenKey", "Text"),
+                        ("token_key", "Text"),
                         ("email", "Text"),
                         ("emailVisibility", "Bool"),
                         ("verified", "Bool"),
@@ -778,7 +778,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                             </div>
                                                             <div class="flex items-center gap-3 bg-white p-3 rounded industrial-border opacity-70">
                                                                 <span class="material-symbols-outlined text-on-surface-variant/60">{"text_fields"}</span>
-                                                                <input type="text" value="tokenKey" disabled=true class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant py-0.5 font-code-md text-code-md text-on-surface-variant/60" />
+                                                                <input type="text" value="token_key" disabled=true class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant py-0.5 font-code-md text-code-md text-on-surface-variant/60" />
                                                                 <div class="flex items-center gap-3">
                                                                     <select disabled=true class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface-variant/60 cursor-not-allowed focus:outline-none">
                                                                         <option selected=true>{"Text"}</option>

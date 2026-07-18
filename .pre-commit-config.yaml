@@ -11,3 +11,4 @@ repos:
       - id: fmt # Formats code
       - id: cargo-check # Checks for compilation errors
       - id: clippy # Runs linter
+        args: ["--", "-A","clippy::collapsible_if"]

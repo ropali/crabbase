@@ -50,9 +50,9 @@ CREATE INDEX IF NOT EXISTS idx_logs_created_hour ON _logs (date_trunc('hour', cr
 
 -- _superusers: Administrator accounts
 CREATE TABLE IF NOT EXISTS _superusers (
-    id              TEXT PRIMARY KEY NOT NULL,
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email           TEXT UNIQUE NOT NULL,
-    password_hash   TEXT NOT NULL,
+    password        TEXT NOT NULL,
     token_key       TEXT NOT NULL,
     email_visible   BOOLEAN NOT NULL DEFAULT FALSE,
     verified        BOOLEAN NOT NULL DEFAULT FALSE,

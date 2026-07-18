@@ -11,6 +11,7 @@ serde = { workspace = true }
 jsonwebtoken = { workspace = true }
 chrono = { workspace = true }
 bcrypt = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

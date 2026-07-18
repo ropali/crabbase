@@ -4,13 +4,34 @@ use crabbase_core::{
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthUser {
     pub id: String,
     pub email: String,
-    pub password_hash: String,
+    pub password: String,
     pub token_key: String,
     pub verified: bool,
+}
+
+impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for AuthUser {
+    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
+        use sqlx::Row;
+        let id: String = if let Ok(id_str) = row.try_get::<String, _>("id") {
+            id_str
+        } else if let Ok(id_uuid) = row.try_get::<uuid::Uuid, _>("id") {
+            id_uuid.to_string()
+        } else {
+            row.try_get::<uuid::Uuid, _>("id")?.to_string()
+        };
+
+        Ok(AuthUser {
+            id,
+            email: row.try_get("email")?,
+            password: row.try_get("password")?,
+            token_key: row.try_get("token_key")?,
+            verified: row.try_get("verified")?,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -45,10 +66,19 @@ impl AuthRepository {
 
         let sql = format!("SELECT * FROM {escpated_table} WHERE id = $1");
 
-        let user = sqlx::query_as::<_, AuthUser>(&sql)
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await?;
+        let id_uuid = uuid::Uuid::parse_str(id).ok();
+
+        let user = if let Some(uuid) = id_uuid {
+            sqlx::query_as::<_, AuthUser>(&sql)
+                .bind(uuid)
+                .fetch_optional(&self.db)
+                .await?
+        } else {
+            sqlx::query_as::<_, AuthUser>(&sql)
+                .bind(id.to_string())
+                .fetch_optional(&self.db)
+                .await?
+        };
 
         Ok(user)
     }
@@ -187,11 +217,13 @@ mod tests {
         let pool = setup_pool("db_auth_get_superuser_by_id").await;
         let repo = AuthRepository::new(pool.clone());
 
+        let admin_uuid = uuid::Uuid::parse_str("936da01f-9abd-4d9d-80c7-02af85c822a8").unwrap();
+
         // Insert a superuser
         sqlx::query(
-            "INSERT INTO _superusers (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
-        .bind("admin_id")
+        .bind(admin_uuid)
         .bind("admin@example.com")
         .bind("hash123")
         .bind("token123")
@@ -200,14 +232,21 @@ mod tests {
         .await
         .unwrap();
 
-        let superuser = repo.get_superuser_by_id("admin_id").await.unwrap().unwrap();
-        assert_eq!(superuser.id, "admin_id");
+        let superuser = repo
+            .get_superuser_by_id("936da01f-9abd-4d9d-80c7-02af85c822a8")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(superuser.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
         assert_eq!(superuser.email, "admin@example.com");
-        assert_eq!(superuser.password_hash, "hash123");
+        assert_eq!(superuser.password, "hash123");
         assert_eq!(superuser.token_key, "token123");
         assert!(superuser.verified);
 
-        let none_superuser = repo.get_superuser_by_id("nonexistent_id").await.unwrap();
+        let none_superuser = repo
+            .get_superuser_by_id("4ba17fae-8367-4ab2-8cf0-38825c040d34")
+            .await
+            .unwrap();
         assert!(none_superuser.is_none());
     }
 
@@ -217,7 +256,7 @@ mod tests {
             CREATE TABLE IF NOT EXISTS users (
                 id             TEXT PRIMARY KEY NOT NULL,
                 email          TEXT UNIQUE NOT NULL,
-                password_hash  TEXT NOT NULL,
+                password       TEXT NOT NULL,
                 token_key      TEXT NOT NULL,
                 email_visible  BOOLEAN NOT NULL DEFAULT FALSE,
                 verified       BOOLEAN NOT NULL DEFAULT FALSE,
@@ -239,7 +278,7 @@ mod tests {
 
         // Insert a user in the `users` table
         sqlx::query(
-            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO users (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
         .bind("user_id_1")
         .bind("user1@example.com")
@@ -257,7 +296,7 @@ mod tests {
             .unwrap();
         assert_eq!(user.id, "user_id_1");
         assert_eq!(user.email, "user1@example.com");
-        assert_eq!(user.password_hash, "hash456");
+        assert_eq!(user.password, "hash456");
         assert_eq!(user.token_key, "token456");
         assert!(!user.verified);
 
@@ -276,7 +315,7 @@ mod tests {
 
         // Insert a user in the `users` table
         sqlx::query(
-            "INSERT INTO users (id, email, password_hash, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+            "INSERT INTO users (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
         )
         .bind("user_id_2")
         .bind("user2@example.com")
@@ -294,7 +333,7 @@ mod tests {
             .unwrap();
         assert_eq!(user.id, "user_id_2");
         assert_eq!(user.email, "user2@example.com");
-        assert_eq!(user.password_hash, "hash789");
+        assert_eq!(user.password, "hash789");
         assert_eq!(user.token_key, "token789");
         assert!(user.verified);
 

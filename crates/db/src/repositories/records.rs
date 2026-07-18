@@ -79,7 +79,6 @@ impl RecordsRepository {
         let result = query.fetch_all(&self.db).await?;
 
         let total_count: i64 = count_query.fetch_one(&self.db).await?;
-
         let items = result
             .iter()
             .filter_map(|r| Record::from_row(r).ok())
@@ -102,13 +101,17 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(collection.to_string()));
         }
 
-        let id_uuid = uuid::Uuid::parse_str(id)
-            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
+        let id_uuid = uuid::Uuid::parse_str(id).ok();
 
-        let row = sqlx::query(&format!("SELECT * FROM {collection} WHERE id = $1"))
-            .bind(id_uuid)
-            .fetch_one(&self.db)
-            .await?;
+        let sql = format!("SELECT * FROM {collection} WHERE id = $1");
+        let query = sqlx::query(&sql);
+        let query = if let Some(uuid) = id_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(id.to_string())
+        };
+
+        let row = query.fetch_one(&self.db).await?;
 
         Ok(Record::from_row(&row)?)
     }
@@ -144,12 +147,17 @@ impl RecordsRepository {
                 obj.insert("password".to_string(), serde_json::Value::String(hashed_pw));
             }
 
+            // Normalize "tokenKey" payload field to "token_key"
+            if let Some(val) = obj.remove("tokenKey") {
+                obj.insert("token_key".to_string(), val);
+            }
+
             // IF token_key value is not present then generate one
-            let is_missing_or_null = obj.get("tokenKey").map_or(true, |v| v.is_null());
+            let is_missing_or_null = obj.get("token_key").map_or(true, |v| v.is_null());
 
             if is_missing_or_null {
                 obj.insert(
-                    "tokenKey".to_string(),
+                    "token_key".to_string(),
                     serde_json::Value::String(random_str(None)),
                 );
             }
@@ -205,12 +213,19 @@ impl RecordsRepository {
         let query = query_builder.build();
 
         match query.fetch_one(&self.db).await {
-            Ok(row) => Ok(Record {
-                id: row.try_get::<uuid::Uuid, _>("id")?,
-                data: body.data,
-                created: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created")?,
-                updated: row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated")?,
-            }),
+            Ok(row) => {
+                let id: String = if let Ok(id_str) = row.try_get::<String, _>("id") {
+                    id_str
+                } else {
+                    row.try_get::<uuid::Uuid, _>("id")?.to_string()
+                };
+                Ok(Record {
+                    id,
+                    data: body.data,
+                    created: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created")?,
+                    updated: row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated")?,
+                })
+            }
             Err(err) => Err(RepositoryError::QueryFailed {
                 message: "failed to create the record".to_string(),
                 source: Some(err.to_string()),
@@ -301,10 +316,14 @@ impl RecordsRepository {
 
         query_builder.push(", updated = now()");
 
-        let id_uuid = uuid::Uuid::parse_str(id)
-            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
+        let id_uuid = uuid::Uuid::parse_str(id).ok();
 
-        query_builder.push(" WHERE id = ").push_bind(id_uuid);
+        query_builder.push(" WHERE id = ");
+        if let Some(uuid) = id_uuid {
+            query_builder.push_bind(uuid);
+        } else {
+            query_builder.push_bind(id.to_string());
+        }
 
         let res = query_builder.build().execute(&self.db).await?;
 
@@ -324,13 +343,17 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(collection.to_string()));
         }
 
-        let id_uuid = uuid::Uuid::parse_str(id)
-            .map_err(|e| RepositoryError::OtherError(format!("invalid uuid id: {e}")))?;
+        let id_uuid = uuid::Uuid::parse_str(id).ok();
 
-        sqlx::query(&format!("DELETE FROM {collection} WHERE id = $1"))
-            .bind(id_uuid)
-            .execute(&self.db)
-            .await?;
+        let sql = format!("DELETE FROM {collection} WHERE id = $1");
+        let query = sqlx::query(&sql);
+        let query = if let Some(uuid) = id_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(id.to_string())
+        };
+
+        query.execute(&self.db).await?;
 
         Ok(true)
     }
@@ -519,7 +542,7 @@ mod tests {
                 ..Default::default()
             },
             Column {
-                name: "tokenKey".into(),
+                name: "token_key".into(),
                 data_type: DataTypes::PlainText,
                 ..Default::default()
             },

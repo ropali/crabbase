@@ -8,9 +8,9 @@ use uuid::Uuid;
 pub type RecordData = serde_json::Map<String, Value>;
 pub type OptionalData = serde_json::Map<String, Value>;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Record {
-    pub id: Uuid,
+    pub id: String,
     pub data: RecordData,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
@@ -19,6 +19,14 @@ pub struct Record {
 impl Record {
     pub fn from_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let mut data = RecordData::new();
+
+        let id: String = if let Ok(id_str) = row.try_get::<String, _>("id") {
+            id_str
+        } else if let Ok(id_uuid) = row.try_get::<Uuid, _>("id") {
+            id_uuid.to_string()
+        } else {
+            row.try_get::<Uuid, _>("id")?.to_string()
+        };
 
         for c in row.columns() {
             let col = c.name();
@@ -32,7 +40,7 @@ impl Record {
         }
 
         Ok(Record {
-            id: row.try_get("id")?,
+            id,
             data,
             created: row.try_get("created")?,
             updated: row.try_get("updated")?,

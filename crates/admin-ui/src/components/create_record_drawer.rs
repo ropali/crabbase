@@ -113,7 +113,9 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
         let name = name.clone();
         let website = website.clone();
         let verified = verified.clone();
-        let is_users = props.collection_name == "users" || props.collection_name == "_superusers";
+        let is_users = props.collection_name == "users";
+        let is_superusers = props.collection_name == "_superusers";
+        let is_auth = is_users || is_superusers;
 
         let fields = fields.clone();
         let on_success = props.on_success.clone();
@@ -127,14 +129,14 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
             let on_success = on_success.clone();
             let error_msg = error_msg.clone();
 
-            if is_users && *password != *confirm_password {
+            if is_auth && *password != *confirm_password {
                 error_msg.set(Some("Passwords do not match".to_string()));
                 return;
             }
 
             let mut data_map = serde_json::Map::new();
 
-            if is_users {
+            if is_auth {
                 data_map.insert(
                     "email".to_string(),
                     serde_json::Value::String((*email).clone()),
@@ -143,18 +145,20 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                     "password".to_string(),
                     serde_json::Value::String((*password).clone()),
                 );
-                data_map.insert(
-                    "username".to_string(),
-                    serde_json::Value::String((*username).clone()),
-                );
-                data_map.insert(
-                    "name".to_string(),
-                    serde_json::Value::String((*name).clone()),
-                );
-                data_map.insert(
-                    "website".to_string(),
-                    serde_json::Value::String((*website).clone()),
-                );
+                if is_users {
+                    data_map.insert(
+                        "username".to_string(),
+                        serde_json::Value::String((*username).clone()),
+                    );
+                    data_map.insert(
+                        "name".to_string(),
+                        serde_json::Value::String((*name).clone()),
+                    );
+                    data_map.insert(
+                        "website".to_string(),
+                        serde_json::Value::String((*website).clone()),
+                    );
+                }
                 data_map.insert("verified".to_string(), serde_json::Value::Bool(*verified));
             } else {
                 for f in &collection_fields {
@@ -199,7 +203,9 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
         })
     };
 
-    let is_users = props.collection_name == "users" || props.collection_name == "_superusers";
+    let is_users = props.collection_name == "users";
+    let is_superusers = props.collection_name == "_superusers";
+    let is_auth = is_users || is_superusers;
 
     html! {
         <div onclick={on_close_click.clone()} class="absolute inset-0 bg-inverse-surface/10 bg-blur z-40 flex justify-end">
@@ -237,7 +243,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                             </div>
 
                             {
-                                if is_users {
+                                if is_auth {
                                     html! {
                                         <>
                                             <div class="group">
@@ -279,37 +285,47 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                 </label>
                                             </div>
 
-                                            <div class="group">
-                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
-                                                    <span class="material-symbols-outlined text-[14px]">{"alternate_email"}</span> {"username"}
-                                                </label>
-                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-code-md text-code-md text-on-surface outline-none" placeholder="u_crab_master" type="text" value={(*username).clone()} oninput={on_username_input} />
-                                            </div>
+                                            {
+                                                if is_users {
+                                                    html! {
+                                                        <>
+                                                            <div class="group">
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{"alternate_email"}</span> {"username"}
+                                                                </label>
+                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-code-md text-code-md text-on-surface outline-none" placeholder="u_crab_master" type="text" value={(*username).clone()} oninput={on_username_input} />
+                                                            </div>
 
-                                            <div class="group">
-                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
-                                                    <span class="material-symbols-outlined text-[14px]">{"badge"}</span> {"name"}
-                                                </label>
-                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none" placeholder="Full name" type="text" value={(*name).clone()} oninput={on_name_input} />
-                                            </div>
+                                                            <div class="group">
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{"badge"}</span> {"name"}
+                                                                </label>
+                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none" placeholder="Full name" type="text" value={(*name).clone()} oninput={on_name_input} />
+                                                            </div>
 
-                                            <div class="group">
-                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
-                                                    <span class="material-symbols-outlined text-[14px]">{"photo_camera"}</span> {"avatar"}
-                                                </label>
-                                                <div class="border-2 border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center bg-surface-container-lowest hover:bg-surface-container transition-colors cursor-pointer group-hover:border-primary">
-                                                    <span class="material-symbols-outlined text-primary text-4xl mb-2">{"cloud_upload"}</span>
-                                                    <p class="font-body-sm text-body-sm font-bold text-on-surface">{"Upload or drop new file"}</p>
-                                                    <p class="font-label-xs text-label-xs text-on-surface-variant mt-1">{"PNG, JPG, SVG up to 5MB"}</p>
-                                                </div>
-                                            </div>
+                                                            <div class="group">
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{"photo_camera"}</span> {"avatar"}
+                                                                </label>
+                                                                <div class="border-2 border-dashed border-outline-variant rounded-xl p-8 flex flex-col items-center justify-center bg-surface-container-lowest hover:bg-surface-container transition-colors cursor-pointer group-hover:border-primary">
+                                                                    <span class="material-symbols-outlined text-primary text-4xl mb-2">{"cloud_upload"}</span>
+                                                                    <p class="font-body-sm text-body-sm font-bold text-on-surface">{"Upload or drop new file"}</p>
+                                                                    <p class="font-label-xs text-label-xs text-on-surface-variant mt-1">{"PNG, JPG, SVG up to 5MB"}</p>
+                                                                </div>
+                                                            </div>
 
-                                            <div class="group">
-                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
-                                                    <span class="material-symbols-outlined text-[14px]">{"link"}</span> {"website"}
-                                                </label>
-                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none" placeholder="https://example.com" type="url" value={(*website).clone()} oninput={on_website_input} />
-                                            </div>
+                                                            <div class="group">
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{"link"}</span> {"website"}
+                                                                </label>
+                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none" placeholder="https://example.com" type="url" value={(*website).clone()} oninput={on_website_input} />
+                                                            </div>
+                                                        </>
+                                                    }
+                                                } else {
+                                                    html! {}
+                                                }
+                                            }
                                         </>
                                     }
                                 } else {
