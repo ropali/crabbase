@@ -26,9 +26,9 @@ pub struct Claims {
 pub fn create_token(
     user_id: &str,
     collection_id: &str,
-    collection_secret: &str,
-    user_token: &str,
+    secret: &str,
     token_type: TokenType,
+    duration: Option<usize>,
 ) -> Result<String, jsonwebtoken::errors::Error> {
     let now = Utc::now().timestamp() as usize;
 
@@ -44,16 +44,14 @@ pub fn create_token(
         collection_id: collection_id.to_string(),
         refreashable: Some(false),
         sub: user_id.to_string(),
-        exp: now + 3600,
+        exp: now + duration.unwrap_or(3600),
         iat: now,
     };
-
-    let key = format!("{collection_secret}-{user_token}");
 
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(key.as_bytes()),
+        &EncodingKey::from_secret(secret.as_bytes()),
     )
 }
 

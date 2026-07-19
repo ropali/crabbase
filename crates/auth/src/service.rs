@@ -94,14 +94,19 @@ impl AuthService {
                 details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
             })?;
 
-        let token = create_token(
-            &user.id,
-            &col.id,
-            col_token,
-            &user.token_key,
-            TokenType::Auth,
-        )
-        .map_err(|_| APIError::Unauthorized)?;
+        let key = format!("{}-{}", col_token, user.token_key);
+
+        let duration: Option<usize> = col
+            .options
+            .auth_token
+            .as_ref()
+            .and_then(|t| t.get("duration"))
+            .and_then(|v| v.as_number())
+            .and_then(|n| n.as_u64())
+            .and_then(|num| num.try_into().ok());
+
+        let token = create_token(&user.id, &col.id, &key, TokenType::Auth, duration)
+            .map_err(|_| APIError::Unauthorized)?;
 
         Ok(token)
     }
