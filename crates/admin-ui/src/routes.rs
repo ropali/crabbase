@@ -5,6 +5,9 @@ pub enum Route {
     #[at("/")]
     Home,
 
+    #[at("/login")]
+    Login,
+
     #[at("/collection/:name")]
     Collection { name: String },
 }

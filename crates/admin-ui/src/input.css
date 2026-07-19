@@ -806,3 +806,8 @@ body {
 .bg-blur {
     backdrop-filter: blur(4px);
 }
+
+.bg-pattern {
+    background-image: radial-gradient(var(--outline-variant) 1px, transparent 1px);
+    background-size: 24px 24px;
+}

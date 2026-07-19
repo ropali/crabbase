@@ -61,11 +61,7 @@ impl AuthService {
         email: &str,
         password: &str,
     ) -> Result<String, APIError> {
-        let user_opt = if collection == "admin" {
-            self.repo.get_user_by_email("_superusers", email).await?
-        } else {
-            self.repo.get_user_by_email(collection, email).await?
-        };
+        let user_opt = self.repo.get_user_by_email(collection, email).await?;
 
         let user = user_opt.ok_or(APIError::NotFound {
             resource: email.to_string(),

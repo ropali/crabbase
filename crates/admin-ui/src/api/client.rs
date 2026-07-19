@@ -3,14 +3,56 @@ use crate::models::{
     record::{CreateRecordRequest, UpdateRecordRequest},
 };
 use gloo_net::http::{Request, RequestBuilder};
+use std::sync::Mutex;
+
+static TOKEN: Mutex<Option<String>> = Mutex::new(None);
 
 pub struct ApiClient {
     base_url: String,
     token: Option<String>,
 }
 
+fn get_session_storage() -> Option<web_sys::Storage> {
+    web_sys::window()
+        .and_then(|w| w.session_storage().ok())
+        .flatten()
+}
+
 impl ApiClient {
+    pub fn set_token(token: Option<String>) {
+        if let Ok(mut guard) = TOKEN.lock() {
+            *guard = token.clone();
+        }
+        if let Some(storage) = get_session_storage() {
+            if let Some(ref t) = token {
+                let _ = storage.set_item("crabbase_token", t);
+            } else {
+                let _ = storage.remove_item("crabbase_token");
+            }
+        }
+    }
+
+    pub fn get_token() -> Option<String> {
+        let in_mem = TOKEN.lock().ok().and_then(|guard| guard.clone());
+        if in_mem.is_some() {
+            return in_mem;
+        }
+
+        if let Some(storage) = get_session_storage() {
+            if let Ok(Some(t)) = storage.get_item("crabbase_token") {
+                if let Ok(mut guard) = TOKEN.lock() {
+                    *guard = Some(t.clone());
+                }
+                return Some(t);
+            }
+        }
+        None
+    }
+
     pub fn new(base_url: String, token: Option<String>) -> Self {
+        if let Some(t) = token.clone() {
+            Self::set_token(Some(t));
+        }
         Self { base_url, token }
     }
 
@@ -24,7 +66,8 @@ impl ApiClient {
             _ => Request::get(&url),
         };
 
-        if let Some(ref jwt) = self.token {
+        let active_token = Self::get_token().or_else(|| self.token.clone());
+        if let Some(ref jwt) = active_token {
             req = req.header("Authorization", &format!("Bearer {}", jwt));
         }
         req
@@ -163,5 +206,42 @@ impl ApiClient {
             .await?
             .json::<serde_json::Value>()
             .await
+    }
+
+    pub async fn login(
+        &self,
+        collection: &str,
+        email: &str,
+        password: &str,
+    ) -> Result<String, gloo_net::Error> {
+        let url = format!("/auth/{}/login", collection);
+        let body = serde_json::json!({
+            "email": email,
+            "password": password,
+        });
+
+        let response = Request::post(&format!("{}{}", self.base_url, url))
+            .json(&body)?
+            .send()
+            .await?;
+
+        if !response.ok() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(gloo_net::Error::GlooError(format!(
+                "HTTP Status {}: {}",
+                status, text
+            )));
+        }
+
+        let login_res = response.json::<serde_json::Value>().await?;
+        let token = login_res
+            .get("token")
+            .and_then(|t| t.as_str())
+            .map(|t| t.to_string())
+            .ok_or_else(|| gloo_net::Error::GlooError("No token found in response".to_string()))?;
+
+        Self::set_token(Some(token.clone()));
+        Ok(token)
     }
 }
