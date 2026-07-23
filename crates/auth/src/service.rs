@@ -1,7 +1,17 @@
 use crabbase_core::errors::APIError;
 use crabbase_db::repositories::auth::{AuthRepository, AuthUser};
+use serde::{Deserialize, Serialize};
 
-use crate::auth::{Claims, TokenType, create_token, verify_password};
+use crate::auth::{Claims, TokenType, create_token, verify_password, verify_token};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthTokens {
+    #[serde(rename = "accessToken")]
+    pub access_token: String,
+
+    #[serde(rename = "refreshToken")]
+    pub refresh_token: String,
+}
 
 pub struct AuthService {
     repo: AuthRepository,
@@ -60,7 +70,7 @@ impl AuthService {
         collection: &str,
         email: &str,
         password: &str,
-    ) -> Result<String, APIError> {
+    ) -> Result<AuthTokens, APIError> {
         let user_opt = self.repo.get_user_by_email(collection, email).await?;
 
         let user = user_opt.ok_or(APIError::NotFound {
@@ -105,8 +115,80 @@ impl AuthService {
             .and_then(|n| n.as_u64())
             .and_then(|num| num.try_into().ok());
 
-        let token = create_token(&user.id, &col.id, &key, TokenType::Auth, duration)
+        let access_token = create_token(&user.id, &col.id, &key, TokenType::Auth, duration)
             .map_err(|_| APIError::Unauthorized)?;
+
+        // 7 days valid
+        // TODO: remove the hardcoded duration
+        let refresh_token = create_token(&user.id, &col.id, &key, TokenType::Refresh, Some(604800))
+            .map_err(|_| APIError::Unauthorized)?;
+
+        let token = AuthTokens {
+            access_token: access_token,
+            refresh_token: refresh_token,
+        };
+
+        Ok(token)
+    }
+
+    pub async fn refresh_token(
+        &self,
+        collection: &str,
+        email: &str,
+        refresh_token: &str,
+    ) -> Result<AuthTokens, APIError> {
+        let user_opt = self.repo.get_user_by_email(collection, email).await?;
+
+        let user = user_opt.ok_or(APIError::NotFound {
+            resource: email.to_string(),
+        })?;
+
+        let col = match self.repo.get_collection_by_name(collection).await? {
+            Some(id) => id,
+            None => {
+                return Err(APIError::NotFound {
+                    resource: collection.to_string(),
+                });
+            }
+        };
+
+        let col_token = col
+            .options
+            .auth_token
+            .as_ref()
+            .and_then(|t| t.get("secret"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| APIError::Internal {
+                message: "Unable to find the collection auth token".to_string(),
+                details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
+            })?;
+
+        let claims = verify_token(refresh_token, col_token, &user.token_key)
+            .map_err(|_| APIError::Unauthorized)?;
+
+        let key = format!("{}-{}", col_token, user.token_key);
+
+        let duration: Option<usize> = col
+            .options
+            .auth_token
+            .as_ref()
+            .and_then(|t| t.get("duration"))
+            .and_then(|v| v.as_number())
+            .and_then(|n| n.as_u64())
+            .and_then(|num| num.try_into().ok());
+
+        let access_token = create_token(&user.id, &col.id, &key, TokenType::Auth, duration)
+            .map_err(|_| APIError::Unauthorized)?;
+
+        // 7 days valid
+        // TODO: remove the hardcoded duration
+        let refresh_token = create_token(&user.id, &col.id, &key, TokenType::Refresh, Some(604800))
+            .map_err(|_| APIError::Unauthorized)?;
+
+        let token = AuthTokens {
+            access_token: access_token,
+            refresh_token: refresh_token,
+        };
 
         Ok(token)
     }
@@ -201,7 +283,7 @@ mod tests {
             token_type: "auth".to_string(),
             id: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             collection_id: "_superusers".to_string(),
-            refreashable: Some(false),
+            refreshable: false,
             sub: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             exp: 0,
             iat: 0,
@@ -216,7 +298,7 @@ mod tests {
             token_type: "auth".to_string(),
             id: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             collection_id: "admin".to_string(),
-            refreashable: Some(false),
+            refreshable: false,
             sub: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             exp: 0,
             iat: 0,
@@ -229,7 +311,7 @@ mod tests {
             token_type: "auth".to_string(),
             id: "f47ac10b-58cc-4372-a567-0e02b2c3d479".to_string(),
             collection_id: "_superusers".to_string(),
-            refreashable: Some(false),
+            refreshable: false,
             sub: "f47ac10b-58cc-4372-a567-0e02b2c3d479".to_string(),
             exp: 0,
             iat: 0,
@@ -245,7 +327,7 @@ mod tests {
             token_type: "auth".to_string(),
             id: "ba8f95c5-cc1a-4fa6-a70e-f0bcfd96c9e0".to_string(),
             collection_id: "_superusers".to_string(),
-            refreashable: Some(false),
+            refreshable: false,
             sub: "ba8f95c5-cc1a-4fa6-a70e-f0bcfd96c9e0".to_string(),
             exp: 0,
             iat: 0,
@@ -313,7 +395,7 @@ mod tests {
             token_type: "auth".to_string(),
             id: "user_id_1".to_string(),
             collection_id: "users".to_string(),
-            refreashable: Some(false),
+            refreshable: false,
             sub: "user_id_1".to_string(),
             exp: 0,
             iat: 0,
@@ -328,7 +410,7 @@ mod tests {
             token_type: "auth".to_string(),
             id: "user_id_2".to_string(),
             collection_id: "users".to_string(),
-            refreashable: Some(false),
+            refreshable: false,
             sub: "user_id_2".to_string(),
             exp: 0,
             iat: 0,
@@ -344,7 +426,7 @@ mod tests {
             token_type: "auth".to_string(),
             id: "nonexistent_user".to_string(),
             collection_id: "users".to_string(),
-            refreashable: Some(false),
+            refreshable: false,
             sub: "nonexistent_user".to_string(),
             exp: 0,
             iat: 0,
@@ -402,11 +484,11 @@ mod tests {
         .unwrap();
 
         // 2. Test login success (returns token)
-        let token = service
+        let tokens = service
             .authenticate("admin", "admin@example.com", password)
             .await
             .unwrap();
-        let claims = verify_token(&token, "super-secret-key", "token").unwrap();
+        let claims = verify_token(&tokens.access_token, "super-secret-key", "token").unwrap();
         assert_eq!(claims.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
         assert_eq!(claims.collection_id, "admin_col_id");
 
@@ -472,11 +554,11 @@ mod tests {
         .unwrap();
 
         // 2. Test login success (now that it is registered in _collections)
-        let token = service
+        let tokens = service
             .authenticate("users", "user@example.com", password)
             .await
             .unwrap();
-        let claims = verify_token(&token, "super-secret-key", "token").unwrap();
+        let claims = verify_token(&tokens.access_token, "super-secret-key", "token").unwrap();
         assert_eq!(claims.id, "user_id_1");
         assert_eq!(claims.collection_id, "users_col_id");
 

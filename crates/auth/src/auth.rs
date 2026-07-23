@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 pub enum TokenType {
     Auth,
+    Refresh,
     Verification,
     File,
 }
@@ -17,7 +18,7 @@ pub struct Claims {
 
     #[serde(rename = "collectionId")]
     pub collection_id: String,
-    pub refreashable: Option<bool>,
+    pub refreshable: bool,
     pub sub: String,
     pub exp: usize,
     pub iat: usize,
@@ -36,13 +37,14 @@ pub fn create_token(
         TokenType::Auth => "auth".to_string(),
         TokenType::Verification => "verification".to_string(),
         TokenType::File => "file".to_string(),
+        TokenType::Refresh => "refresh".to_string(),
     };
 
     let claims = Claims {
-        token_type,
+        token_type: token_type.clone(),
         id: user_id.to_string(),
         collection_id: collection_id.to_string(),
-        refreashable: Some(false),
+        refreshable: token_type == "auth",
         sub: user_id.to_string(),
         exp: now + duration.unwrap_or(3600),
         iat: now,
@@ -108,33 +110,36 @@ mod tests {
         let collection_id = "users_col_xyz";
         let secret = "secret";
         let user_token = "user_token";
+        let key = format!("{secret}-{user_token}");
 
         // Test Auth token
-        let token =
-            create_token(user_id, collection_id, secret, user_token, TokenType::Auth).unwrap();
+        let token = create_token(user_id, collection_id, &key, TokenType::Auth, None).unwrap();
         let claims = verify_token(&token, secret, user_token).unwrap();
         assert_eq!(claims.id, user_id);
         assert_eq!(claims.collection_id, collection_id);
         assert_eq!(claims.token_type, "auth");
+        assert_eq!(claims.refreshable, true);
         assert_eq!(claims.sub, user_id);
 
         // Test Verification token
-        let token_ver = create_token(
-            user_id,
-            collection_id,
-            secret,
-            user_token,
-            TokenType::Verification,
-        )
-        .unwrap();
+        let token_ver =
+            create_token(user_id, collection_id, &key, TokenType::Verification, None).unwrap();
         let claims_ver = verify_token(&token_ver, secret, user_token).unwrap();
         assert_eq!(claims_ver.token_type, "verification");
+        assert_eq!(claims_ver.refreshable, false);
 
         // Test File token
-        let token_file =
-            create_token(user_id, collection_id, secret, user_token, TokenType::File).unwrap();
+        let token_file = create_token(user_id, collection_id, &key, TokenType::File, None).unwrap();
         let claims_file = verify_token(&token_file, secret, user_token).unwrap();
         assert_eq!(claims_file.token_type, "file");
+        assert_eq!(claims_file.refreshable, false);
+
+        // Test Refresh token
+        let token_refresh =
+            create_token(user_id, collection_id, &key, TokenType::Refresh, None).unwrap();
+        let claims_refresh = verify_token(&token_refresh, secret, user_token).unwrap();
+        assert_eq!(claims_refresh.token_type, "refresh");
+        assert_eq!(claims_refresh.refreshable, false);
     }
 
     #[test]
