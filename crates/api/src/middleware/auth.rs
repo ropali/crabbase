@@ -72,8 +72,8 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 
         let user = user_opt.ok_or(APIError::Unauthorized)?;
 
-        let claims =
-            verify_token(token, col_token, &user.token_key).map_err(|_| APIError::Unauthorized)?;
+        let claims = verify_token(token, &format!("{col_token}-{}", user.token_key))
+            .map_err(|_| APIError::Unauthorized)?;
 
         let user = state.auth_service().verify_session(&claims).await?;
 
@@ -207,8 +207,8 @@ pub async fn extract_auth_context(
 
     let user = user_opt.ok_or(APIError::Unauthorized)?;
 
-    let claims =
-        verify_token(token, col_token, &user.token_key).map_err(|_| APIError::Unauthorized)?;
+    let claims = verify_token(token, &format!("{col_token}-{}", user.token_key))
+        .map_err(|_| APIError::Unauthorized)?;
 
     let user = state.auth_service().verify_session(&claims).await?;
 

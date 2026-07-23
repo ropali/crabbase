@@ -163,10 +163,9 @@ impl AuthService {
                 details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
             })?;
 
-        let claims = verify_token(refresh_token, col_token, &user.token_key)
-            .map_err(|_| APIError::Unauthorized)?;
-
         let key = format!("{}-{}", col_token, user.token_key);
+
+        let _claims = verify_token(refresh_token, &key).map_err(|_| APIError::Unauthorized)?;
 
         let duration: Option<usize> = col
             .options
@@ -488,7 +487,11 @@ mod tests {
             .authenticate("admin", "admin@example.com", password)
             .await
             .unwrap();
-        let claims = verify_token(&tokens.access_token, "super-secret-key", "token").unwrap();
+        let claims = verify_token(
+            &tokens.access_token,
+            &format!("{}-{}", "super-secret-key", "token"),
+        )
+        .unwrap();
         assert_eq!(claims.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
         assert_eq!(claims.collection_id, "admin_col_id");
 
@@ -558,7 +561,11 @@ mod tests {
             .authenticate("users", "user@example.com", password)
             .await
             .unwrap();
-        let claims = verify_token(&tokens.access_token, "super-secret-key", "token").unwrap();
+        let claims = verify_token(
+            &tokens.access_token,
+            &format!("{}-{}", "super-secret-key", "token"),
+        )
+        .unwrap();
         assert_eq!(claims.id, "user_id_1");
         assert_eq!(claims.collection_id, "users_col_id");
 

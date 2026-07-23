@@ -57,15 +57,10 @@ pub fn create_token(
     )
 }
 
-pub fn verify_token(
-    token: &str,
-    collection_secret: &str,
-    user_token: &str,
-) -> Result<Claims, jsonwebtoken::errors::Error> {
-    let key = format!("{collection_secret}-{user_token}");
+pub fn verify_token(token: &str, secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
     let data = decode::<Claims>(
         token,
-        &DecodingKey::from_secret(key.as_bytes()),
+        &DecodingKey::from_secret(secret.as_bytes()),
         &Validation::default(),
     )?;
 
@@ -114,7 +109,7 @@ mod tests {
 
         // Test Auth token
         let token = create_token(user_id, collection_id, &key, TokenType::Auth, None).unwrap();
-        let claims = verify_token(&token, secret, user_token).unwrap();
+        let claims = verify_token(&token, &key).unwrap();
         assert_eq!(claims.id, user_id);
         assert_eq!(claims.collection_id, collection_id);
         assert_eq!(claims.token_type, "auth");
@@ -124,27 +119,30 @@ mod tests {
         // Test Verification token
         let token_ver =
             create_token(user_id, collection_id, &key, TokenType::Verification, None).unwrap();
-        let claims_ver = verify_token(&token_ver, secret, user_token).unwrap();
+        let claims_ver = verify_token(&token_ver, &key).unwrap();
         assert_eq!(claims_ver.token_type, "verification");
         assert_eq!(claims_ver.refreshable, false);
 
         // Test File token
         let token_file = create_token(user_id, collection_id, &key, TokenType::File, None).unwrap();
-        let claims_file = verify_token(&token_file, secret, user_token).unwrap();
+        let claims_file = verify_token(&token_file, &key).unwrap();
         assert_eq!(claims_file.token_type, "file");
         assert_eq!(claims_file.refreshable, false);
 
         // Test Refresh token
         let token_refresh =
             create_token(user_id, collection_id, &key, TokenType::Refresh, None).unwrap();
-        let claims_refresh = verify_token(&token_refresh, secret, user_token).unwrap();
+        let claims_refresh = verify_token(&token_refresh, &key).unwrap();
         assert_eq!(claims_refresh.token_type, "refresh");
         assert_eq!(claims_refresh.refreshable, false);
     }
 
     #[test]
     fn test_verify_invalid_token() {
-        let result = verify_token("invalid.token.string", "secret", "user_token");
+        let result = verify_token(
+            "invalid.token.string",
+            &format!("{}-{}", "secret", "user_token"),
+        );
         assert!(result.is_err());
     }
 }
