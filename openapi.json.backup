@@ -673,59 +673,6 @@
         }
       }
     },
-    "/auth/{collection}/logout": {
-      "post": {
-        "tags": ["Auth"],
-        "summary": "Logout user and invalidate session",
-        "operationId": "logout",
-        "parameters": [
-          {
-            "name": "collection",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LogoutRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Logout successful",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
 
     "/collections/{name}/records/{id}": {
       "get": {
@@ -1280,20 +1227,6 @@
           "email": {
             "type": "string",
             "description": "Email address of the user requesting token refresh"
-          }
-        }
-      },
-      "LogoutRequest": {
-        "type": "object",
-        "required": ["refreshToken", "email"],
-        "properties": {
-          "refreshToken": {
-            "type": "string",
-            "description": "JWT refresh token to be invalidated"
-          },
-          "email": {
-            "type": "string",
-            "description": "Email address of the user logging out"
           }
         }
       },

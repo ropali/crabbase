@@ -1,8 +1,8 @@
-use crabbase_auth::service::AuthService;
+use crabbase_auth::{repositories::auth::AuthRepository, service::AuthService};
 use sqlx::{Pool, Postgres};
 
 use crabbase_db::repositories::{
-    auth::AuthRepository, collections::CollectionRepository, records::RecordsRepository,
+    auth::UserRepository, collections::CollectionRepository, records::RecordsRepository,
 };
 
 #[derive(Debug, Clone)]
@@ -19,11 +19,15 @@ impl AppState {
         RecordsRepository::new(self.db.clone())
     }
 
+    pub fn user_repo(&self) -> UserRepository {
+        UserRepository::new(self.db.clone())
+    }
+
     pub fn auth_repo(&self) -> AuthRepository {
         AuthRepository::new(self.db.clone())
     }
 
     pub fn auth_service(&self) -> AuthService {
-        AuthService::new(self.auth_repo())
+        AuthService::new(self.user_repo(), self.auth_repo())
     }
 }

@@ -35,11 +35,11 @@ impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for AuthUser {
 }
 
 #[derive(Debug)]
-pub struct AuthRepository {
+pub struct UserRepository {
     db: Pool<Postgres>,
 }
 
-impl AuthRepository {
+impl UserRepository {
     pub fn new(db: Pool<Postgres>) -> Self {
         Self { db }
     }
@@ -177,7 +177,7 @@ mod tests {
     #[tokio::test]
     async fn test_is_auth_collection() {
         let pool = setup_pool("db_auth_is_auth_collection").await;
-        let repo = AuthRepository::new(pool.clone());
+        let repo = UserRepository::new(pool.clone());
 
         // Insert a collection with type = 'auth'
         sqlx::query(
@@ -215,7 +215,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_superuser_by_id() {
         let pool = setup_pool("db_auth_get_superuser_by_id").await;
-        let repo = AuthRepository::new(pool.clone());
+        let repo = UserRepository::new(pool.clone());
 
         let admin_uuid = uuid::Uuid::parse_str("936da01f-9abd-4d9d-80c7-02af85c822a8").unwrap();
 
@@ -274,7 +274,7 @@ mod tests {
     async fn test_get_user_by_id() {
         let pool = setup_pool("db_auth_get_user_by_id").await;
         create_users_table(&pool).await;
-        let repo = AuthRepository::new(pool.clone());
+        let repo = UserRepository::new(pool.clone());
 
         // Insert a user in the `users` table
         sqlx::query(
@@ -311,7 +311,7 @@ mod tests {
     async fn test_get_user_by_email() {
         let pool = setup_pool("db_auth_get_user_by_email").await;
         create_users_table(&pool).await;
-        let repo = AuthRepository::new(pool.clone());
+        let repo = UserRepository::new(pool.clone());
 
         // Insert a user in the `users` table
         sqlx::query(
@@ -347,7 +347,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_collection_id_by_name() {
         let pool = setup_pool("db_auth_get_collection_id_by_name").await;
-        let repo = AuthRepository::new(pool.clone());
+        let repo = UserRepository::new(pool.clone());
 
         // Insert a collection
         sqlx::query(

@@ -1,8 +1,12 @@
+use chrono::Utc;
 use crabbase_core::errors::APIError;
-use crabbase_db::repositories::auth::{AuthRepository, AuthUser};
+use crabbase_db::repositories::auth::{AuthUser, UserRepository};
 use serde::{Deserialize, Serialize};
 
-use crate::auth::{Claims, TokenType, create_token, verify_password, verify_token};
+use crate::{
+    auth::{Claims, TokenParams, TokenType, create_token, verify_password, verify_token},
+    repositories::auth::AuthRepository,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthTokens {
@@ -14,18 +18,22 @@ pub struct AuthTokens {
 }
 
 pub struct AuthService {
-    repo: AuthRepository,
+    user_repo: UserRepository,
+    auth_repo: AuthRepository,
 }
 
 impl AuthService {
-    pub fn new(repo: AuthRepository) -> Self {
-        Self { repo }
+    pub fn new(user_repo: UserRepository, auth_repo: AuthRepository) -> Self {
+        Self {
+            user_repo,
+            auth_repo,
+        }
     }
 
     // Verifies auth user session from claims
     pub async fn verify_session(&self, claims: &Claims) -> Result<AuthUser, APIError> {
         let collection_name = self
-            .repo
+            .user_repo
             .get_collection_by_id(&claims.collection_id)
             .await
             .map_err(|e| APIError::Internal {
@@ -36,7 +44,7 @@ impl AuthService {
             .unwrap_or_else(|| claims.collection_id.clone());
 
         let user_opt = if collection_name == "_superusers" || collection_name == "admin" {
-            self.repo
+            self.user_repo
                 .get_superuser_by_id(&claims.id)
                 .await
                 .map_err(|e| APIError::Internal {
@@ -44,7 +52,7 @@ impl AuthService {
                     details: serde_json::json!(e.to_string()),
                 })?
         } else {
-            self.repo
+            self.user_repo
                 .get_user_by_id(&collection_name, &claims.id)
                 .await
                 .map_err(|e| APIError::Internal {
@@ -71,7 +79,7 @@ impl AuthService {
         email: &str,
         password: &str,
     ) -> Result<AuthTokens, APIError> {
-        let user_opt = self.repo.get_user_by_email(collection, email).await?;
+        let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
 
         let user = user_opt.ok_or(APIError::NotFound {
             resource: email.to_string(),
@@ -84,7 +92,7 @@ impl AuthService {
             return Err(APIError::Unauthorized);
         }
 
-        let col = match self.repo.get_collection_by_name(collection).await? {
+        let col = match self.user_repo.get_collection_by_name(collection).await? {
             Some(id) => id,
             None => {
                 return Err(APIError::NotFound {
@@ -104,7 +112,7 @@ impl AuthService {
                 details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
             })?;
 
-        let key = format!("{}-{}", col_token, user.token_key);
+        let secret = format!("{}-{}", col_token, user.token_key);
 
         let duration: Option<usize> = col
             .options
@@ -115,20 +123,52 @@ impl AuthService {
             .and_then(|n| n.as_u64())
             .and_then(|num| num.try_into().ok());
 
-        let access_token = create_token(&user.id, &col.id, &key, TokenType::Auth, duration)
-            .map_err(|_| APIError::Unauthorized)?;
+        let access_token_params = TokenParams {
+            user_id: &user.id,
+            collection_id: &col.id,
+            secret: &secret,
+            token_type: TokenType::Auth,
+            duration: duration,
+            jti: None,
+            family_id: None,
+        };
 
-        // 7 days valid
+        let access_token = create_token(access_token_params).map_err(|_| APIError::Unauthorized)?;
+
+        // Create Refresh Token
+
         // TODO: remove the hardcoded duration
-        let refresh_token = create_token(&user.id, &col.id, &key, TokenType::Refresh, Some(604800))
-            .map_err(|_| APIError::Unauthorized)?;
 
-        let token = AuthTokens {
+        let refresh_duration = 604800; // 7 days in seconds
+        let family_id = uuid::Uuid::new_v4();
+        let jti = uuid::Uuid::new_v4().to_string();
+
+        let refresh_token_params = TokenParams {
+            user_id: &user.id,
+            collection_id: &col.id,
+            secret: &secret,
+            token_type: TokenType::Auth,
+            duration: Some(refresh_duration),
+            jti: Some(jti.clone()),
+            family_id: Some(family_id),
+        };
+
+        let expires_at = chrono::Utc::now() + chrono::Duration::seconds(refresh_duration as i64);
+
+        let refresh_token =
+            create_token(refresh_token_params).map_err(|_| APIError::Unauthorized)?;
+
+        // Record initial refresh token in db
+        self.auth_repo
+            .create_refresh_token(family_id, &collection, &user.id, &jti, None, expires_at)
+            .await?;
+
+        let tokens = AuthTokens {
             access_token: access_token,
             refresh_token: refresh_token,
         };
 
-        Ok(token)
+        Ok(tokens)
     }
 
     pub async fn refresh_token(
@@ -137,13 +177,13 @@ impl AuthService {
         email: &str,
         refresh_token: &str,
     ) -> Result<AuthTokens, APIError> {
-        let user_opt = self.repo.get_user_by_email(collection, email).await?;
+        let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
 
         let user = user_opt.ok_or(APIError::NotFound {
             resource: email.to_string(),
         })?;
 
-        let col = match self.repo.get_collection_by_name(collection).await? {
+        let col = match self.user_repo.get_collection_by_name(collection).await? {
             Some(id) => id,
             None => {
                 return Err(APIError::NotFound {
@@ -163,33 +203,188 @@ impl AuthService {
                 details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
             })?;
 
-        let key = format!("{}-{}", col_token, user.token_key);
+        let secret = format!("{}-{}", col_token, user.token_key);
 
-        let _claims = verify_token(refresh_token, &key).map_err(|_| APIError::Unauthorized)?;
+        let claims = verify_token(refresh_token, &secret).map_err(|_| APIError::Unauthorized)?;
 
-        let duration: Option<usize> = col
+        if claims.token_type != "refresh" {
+            return Err(APIError::Unauthorized);
+        }
+
+        let old_jti = claims.jti.as_ref().ok_or(APIError::Unauthorized)?;
+        let family_id_str = claims.family_id.as_ref().ok_or(APIError::Unauthorized)?;
+
+        let family_id = uuid::Uuid::new_v4();
+
+        let new_jti = uuid::Uuid::new_v4().to_string();
+        let refresh_duration = 604800; // 7 days
+        let expires_at = chrono::Utc::now() + chrono::Duration::seconds(refresh_duration as i64);
+
+        // Consume old token and insert nre token
+        let new_record_opt = self
+            .auth_repo
+            .rotate_refreh_token(old_jti, &new_jti, expires_at)
+            .await?;
+
+        if let Some(_new_record) = new_record_opt {
+            // Successfull rotation
+            let duration: Option<usize> = col
+                .options
+                .auth_token
+                .as_ref()
+                .and_then(|t| t.get("duration"))
+                .and_then(|v| v.as_number())
+                .and_then(|n| n.as_u64())
+                .and_then(|num| num.try_into().ok());
+
+            let access_token_params = TokenParams {
+                user_id: &user.id,
+                collection_id: &col.id,
+                secret: &secret,
+                token_type: TokenType::Auth,
+                duration: duration,
+                jti: None,
+                family_id: None,
+            };
+
+            let access_token =
+                create_token(access_token_params).map_err(|_| APIError::Unauthorized)?;
+
+            let refresh_token_params = TokenParams {
+                user_id: &user.id,
+                collection_id: &col.id,
+                secret: &secret,
+                token_type: TokenType::Auth,
+                duration: Some(604800),
+                jti: None,
+                family_id: None,
+            };
+            // 7 days valid
+            // TODO: remove the hardcoded duration
+            let refresh_token =
+                create_token(refresh_token_params).map_err(|_| APIError::Unauthorized)?;
+
+            let token = AuthTokens {
+                access_token: access_token,
+                refresh_token: refresh_token,
+            };
+        }
+
+        // Check if token already used, revoked, or non existent
+        let existing_token = self
+            .auth_repo
+            .get_refresh_token_by_jti(old_jti)
+            .await?
+            .ok_or(APIError::Unauthorized)?;
+
+        if existing_token.revoked {
+            return Err(APIError::Unauthorized);
+        }
+
+        // check for grace period for concurrent refresh
+        if let Some(used_at) = existing_token.used_at {
+            let elapsed = chrono::Utc::now().signed_duration_since(used_at);
+
+            if elapsed <= chrono::Duration::seconds(10) {
+                if let Some(child_record) = self
+                    .auth_repo
+                    .get_child_refresh_token(existing_token.id)
+                    .await?
+                {
+                    let duration: Option<usize> = col
+                        .options
+                        .auth_token
+                        .as_ref()
+                        .and_then(|t| t.get("duration"))
+                        .and_then(|v| v.as_number())
+                        .and_then(|n| n.as_u64())
+                        .and_then(|num| num.try_into().ok());
+
+                    let access_token_params = TokenParams {
+                        user_id: &user.id,
+                        collection_id: &col.id,
+                        secret: &secret,
+                        token_type: TokenType::Auth,
+                        duration: duration,
+                        jti: None,
+                        family_id: None,
+                    };
+
+                    let access_token =
+                        create_token(access_token_params).map_err(|_| APIError::Unauthorized)?;
+
+                    let refresh_token_params = TokenParams {
+                        user_id: &user.id,
+                        collection_id: &col.id,
+                        secret: &secret,
+                        token_type: TokenType::Auth,
+                        duration: Some(604800),
+                        jti: None,
+                        family_id: None,
+                    };
+                    let refresh_token =
+                        create_token(refresh_token_params).map_err(|_| APIError::Unauthorized)?;
+
+                    let token = AuthTokens {
+                        access_token: access_token,
+                        refresh_token: refresh_token,
+                    };
+                }
+            }
+        }
+
+        // Reuse detected
+        self.auth_repo.revoke_token_family(family_id).await?;
+
+        // TODO: Log security incident in the database
+        tracing::warn!(user_id = %user.id, family_id = %family_id, "Refresh token reuse detected. Revoking family session.");
+
+        Err(APIError::Unauthorized)
+    }
+
+    pub async fn logout_session(
+        &self,
+        collection: &str,
+        email: &str,
+        refresh_token: &str,
+    ) -> Result<(), APIError> {
+        let user = self
+            .user_repo
+            .get_user_by_email(collection, email)
+            .await?
+            .ok_or(APIError::NotFound {
+                resource: email.to_string(),
+            })?;
+
+        let col = self
+            .user_repo
+            .get_collection_by_name(collection)
+            .await?
+            .ok_or(APIError::NotFound {
+                resource: collection.to_string(),
+            })?;
+
+        let col_token = col
             .options
             .auth_token
             .as_ref()
-            .and_then(|t| t.get("duration"))
-            .and_then(|v| v.as_number())
-            .and_then(|n| n.as_u64())
-            .and_then(|num| num.try_into().ok());
+            .and_then(|t| t.get("secret"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| APIError::Internal {
+                message: "Unable to find collection auth token".to_string(),
+                details: serde_json::Value::String(format!("Collection: {}", col.name)),
+            })?;
 
-        let access_token = create_token(&user.id, &col.id, &key, TokenType::Auth, duration)
-            .map_err(|_| APIError::Unauthorized)?;
+        let key = format!("{}-{}", col_token, user.token_key);
+        let claims = verify_token(refresh_token, &key).map_err(|_| APIError::Unauthorized)?;
 
-        // 7 days valid
-        // TODO: remove the hardcoded duration
-        let refresh_token = create_token(&user.id, &col.id, &key, TokenType::Refresh, Some(604800))
-            .map_err(|_| APIError::Unauthorized)?;
+        if let Some(family_id_str) = claims.family_id {
+            if let Ok(family_id) = uuid::Uuid::parse_str(&family_id_str) {
+                self.auth_repo.revoke_token_family(family_id).await?;
+            }
+        }
 
-        let token = AuthTokens {
-            access_token: access_token,
-            refresh_token: refresh_token,
-        };
-
-        Ok(token)
+        Ok(())
     }
 }
 
@@ -239,8 +434,9 @@ mod tests {
             .await
             .unwrap();
 
-        let repo = AuthRepository::new(pool.clone());
-        let service = AuthService::new(repo);
+        let repo = UserRepository::new(pool.clone());
+        let auth_repo = AuthRepository::new(pool.clone());
+        let service = AuthService::new(repo, auth_repo);
         (service, pool)
     }
 
@@ -286,6 +482,8 @@ mod tests {
             sub: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             exp: 0,
             iat: 0,
+            jti: None,
+            family_id: None,
         };
         let user = service.verify_session(&claims_verified).await.unwrap();
         assert_eq!(user.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
@@ -301,6 +499,8 @@ mod tests {
             sub: "936da01f-9abd-4d9d-80c7-02af85c822a8".to_string(),
             exp: 0,
             iat: 0,
+            jti: None,
+            family_id: None,
         };
         let user_admin = service.verify_session(&claims_admin).await.unwrap();
         assert_eq!(user_admin.id, "936da01f-9abd-4d9d-80c7-02af85c822a8");
@@ -314,6 +514,8 @@ mod tests {
             sub: "f47ac10b-58cc-4372-a567-0e02b2c3d479".to_string(),
             exp: 0,
             iat: 0,
+            jti: None,
+            family_id: None,
         };
         let err_forbidden = service
             .verify_session(&claims_unverified)
@@ -330,6 +532,8 @@ mod tests {
             sub: "ba8f95c5-cc1a-4fa6-a70e-f0bcfd96c9e0".to_string(),
             exp: 0,
             iat: 0,
+            jti: None,
+            family_id: None,
         };
         let err_unauthorized = service
             .verify_session(&claims_nonexistent)
@@ -398,6 +602,8 @@ mod tests {
             sub: "user_id_1".to_string(),
             exp: 0,
             iat: 0,
+            jti: None,
+            family_id: None,
         };
         let user = service.verify_session(&claims_verified).await.unwrap();
         assert_eq!(user.id, "user_id_1");
@@ -413,6 +619,8 @@ mod tests {
             sub: "user_id_2".to_string(),
             exp: 0,
             iat: 0,
+            jti: None,
+            family_id: None,
         };
         let err_forbidden = service
             .verify_session(&claims_unverified)
@@ -429,6 +637,8 @@ mod tests {
             sub: "nonexistent_user".to_string(),
             exp: 0,
             iat: 0,
+            jti: None,
+            family_id: None,
         };
         let err_unauthorized = service
             .verify_session(&claims_nonexistent)

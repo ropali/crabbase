@@ -29,11 +29,19 @@ pub struct AuthRefreshRequest {
     email: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct LogoutRequest {
+    #[serde(rename = "refreshToken")]
+    pub refresh_token: String,
+    pub email: String,
+}
+
 pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/{collection}/login", post(login))
         .route("/profile", get(profile))
         .route("/{collection}/auth-refresh", post(refresh_token))
+        .route("/{collection}/logout", post(logout))
         .with_state(state)
 }
 
@@ -68,4 +76,17 @@ async fn refresh_token(
         .await?;
 
     Ok(Json(LoginResponse { tokens }))
+}
+
+async fn logout(
+    Path(collection): Path<String>,
+    state: State<AppState>,
+    Json(payload): Json<LogoutRequest>,
+) -> Result<Json<serde_json::Value>, APIError> {
+    state
+        .auth_service()
+        .logout_session(&collection, &payload.email, &payload.refresh_token)
+        .await?;
+
+    Ok(Json(serde_json::json!({ "success": true })))
 }

@@ -39,17 +39,13 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 
         let claims = extract_unverified_claims(token).map_err(|_| APIError::Unauthorized)?;
 
-        let col = state
-            .auth_repo()
-            .get_collection_by_id(&claims.collection_id)
+        let collection = state
+            .collection_repo()
+            .get_by_id(&claims.collection_id)
             .await
-            .map_err(|e| APIError::Internal {
-                message: "Database query failed".to_string(),
-                details: serde_json::json!(e.to_string()),
-            })?
-            .ok_or(APIError::Unauthorized)?;
+            .map_err(|_| APIError::Unauthorized)?;
 
-        let col_token = col
+        let col_token = collection
             .options
             .auth_token
             .as_ref()
@@ -57,16 +53,14 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             .and_then(|v| v.as_str())
             .ok_or_else(|| APIError::Internal {
                 message: "Unable to find the collection auth token".to_string(),
-                details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
+                details: serde_json::Value::String(format!(
+                    "Collection name is: {}",
+                    collection.name
+                )),
             })?;
 
-        let collection = state
-            .collection_repo()
-            .get_by_id(&claims.collection_id)
-            .await?;
-
         let user_opt = state
-            .auth_repo()
+            .user_repo()
             .get_user_by_id(&collection.name, &claims.id)
             .await?;
 
@@ -174,17 +168,13 @@ pub async fn extract_auth_context(
 
     let claims = extract_unverified_claims(token).map_err(|_| APIError::Unauthorized)?;
 
-    let col = state
-        .auth_repo()
-        .get_collection_by_id(&claims.collection_id)
+    let collection = state
+        .collection_repo()
+        .get_by_id(&claims.collection_id)
         .await
-        .map_err(|e| APIError::Internal {
-            message: "Database query failed".to_string(),
-            details: serde_json::json!(e.to_string()),
-        })?
-        .ok_or(APIError::Unauthorized)?;
+        .map_err(|_| APIError::Unauthorized)?;
 
-    let col_token = col
+    let col_token = collection
         .options
         .auth_token
         .as_ref()
@@ -192,16 +182,11 @@ pub async fn extract_auth_context(
         .and_then(|v| v.as_str())
         .ok_or_else(|| APIError::Internal {
             message: "Unable to find the collection auth token".to_string(),
-            details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
+            details: serde_json::Value::String(format!("Collection name is: {}", collection.name)),
         })?;
 
-    let collection = state
-        .collection_repo()
-        .get_by_id(&claims.collection_id)
-        .await?;
-
     let user_opt = state
-        .auth_repo()
+        .user_repo()
         .get_user_by_id(&collection.name, &claims.id)
         .await?;
 

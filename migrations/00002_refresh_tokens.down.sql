@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS _refresh_tokens CASCADE;

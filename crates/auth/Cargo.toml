@@ -13,7 +13,10 @@ chrono = { workspace = true }
 bcrypt = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
+sha2 = "0.11.0"
+hex = "0.4"
+sqlx = { workspace = true }
+
 
 [dev-dependencies]
 tokio = { workspace = true }
-sqlx = { workspace = true }
