@@ -10,6 +10,7 @@ use crabbase_auth::auth::{extract_unverified_claims, verify_token};
 use crabbase_core::{errors::APIError, rules::compiler::SqlContext};
 use crabbase_db::repositories::auth::AuthUser;
 use sqlx::{Column as _, Row as _};
+use tracing::info;
 
 use crate::state::AppState;
 
@@ -74,8 +75,16 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         // Dynamically fetch all fields of the authenticated record from its table
         let escaped_table = crabbase_core::utils::string_utils::quote_ident(&collection.name);
         let sql = format!("SELECT * FROM {} WHERE id = $1", escaped_table);
-        let row_opt = sqlx::query(&sql)
-            .bind(&claims.id)
+
+        let id_uuid = uuid::Uuid::parse_str(&claims.id).ok();
+
+        let query = sqlx::query(&sql);
+        let query = if let Some(uuid) = id_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(&claims.id)
+        };
+        let row_opt = query
             .fetch_optional(&state.db)
             .await
             .map_err(|e| APIError::Internal {
@@ -200,8 +209,14 @@ pub async fn extract_auth_context(
     // Dynamically fetch all fields of the authenticated record from its table
     let escaped_table = crabbase_core::utils::string_utils::quote_ident(&collection.name);
     let sql = format!("SELECT * FROM {} WHERE id = $1", escaped_table);
-    let row_opt = sqlx::query(&sql)
-        .bind(&claims.id)
+    let id_uuid = uuid::Uuid::parse_str(&claims.id).ok();
+    let query = sqlx::query(&sql);
+    let query = if let Some(uuid) = id_uuid {
+        query.bind(uuid)
+    } else {
+        query.bind(&claims.id)
+    };
+    let row_opt = query
         .fetch_optional(&state.db)
         .await
         .map_err(|e| APIError::Internal {

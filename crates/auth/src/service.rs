@@ -79,6 +79,15 @@ impl AuthService {
         email: &str,
         password: &str,
     ) -> Result<AuthTokens, APIError> {
+        let col = match self.user_repo.get_collection_by_name(collection).await? {
+            Some(id) => id,
+            None => {
+                return Err(APIError::NotFound {
+                    resource: collection.to_string(),
+                });
+            }
+        };
+
         let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
 
         let user = user_opt.ok_or(APIError::NotFound {
@@ -91,15 +100,6 @@ impl AuthService {
         if !is_valid {
             return Err(APIError::Unauthorized);
         }
-
-        let col = match self.user_repo.get_collection_by_name(collection).await? {
-            Some(id) => id,
-            None => {
-                return Err(APIError::NotFound {
-                    resource: collection.to_string(),
-                });
-            }
-        };
 
         let col_token = col
             .options
@@ -147,7 +147,7 @@ impl AuthService {
             user_id: &user.id,
             collection_id: &col.id,
             secret: &secret,
-            token_type: TokenType::Auth,
+            token_type: TokenType::Refresh,
             duration: Some(refresh_duration),
             jti: Some(jti.clone()),
             family_id: Some(family_id),
@@ -213,21 +213,20 @@ impl AuthService {
 
         let old_jti = claims.jti.as_ref().ok_or(APIError::Unauthorized)?;
         let family_id_str = claims.family_id.as_ref().ok_or(APIError::Unauthorized)?;
-
-        let family_id = uuid::Uuid::new_v4();
+        let family_id = uuid::Uuid::parse_str(family_id_str).map_err(|_| APIError::Unauthorized)?;
 
         let new_jti = uuid::Uuid::new_v4().to_string();
         let refresh_duration = 604800; // 7 days
         let expires_at = chrono::Utc::now() + chrono::Duration::seconds(refresh_duration as i64);
 
-        // Consume old token and insert nre token
+        // Consume old token and insert new token
         let new_record_opt = self
             .auth_repo
             .rotate_refreh_token(old_jti, &new_jti, expires_at)
             .await?;
 
-        if let Some(_new_record) = new_record_opt {
-            // Successfull rotation
+        if let Some(new_record) = new_record_opt {
+            // Successful rotation
             let duration: Option<usize> = col
                 .options
                 .auth_token
@@ -254,20 +253,19 @@ impl AuthService {
                 user_id: &user.id,
                 collection_id: &col.id,
                 secret: &secret,
-                token_type: TokenType::Auth,
-                duration: Some(604800),
-                jti: None,
-                family_id: None,
+                token_type: TokenType::Refresh,
+                duration: Some(refresh_duration),
+                jti: Some(new_jti),
+                family_id: Some(new_record.family_id),
             };
-            // 7 days valid
-            // TODO: remove the hardcoded duration
+
             let refresh_token =
                 create_token(refresh_token_params).map_err(|_| APIError::Unauthorized)?;
 
-            let token = AuthTokens {
-                access_token: access_token,
-                refresh_token: refresh_token,
-            };
+            return Ok(AuthTokens {
+                access_token,
+                refresh_token,
+            });
         }
 
         // Check if token already used, revoked, or non existent
@@ -313,22 +311,23 @@ impl AuthService {
                     let access_token =
                         create_token(access_token_params).map_err(|_| APIError::Unauthorized)?;
 
+                    let new_jti_grace = uuid::Uuid::new_v4().to_string();
                     let refresh_token_params = TokenParams {
                         user_id: &user.id,
                         collection_id: &col.id,
                         secret: &secret,
-                        token_type: TokenType::Auth,
-                        duration: Some(604800),
-                        jti: None,
-                        family_id: None,
+                        token_type: TokenType::Refresh,
+                        duration: Some(refresh_duration),
+                        jti: Some(new_jti_grace),
+                        family_id: Some(child_record.family_id),
                     };
                     let refresh_token =
                         create_token(refresh_token_params).map_err(|_| APIError::Unauthorized)?;
 
-                    let token = AuthTokens {
-                        access_token: access_token,
-                        refresh_token: refresh_token,
-                    };
+                    return Ok(AuthTokens {
+                        access_token,
+                        refresh_token,
+                    });
                 }
             }
         }
@@ -336,7 +335,6 @@ impl AuthService {
         // Reuse detected
         self.auth_repo.revoke_token_family(family_id).await?;
 
-        // TODO: Log security incident in the database
         tracing::warn!(user_id = %user.id, family_id = %family_id, "Refresh token reuse detected. Revoking family session.");
 
         Err(APIError::Unauthorized)
@@ -669,23 +667,23 @@ mod tests {
         .await
         .unwrap();
 
-        // 1. Test login fail - admin collection not in _collections
+        // 1. Test login fail - _superusers collection not in _collections
         let err_not_found_col = service
-            .authenticate("admin", "admin@example.com", password)
+            .authenticate("_superusers", "admin@example.com", password)
             .await
             .unwrap_err();
         assert!(
-            matches!(err_not_found_col, APIError::NotFound { ref resource } if resource == "admin")
+            matches!(err_not_found_col, APIError::NotFound { ref resource } if resource == "_superusers")
         );
 
-        // Setup "admin" in _collections table so collection ID can be queried
+        // Setup "_superusers" in _collections table so collection ID can be queried
         sqlx::query(
             "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
         )
         .bind("admin_col_id")
         .bind(1)
         .bind("auth")
-        .bind("admin")
+        .bind("_superusers")
         .bind("[]")
         .bind("{\"authToken\": {\"secret\": \"super-secret-key\"}}")
         .execute(&pool)
@@ -694,7 +692,7 @@ mod tests {
 
         // 2. Test login success (returns token)
         let tokens = service
-            .authenticate("admin", "admin@example.com", password)
+            .authenticate("_superusers", "admin@example.com", password)
             .await
             .unwrap();
         let claims = verify_token(
@@ -707,14 +705,14 @@ mod tests {
 
         // 3. Test login fail - wrong password
         let err_unauthorized = service
-            .authenticate("admin", "admin@example.com", "wrong_pass")
+            .authenticate("_superusers", "admin@example.com", "wrong_pass")
             .await
             .unwrap_err();
         assert!(matches!(err_unauthorized, APIError::Unauthorized));
 
         // 4. Test login fail - non-existent superuser
         let err_not_found = service
-            .authenticate("admin", "nonexistent@example.com", password)
+            .authenticate("_superusers", "nonexistent@example.com", password)
             .await
             .unwrap_err();
         assert!(
@@ -794,5 +792,56 @@ mod tests {
         assert!(
             matches!(err_not_found_user, APIError::NotFound { ref resource } if resource == "nonexistent@example.com")
         );
+    }
+
+    #[tokio::test]
+    async fn test_refresh_token_success() {
+        let (service, pool) = setup_service("auth_refresh_token_success").await;
+
+        let password = "admin_secure_password";
+        let hash = hash_password(password).unwrap();
+        let admin_uuid = uuid::Uuid::parse_str("936da01f-9abd-4d9d-80c7-02af85c822a8").unwrap();
+
+        sqlx::query(
+            "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind(admin_uuid)
+        .bind("admin@example.com")
+        .bind(hash)
+        .bind("token")
+        .bind(true)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
+        )
+        .bind("admin_col_id")
+        .bind(1)
+        .bind("auth")
+        .bind("_superusers")
+        .bind("[]")
+        .bind("{\"authToken\": {\"secret\": \"super-secret-key\"}}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let login_tokens = service
+            .authenticate("_superusers", "admin@example.com", password)
+            .await
+            .unwrap();
+
+        let refreshed_tokens = service
+            .refresh_token(
+                "_superusers",
+                "admin@example.com",
+                &login_tokens.refresh_token,
+            )
+            .await
+            .unwrap();
+
+        assert!(!refreshed_tokens.access_token.is_empty());
+        assert!(!refreshed_tokens.refresh_token.is_empty());
     }
 }
