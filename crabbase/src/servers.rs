@@ -1,4 +1,4 @@
-use crabbase_api::{routes::get_app_routes, state::AppState};
+use crabbase_api::{get_app_routes, state::AppState};
 use crabbase_core::config::Config;
 use sqlx::{Pool, Postgres};
 use tokio::net::TcpListener;
