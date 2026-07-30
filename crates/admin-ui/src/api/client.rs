@@ -236,10 +236,15 @@ impl ApiClient {
 
         let login_res = response.json::<serde_json::Value>().await?;
         let token = login_res
-            .get("token")
+            .get("tokens")
+            .and_then(|t| t.get("accessToken"))
             .and_then(|t| t.as_str())
+            .or_else(|| login_res.get("token").and_then(|t| t.as_str()))
+            .or_else(|| login_res.get("accessToken").and_then(|t| t.as_str()))
             .map(|t| t.to_string())
-            .ok_or_else(|| gloo_net::Error::GlooError("No token found in response".to_string()))?;
+            .ok_or_else(|| {
+                gloo_net::Error::GlooError(format!("No token found in response: {}", login_res))
+            })?;
 
         Self::set_token(Some(token.clone()));
         Ok(token)
