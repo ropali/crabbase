@@ -5,6 +5,7 @@ use axum::{
 };
 use crabbase_auth::service::AuthTokens;
 pub(crate) use crabbase_core::errors::APIError;
+use crabbase_db::repositories::auth::UserRepository;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -25,8 +26,6 @@ pub struct LoginResponse {
 pub struct AuthRefreshRequest {
     #[serde(rename = "refreshToken")]
     refresh_token: String,
-
-    email: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,11 +67,12 @@ async fn profile(AuthenticatedUser(user): AuthenticatedUser) -> Result<Json<Valu
 async fn refresh_token(
     Path(collection): Path<String>,
     state: State<AppState>,
+    AuthenticatedUser(user): AuthenticatedUser,
     Json(payload): Json<AuthRefreshRequest>,
 ) -> Result<Json<LoginResponse>, APIError> {
     let tokens = state
         .auth_service()
-        .refresh_token(&collection, &payload.email, &payload.refresh_token)
+        .refresh_token(&collection, &user.email, &payload.refresh_token)
         .await?;
 
     Ok(Json(LoginResponse { tokens }))

@@ -614,10 +614,9 @@
     "/auth/{collection}/auth-refresh": {
       "post": {
         "tags": ["Auth"],
-        "summary": "Refresh authentication token with email verification",
-        "description": "Refreshes an authentication token by validating the provided refresh token and email address. The email is used to verify the token belongs to the correct user in the specified collection.",
+        "summary": "Refresh authentication token",
+        "description": "Refreshes an authentication token by validating the provided refresh token.",
         "operationId": "refreshToken",
-        "security": [],
         "parameters": [
           {
             "name": "collection",
@@ -678,6 +677,7 @@
         "tags": ["Auth"],
         "summary": "Logout user and invalidate session",
         "operationId": "logout",
+        "security": [],
         "parameters": [
           {
             "name": "collection",
@@ -1271,15 +1271,11 @@
       },
       "AuthRefreshRequest": {
         "type": "object",
-        "required": ["refreshToken", "email"],
+        "required": ["refreshToken"],
         "properties": {
           "refreshToken": {
             "type": "string",
             "description": "JWT refresh token to be used for obtaining new tokens"
-          },
-          "email": {
-            "type": "string",
-            "description": "Email address of the user requesting token refresh"
           }
         }
       },

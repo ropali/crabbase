@@ -177,11 +177,11 @@ impl AuthService {
         email: &str,
         refresh_token: &str,
     ) -> Result<AuthTokens, APIError> {
-        let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
-
-        let user = user_opt.ok_or(APIError::NotFound {
-            resource: email.to_string(),
-        })?;
+        let user = self
+            .user_repo
+            .get_user_by_email(collection, email)
+            .await?
+            .unwrap(); //  User will always be present as already authencated
 
         let col = match self.user_repo.get_collection_by_name(collection).await? {
             Some(id) => id,
