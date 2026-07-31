@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{ascii::AsciiExt, collections::HashMap};
 
 use axum::{
     extract::{FromRequestParts, State},
@@ -6,11 +6,10 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use crabbase_auth::auth::{extract_unverified_claims, verify_token};
+use crabbase_auth::auth::{Claims, extract_unverified_claims, verify_token};
 use crabbase_core::{errors::APIError, rules::compiler::SqlContext};
 use crabbase_db::repositories::auth::AuthUser;
 use sqlx::{Column as _, Row as _};
-use tracing::info;
 
 use crate::state::AppState;
 
@@ -39,6 +38,8 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             .ok_or(APIError::Unauthorized)?;
 
         let claims = extract_unverified_claims(token).map_err(|_| APIError::Unauthorized)?;
+
+        parts.extensions.insert(claims.clone());
 
         let collection = state
             .collection_repo()
@@ -150,6 +151,15 @@ pub async fn require_admin(
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, APIError> {
+    let claims = request
+        .extensions()
+        .get::<Claims>()
+        .ok_or(APIError::Unauthorized)?;
+
+    if !claims.collection_name.eq_ignore_ascii_case("_superusers") {
+        return Err(APIError::Forbidden);
+    }
+
     request.extensions_mut().insert(user);
 
     Ok(next.run(request).await)

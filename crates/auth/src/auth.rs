@@ -11,7 +11,7 @@ pub enum TokenType {
     File,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     #[serde(rename = "type")]
     pub token_type: String,
@@ -19,6 +19,10 @@ pub struct Claims {
 
     #[serde(rename = "collectionId")]
     pub collection_id: String,
+
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+
     pub refreshable: bool,
     pub sub: String,
     pub exp: usize,
@@ -35,6 +39,7 @@ pub struct Claims {
 pub struct TokenParams<'a> {
     pub user_id: &'a str,
     pub collection_id: &'a str,
+    pub collection_name: &'a str,
     pub secret: &'a str,
     pub token_type: TokenType,
     pub duration: Option<usize>,
@@ -62,6 +67,7 @@ pub fn create_token(params: TokenParams) -> Result<String, jsonwebtoken::errors:
         token_type: token_type.clone(),
         id: params.user_id.to_string(),
         collection_id: params.collection_id.to_string(),
+        collection_name: params.collection_name.to_string(),
         refreshable: token_type == "auth",
         sub: params.user_id.to_string(),
         exp: now + params.duration.unwrap_or(default_duration),

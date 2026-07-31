@@ -126,6 +126,7 @@ impl AuthService {
         let access_token_params = TokenParams {
             user_id: &user.id,
             collection_id: &col.id,
+            collection_name: &col.name,
             secret: &secret,
             token_type: TokenType::Auth,
             duration: duration,
@@ -146,6 +147,7 @@ impl AuthService {
         let refresh_token_params = TokenParams {
             user_id: &user.id,
             collection_id: &col.id,
+            collection_name: &col.name,
             secret: &secret,
             token_type: TokenType::Refresh,
             duration: Some(refresh_duration),
@@ -239,6 +241,7 @@ impl AuthService {
             let access_token_params = TokenParams {
                 user_id: &user.id,
                 collection_id: &col.id,
+                collection_name: &col.name,
                 secret: &secret,
                 token_type: TokenType::Auth,
                 duration: duration,
@@ -252,6 +255,7 @@ impl AuthService {
             let refresh_token_params = TokenParams {
                 user_id: &user.id,
                 collection_id: &col.id,
+                collection_name: &col.name,
                 secret: &secret,
                 token_type: TokenType::Refresh,
                 duration: Some(refresh_duration),
@@ -301,6 +305,7 @@ impl AuthService {
                     let access_token_params = TokenParams {
                         user_id: &user.id,
                         collection_id: &col.id,
+                        collection_name: &col.name,
                         secret: &secret,
                         token_type: TokenType::Auth,
                         duration: duration,
@@ -315,6 +320,7 @@ impl AuthService {
                     let refresh_token_params = TokenParams {
                         user_id: &user.id,
                         collection_id: &col.id,
+                        collection_name: &col.name,
                         secret: &secret,
                         token_type: TokenType::Refresh,
                         duration: Some(refresh_duration),

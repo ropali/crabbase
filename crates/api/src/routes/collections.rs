@@ -5,8 +5,8 @@ use axum::{
 };
 use serde_json::{Value, json};
 
-use crate::routes::records;
 use crate::state::AppState;
+use crate::{middleware::auth::require_admin, routes::records};
 use crabbase_core::{
     errors::APIError,
     models::{
@@ -19,7 +19,15 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .nest("/{name}/records", records::get_routes(state.clone()))
         .route("/", get(list).post(create))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_admin,
+        ))
         .route("/{name}/truncate", post(truncate))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_admin,
+        ))
         .route("/{name}", get(get_one).patch(update).delete(delete))
         .with_state(state)
 }
