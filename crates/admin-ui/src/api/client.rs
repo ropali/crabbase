@@ -2,7 +2,7 @@ use crate::models::{
     collection::{Collection, CollectionListResponse, CreateCollectionRequest, RecordsResponse},
     record::{CreateRecordRequest, UpdateRecordRequest},
 };
-use gloo_net::http::{Request, RequestBuilder};
+use gloo_net::http::{Request, RequestBuilder, Response};
 use std::sync::Mutex;
 
 static TOKEN: Mutex<Option<String>> = Mutex::new(None);
@@ -49,6 +49,42 @@ impl ApiClient {
         None
     }
 
+    pub fn handle_401() {
+        Self::set_token(None);
+        if let Some(window) = web_sys::window() {
+            if let Ok(history) = window.history() {
+                let _ = history.push_state_with_url(
+                    &web_sys::wasm_bindgen::JsValue::NULL,
+                    "",
+                    Some("/login"),
+                );
+            }
+            if let Ok(event) = web_sys::Event::new("crabbase_401_unauthorized") {
+                let _ = window.dispatch_event(&event);
+            }
+        }
+    }
+
+    async fn check_response(response: Response) -> Result<Response, gloo_net::Error> {
+        if response.status() == 401 {
+            Self::handle_401();
+            let text = response.text().await.unwrap_or_default();
+            return Err(gloo_net::Error::GlooError(format!(
+                "HTTP Status 401: Unauthorized. {}",
+                text
+            )));
+        }
+        if !response.ok() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(gloo_net::Error::GlooError(format!(
+                "HTTP Status {}: {}",
+                status, text
+            )));
+        }
+        Ok(response)
+    }
+
     pub fn new(base_url: String, token: Option<String>) -> Self {
         if let Some(t) = token.clone() {
             Self::set_token(Some(t));
@@ -77,28 +113,28 @@ impl ApiClient {
         &self,
         body: CreateCollectionRequest,
     ) -> Result<Collection, gloo_net::Error> {
-        self.request("POST", "/collections")
+        let res = self
+            .request("POST", "/collections")
             .json(&body)?
             .send()
-            .await?
-            .json::<Collection>()
-            .await
+            .await?;
+        Self::check_response(res).await?.json::<Collection>().await
     }
 
     pub async fn get_collections(&self) -> Result<CollectionListResponse, gloo_net::Error> {
-        self.request("GET", "/collections")
-            .send()
+        let res = self.request("GET", "/collections").send().await?;
+        Self::check_response(res)
             .await?
             .json::<CollectionListResponse>()
             .await
     }
 
     pub async fn get_collection_by_name(&self, name: &str) -> Result<Collection, gloo_net::Error> {
-        self.request("GET", &format!("/collections/{}", name))
+        let res = self
+            .request("GET", &format!("/collections/{}", name))
             .send()
-            .await?
-            .json::<Collection>()
-            .await
+            .await?;
+        Self::check_response(res).await?.json::<Collection>().await
     }
 
     pub async fn get_records(
@@ -119,8 +155,8 @@ impl ApiClient {
             url = format!("{}?{}", url, query.join("&"));
         }
 
-        self.request("GET", &url)
-            .send()
+        let res = self.request("GET", &url).send().await?;
+        Self::check_response(res)
             .await?
             .json::<RecordsResponse>()
             .await
@@ -132,8 +168,8 @@ impl ApiClient {
         id: &str,
     ) -> Result<serde_json::Value, gloo_net::Error> {
         let url = format!("/collections/{}/records/{}", collection_name, id);
-        self.request("DELETE", &url)
-            .send()
+        let res = self.request("DELETE", &url).send().await?;
+        Self::check_response(res)
             .await?
             .json::<serde_json::Value>()
             .await
@@ -145,10 +181,8 @@ impl ApiClient {
         body: CreateRecordRequest,
     ) -> Result<serde_json::Value, gloo_net::Error> {
         let url = format!("/collections/{}/records", collection_name);
-
-        self.request("POST", &url)
-            .json(&body)?
-            .send()
+        let res = self.request("POST", &url).json(&body)?.send().await?;
+        Self::check_response(res)
             .await?
             .json::<serde_json::Value>()
             .await
@@ -161,10 +195,8 @@ impl ApiClient {
         body: UpdateRecordRequest,
     ) -> Result<serde_json::Value, gloo_net::Error> {
         let url = format!("/collections/{}/records/{}", collection_name, id);
-
-        self.request("PATCH", &url)
-            .json(&body)?
-            .send()
+        let res = self.request("PATCH", &url).json(&body)?.send().await?;
+        Self::check_response(res)
             .await?
             .json::<serde_json::Value>()
             .await
@@ -176,9 +208,8 @@ impl ApiClient {
         body: crate::models::collection::UpdateCollectionRequest,
     ) -> Result<crate::models::collection::Collection, gloo_net::Error> {
         let url = format!("/collections/{}", name);
-        self.request("PATCH", &url)
-            .json(&body)?
-            .send()
+        let res = self.request("PATCH", &url).json(&body)?.send().await?;
+        Self::check_response(res)
             .await?
             .json::<crate::models::collection::Collection>()
             .await
@@ -189,8 +220,8 @@ impl ApiClient {
         name: &str,
     ) -> Result<serde_json::Value, gloo_net::Error> {
         let url = format!("/collections/{}", name);
-        self.request("DELETE", &url)
-            .send()
+        let res = self.request("DELETE", &url).send().await?;
+        Self::check_response(res)
             .await?
             .json::<serde_json::Value>()
             .await
@@ -201,8 +232,8 @@ impl ApiClient {
         name: &str,
     ) -> Result<serde_json::Value, gloo_net::Error> {
         let url = format!("/collections/{}/truncate", name);
-        self.request("POST", &url)
-            .send()
+        let res = self.request("POST", &url).send().await?;
+        Self::check_response(res)
             .await?
             .json::<serde_json::Value>()
             .await
@@ -220,19 +251,11 @@ impl ApiClient {
             "password": password,
         });
 
-        let response = Request::post(&format!("{}{}", self.base_url, url))
+        let res = Request::post(&format!("{}{}", self.base_url, url))
             .json(&body)?
             .send()
             .await?;
-
-        if !response.ok() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(gloo_net::Error::GlooError(format!(
-                "HTTP Status {}: {}",
-                status, text
-            )));
-        }
+        let response = Self::check_response(res).await?;
 
         let login_res = response.json::<serde_json::Value>().await?;
         let token = login_res
