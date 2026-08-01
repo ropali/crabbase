@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{ascii::AsciiExt, collections::HashMap};
 
 use axum::{
     extract::{FromRequestParts, State},
@@ -6,7 +6,7 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use crabbase_auth::auth::{extract_unverified_claims, verify_token};
+use crabbase_auth::auth::{Claims, extract_unverified_claims, verify_token};
 use crabbase_core::{errors::APIError, rules::compiler::SqlContext};
 use crabbase_db::repositories::auth::AuthUser;
 use sqlx::{Column as _, Row as _};
@@ -39,17 +39,15 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 
         let claims = extract_unverified_claims(token).map_err(|_| APIError::Unauthorized)?;
 
-        let col = state
-            .auth_repo()
-            .get_collection_by_id(&claims.collection_id)
-            .await
-            .map_err(|e| APIError::Internal {
-                message: "Database query failed".to_string(),
-                details: serde_json::json!(e.to_string()),
-            })?
-            .ok_or(APIError::Unauthorized)?;
+        parts.extensions.insert(claims.clone());
 
-        let col_token = col
+        let collection = state
+            .collection_repo()
+            .get_by_id(&claims.collection_id)
+            .await
+            .map_err(|_| APIError::Unauthorized)?;
+
+        let col_token = collection
             .options
             .auth_token
             .as_ref()
@@ -57,16 +55,14 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             .and_then(|v| v.as_str())
             .ok_or_else(|| APIError::Internal {
                 message: "Unable to find the collection auth token".to_string(),
-                details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
+                details: serde_json::Value::String(format!(
+                    "Collection name is: {}",
+                    collection.name
+                )),
             })?;
 
-        let collection = state
-            .collection_repo()
-            .get_by_id(&claims.collection_id)
-            .await?;
-
         let user_opt = state
-            .auth_repo()
+            .user_repo()
             .get_user_by_id(&collection.name, &claims.id)
             .await?;
 
@@ -80,8 +76,16 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         // Dynamically fetch all fields of the authenticated record from its table
         let escaped_table = crabbase_core::utils::string_utils::quote_ident(&collection.name);
         let sql = format!("SELECT * FROM {} WHERE id = $1", escaped_table);
-        let row_opt = sqlx::query(&sql)
-            .bind(&claims.id)
+
+        let id_uuid = uuid::Uuid::parse_str(&claims.id).ok();
+
+        let query = sqlx::query(&sql);
+        let query = if let Some(uuid) = id_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(&claims.id)
+        };
+        let row_opt = query
             .fetch_optional(&state.db)
             .await
             .map_err(|e| APIError::Internal {
@@ -147,6 +151,15 @@ pub async fn require_admin(
     mut request: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, APIError> {
+    let claims = request
+        .extensions()
+        .get::<Claims>()
+        .ok_or(APIError::Unauthorized)?;
+
+    if !claims.collection_name.eq_ignore_ascii_case("_superusers") {
+        return Err(APIError::Forbidden);
+    }
+
     request.extensions_mut().insert(user);
 
     Ok(next.run(request).await)
@@ -174,17 +187,13 @@ pub async fn extract_auth_context(
 
     let claims = extract_unverified_claims(token).map_err(|_| APIError::Unauthorized)?;
 
-    let col = state
-        .auth_repo()
-        .get_collection_by_id(&claims.collection_id)
+    let collection = state
+        .collection_repo()
+        .get_by_id(&claims.collection_id)
         .await
-        .map_err(|e| APIError::Internal {
-            message: "Database query failed".to_string(),
-            details: serde_json::json!(e.to_string()),
-        })?
-        .ok_or(APIError::Unauthorized)?;
+        .map_err(|_| APIError::Unauthorized)?;
 
-    let col_token = col
+    let col_token = collection
         .options
         .auth_token
         .as_ref()
@@ -192,16 +201,11 @@ pub async fn extract_auth_context(
         .and_then(|v| v.as_str())
         .ok_or_else(|| APIError::Internal {
             message: "Unable to find the collection auth token".to_string(),
-            details: serde_json::Value::String(format!("Collection name is: {}", col.name)),
+            details: serde_json::Value::String(format!("Collection name is: {}", collection.name)),
         })?;
 
-    let collection = state
-        .collection_repo()
-        .get_by_id(&claims.collection_id)
-        .await?;
-
     let user_opt = state
-        .auth_repo()
+        .user_repo()
         .get_user_by_id(&collection.name, &claims.id)
         .await?;
 
@@ -215,8 +219,14 @@ pub async fn extract_auth_context(
     // Dynamically fetch all fields of the authenticated record from its table
     let escaped_table = crabbase_core::utils::string_utils::quote_ident(&collection.name);
     let sql = format!("SELECT * FROM {} WHERE id = $1", escaped_table);
-    let row_opt = sqlx::query(&sql)
-        .bind(&claims.id)
+    let id_uuid = uuid::Uuid::parse_str(&claims.id).ok();
+    let query = sqlx::query(&sql);
+    let query = if let Some(uuid) = id_uuid {
+        query.bind(uuid)
+    } else {
+        query.bind(&claims.id)
+    };
+    let row_opt = query
         .fetch_optional(&state.db)
         .await
         .map_err(|e| APIError::Internal {

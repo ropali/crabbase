@@ -3,7 +3,11 @@ pub mod components;
 pub mod models;
 pub mod routes;
 
-use components::{CreateCollectionDrawer, DataPage, Footer, Login, Sidebar, Titlebar};
+use components::{
+    CreateCollectionDrawer, DataPage, Footer, Login, NotificationMessage, NotificationToast,
+    Sidebar, Titlebar,
+};
+use gloo_events::EventListener;
 use models::collection::Collection;
 use yew::prelude::*;
 use yew_router::prelude::*;
@@ -14,11 +18,51 @@ fn app() -> Html {
     let selected_collection = use_state(|| None::<Collection>);
     let is_create_drawer_open = use_state(|| false);
     let collections_refresh_trigger = use_state(|| 0usize);
+    let notification = use_state(|| None::<NotificationMessage>);
+
+    // Global listener for 401 Unauthorized events
+    {
+        let is_logged_in = is_logged_in.clone();
+        let notification = notification.clone();
+        use_effect_with((), move |_| {
+            let listener = if let Some(window) = web_sys::window() {
+                let is_logged_in = is_logged_in.clone();
+                let notification = notification.clone();
+                Some(EventListener::new(
+                    &window,
+                    "crabbase_401_unauthorized",
+                    move |_| {
+                        is_logged_in.set(false);
+                        let id = js_sys::Date::now() as u64;
+                        notification.set(Some(NotificationMessage {
+                            id,
+                            title: "401 Unauthorized".to_string(),
+                            message:
+                                "Session expired or authentication required. Please log in again."
+                                    .to_string(),
+                        }));
+                    },
+                ))
+            } else {
+                None
+            };
+            move || drop(listener)
+        });
+    }
+
+    let on_dismiss_notification = {
+        let notification = notification.clone();
+        Callback::from(move |_| {
+            notification.set(None);
+        })
+    };
 
     let on_login_success = {
         let is_logged_in = is_logged_in.clone();
+        let notification = notification.clone();
         Callback::from(move |_| {
             is_logged_in.set(true);
+            notification.set(None);
         })
     };
 
@@ -87,42 +131,43 @@ fn app() -> Html {
 
     html! {
         <BrowserRouter>
-        {
-            if !*is_logged_in {
-                html! {
-                    <Login on_login_success={on_login_success} />
-                }
-            } else {
-                html! {
-                    <div class="flex flex-col h-screen overflow-hidden bg-background text-on-surface">
-                        <Titlebar title={active_title} on_logout={on_logout} />
-                        <div class="flex-grow flex flex-row overflow-hidden relative">
-                            <Sidebar
-                                selected_collection_id={selected_collection_id}
-                                on_select={on_select}
-                                on_create_click={on_create_click}
-                                refresh_trigger={*collections_refresh_trigger}
-                            />
-                            <DataPage
-                                selected_collection={(*selected_collection).clone()}
-                                on_collection_updated={on_collection_updated}
-                                on_collection_deleted={on_collection_deleted}
-                            />
-                            {
-                                if *is_create_drawer_open {
-                                    html! {
-                                        <CreateCollectionDrawer on_close={on_drawer_close} on_success={on_drawer_success} />
+            <NotificationToast notification={(*notification).clone()} on_dismiss={on_dismiss_notification} />
+            {
+                if !*is_logged_in {
+                    html! {
+                        <Login on_login_success={on_login_success} />
+                    }
+                } else {
+                    html! {
+                        <div class="flex flex-col h-screen overflow-hidden bg-background text-on-surface">
+                            <Titlebar title={active_title} on_logout={on_logout} />
+                            <div class="flex-grow flex flex-row overflow-hidden relative">
+                                <Sidebar
+                                    selected_collection_id={selected_collection_id}
+                                    on_select={on_select}
+                                    on_create_click={on_create_click}
+                                    refresh_trigger={*collections_refresh_trigger}
+                                />
+                                <DataPage
+                                    selected_collection={(*selected_collection).clone()}
+                                    on_collection_updated={on_collection_updated}
+                                    on_collection_deleted={on_collection_deleted}
+                                />
+                                {
+                                    if *is_create_drawer_open {
+                                        html! {
+                                            <CreateCollectionDrawer on_close={on_drawer_close} on_success={on_drawer_success} />
+                                        }
+                                    } else {
+                                        html! {}
                                     }
-                                } else {
-                                    html! {}
                                 }
-                            }
+                            </div>
+                            <Footer />
                         </div>
-                        <Footer />
-                    </div>
+                    }
                 }
             }
-        }
         </BrowserRouter>
     }
 }

@@ -1,3 +1,33 @@
 pub mod middleware;
 pub mod routes;
 pub mod state;
+
+use axum::http::StatusCode;
+use axum::{Json, Router, response::Html, routing::get};
+use state::AppState;
+
+const OPENAPI_JSON: &str = include_str!("../../../openapi.json");
+const SWAGGER_HTML: &str = include_str!("routes/swagger.html");
+
+pub fn get_app_routes(state: AppState) -> Router {
+    let api = Router::new()
+        .nest(
+            "/collections",
+            routes::collections::get_routes(state.clone()),
+        )
+        .route("/openapi.json", get(openapi_json))
+        .route("/docs", get(swagger_ui))
+        .nest("/auth", routes::auth::get_routes(state.clone()))
+        .with_state(state);
+
+    Router::new().nest("/api", api)
+}
+
+async fn openapi_json() -> Json<serde_json::Value> {
+    let spec: serde_json::Value = serde_json::from_str(OPENAPI_JSON).unwrap();
+    Json(spec)
+}
+
+async fn swagger_ui() -> Result<Html<String>, StatusCode> {
+    Ok(Html(SWAGGER_HTML.to_string()))
+}

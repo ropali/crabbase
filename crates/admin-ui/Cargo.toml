@@ -21,9 +21,10 @@ serde_json = "1.0"
 # Async futures executor for wasm
 wasm-bindgen-futures = "0.4.42"
 
-# Gloo wrappers for web APIs (Timer, HTTP requests)
+# Gloo wrappers for web APIs (Timer, HTTP requests, Events)
 gloo-net = "0.7.0"
 gloo-timers = "0.4.0"
+gloo-events = "0.2.0"
 
 stylist = "0.15.1"
 

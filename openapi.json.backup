@@ -614,9 +614,10 @@
     "/auth/{collection}/auth-refresh": {
       "post": {
         "tags": ["Auth"],
-        "summary": "Refresh authentication token",
-        "description": "Refreshes an authentication token by validating the provided refresh token.",
+        "summary": "Refresh authentication token with email verification",
+        "description": "Refreshes an authentication token by validating the provided refresh token and email address. The email is used to verify the token belongs to the correct user in the specified collection.",
         "operationId": "refreshToken",
+        "security": [],
         "parameters": [
           {
             "name": "collection",
@@ -655,60 +656,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/auth/{collection}/logout": {
-      "post": {
-        "tags": ["Auth"],
-        "summary": "Logout user and invalidate session",
-        "operationId": "logout",
-        "security": [],
-        "parameters": [
-          {
-            "name": "collection",
-            "in": "path",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LogoutRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Logout successful",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean",
-                      "example": true
-                    }
-                  }
                 }
               }
             }
@@ -1271,25 +1218,15 @@
       },
       "AuthRefreshRequest": {
         "type": "object",
-        "required": ["refreshToken"],
-        "properties": {
-          "refreshToken": {
-            "type": "string",
-            "description": "JWT refresh token to be used for obtaining new tokens"
-          }
-        }
-      },
-      "LogoutRequest": {
-        "type": "object",
         "required": ["refreshToken", "email"],
         "properties": {
           "refreshToken": {
             "type": "string",
-            "description": "JWT refresh token to be invalidated"
+            "description": "JWT refresh token to be used for obtaining new tokens"
           },
           "email": {
             "type": "string",
-            "description": "Email address of the user logging out"
+            "description": "Email address of the user requesting token refresh"
           }
         }
       },
