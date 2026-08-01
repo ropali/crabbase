@@ -129,6 +129,7 @@ mod tests {
     fn test_token_lifecycle() {
         let user_id = "test_user_123";
         let collection_id = "users_col_xyz";
+        let collection_name = "users_name";
         let secret = "secret";
         let user_token = "user_token";
         let key = format!("{secret}-{user_token}");
@@ -137,6 +138,7 @@ mod tests {
         let token = create_token(TokenParams {
             user_id,
             collection_id,
+            collection_name,
             secret: &key,
             token_type: TokenType::Auth,
             duration: None,
@@ -147,6 +149,7 @@ mod tests {
         let claims = verify_token(&token, &key).unwrap();
         assert_eq!(claims.id, user_id);
         assert_eq!(claims.collection_id, collection_id);
+        assert_eq!(claims.collection_name, collection_name);
         assert_eq!(claims.token_type, "auth");
         assert_eq!(claims.refreshable, true);
         assert_eq!(claims.sub, user_id);
@@ -155,6 +158,7 @@ mod tests {
         let token_ver = create_token(TokenParams {
             user_id,
             collection_id,
+            collection_name,
             secret: &key,
             token_type: TokenType::Verification,
             duration: None,
@@ -170,6 +174,7 @@ mod tests {
         let token_file = create_token(TokenParams {
             user_id,
             collection_id,
+            collection_name,
             secret: &key,
             token_type: TokenType::File,
             duration: None,
@@ -185,6 +190,7 @@ mod tests {
         let token_refresh = create_token(TokenParams {
             user_id,
             collection_id,
+            collection_name,
             secret: &key,
             token_type: TokenType::Refresh,
             duration: None,
