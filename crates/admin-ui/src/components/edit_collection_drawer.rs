@@ -155,7 +155,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
         let available_collections = available_collections.clone();
         use_effect_with((), move |_| {
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
                 if let Ok(res) = client.get_collections().await {
                     available_collections.set(res.items);
                 }
@@ -205,7 +205,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
             let error_msg = error_msg.clone();
 
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
                 match client.truncate_collection(&collection_name).await {
                     Ok(_) => {
                         error_msg.set(None);
@@ -232,7 +232,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
             let error_msg = error_msg.clone();
 
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
                 match client.delete_collection(&collection_name).await {
                     Ok(_) => {
                         error_msg.set(None);
@@ -633,7 +633,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
             }
 
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
 
                 let index_field_names: std::collections::HashSet<String> = indexes_val
                     .iter()

@@ -189,7 +189,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
             }
 
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
                 let payload = CreateRecordRequest { data: data_map };
 
                 match client.create_record(&col_name, payload).await {

@@ -16,3 +16,5 @@ tracing = { workspace = true }
 sqlx = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
+rust-embed = { workspace = true }
+mime_guess = { workspace = true }

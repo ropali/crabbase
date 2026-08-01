@@ -105,7 +105,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
                 if let Some(col_name) = current_col_name {
                     let col_name = col_name.clone();
                     wasm_bindgen_futures::spawn_local(async move {
-                        let client = ApiClient::new("/api".to_string(), None);
+                        let client = ApiClient::default();
                         match client.get_records(&col_name, Some(page), Some(30)).await {
                             Ok(res) => {
                                 if let Some(col) = selected_col {
@@ -294,7 +294,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
 
                 wasm_bindgen_futures::spawn_local(async move {
                     // FIXME: Perform bacth delete operations
-                    let client = ApiClient::new("/api".to_string(), None);
+                    let client = ApiClient::default();
                     let mut success = true;
                     for id in &selected_ids {
                         match client.delete_record(&col_name, id).await {

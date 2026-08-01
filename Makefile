@@ -23,6 +23,7 @@ admin:
 	cargo run -- admin $(if $(port),--port $(port)) $(if $(host),--host $(host))
 
 release:
+	CRABBASE_API_URL="http://0.0.0.0:8989/api" cd crates/admin-ui && trunk build --release
 	cargo build --release
 
 build:

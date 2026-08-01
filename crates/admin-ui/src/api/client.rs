@@ -6,10 +6,17 @@ use gloo_net::http::{Request, RequestBuilder, Response};
 use std::sync::Mutex;
 
 static TOKEN: Mutex<Option<String>> = Mutex::new(None);
+static BASE_URL: Mutex<Option<String>> = Mutex::new(None);
 
 pub struct ApiClient {
     base_url: String,
     token: Option<String>,
+}
+
+fn get_local_storage() -> Option<web_sys::Storage> {
+    web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
 }
 
 fn get_session_storage() -> Option<web_sys::Storage> {
@@ -18,7 +25,63 @@ fn get_session_storage() -> Option<web_sys::Storage> {
         .flatten()
 }
 
+impl Default for ApiClient {
+    fn default() -> Self {
+        Self::new(Self::get_base_url(), Self::get_token())
+    }
+}
+
 impl ApiClient {
+    pub fn set_base_url(url: String) {
+        if let Ok(mut guard) = BASE_URL.lock() {
+            *guard = Some(url.clone());
+        }
+        if let Some(storage) = get_local_storage() {
+            let _ = storage.set_item("crabbase_api_url", &url);
+        }
+    }
+
+    pub fn get_base_url() -> String {
+        // 1. Check in-memory override
+        if let Ok(guard) = BASE_URL.lock() {
+            if let Some(ref url) = *guard {
+                if !url.trim().is_empty() {
+                    return url.clone();
+                }
+            }
+        }
+
+        // 2. Check localStorage override ("crabbase_api_url")
+        if let Some(storage) = get_local_storage() {
+            if let Ok(Some(url)) = storage.get_item("crabbase_api_url") {
+                if !url.trim().is_empty() {
+                    return url;
+                }
+            }
+        }
+
+        // 3. Check window global property window.CRABBASE_API_URL
+        if let Some(window) = web_sys::window() {
+            if let Ok(val) = js_sys::Reflect::get(&window, &"CRABBASE_API_URL".into()) {
+                if let Some(url) = val.as_string() {
+                    if !url.trim().is_empty() {
+                        return url;
+                    }
+                }
+            }
+        }
+
+        // 4. Check compile-time environment variable CRABBASE_API_URL
+        if let Some(env_url) = option_env!("CRABBASE_API_URL") {
+            if !env_url.trim().is_empty() {
+                return env_url.to_string();
+            }
+        }
+
+        // 5. Default fallback
+        "/api".to_string()
+    }
+
     pub fn set_token(token: Option<String>) {
         if let Ok(mut guard) = TOKEN.lock() {
             *guard = token.clone();
@@ -86,14 +149,29 @@ impl ApiClient {
     }
 
     pub fn new(base_url: String, token: Option<String>) -> Self {
-        if let Some(t) = token.clone() {
-            Self::set_token(Some(t));
+        let final_base_url = if base_url.trim().is_empty() {
+            Self::get_base_url()
+        } else {
+            base_url
+        };
+        let active_token = token.or_else(Self::get_token);
+        if let Some(ref t) = active_token {
+            Self::set_token(Some(t.clone()));
         }
-        Self { base_url, token }
+        Self {
+            base_url: final_base_url,
+            token: active_token,
+        }
     }
 
     fn request(&self, method: &str, path: &str) -> RequestBuilder {
-        let url = format!("{}{}", self.base_url, path);
+        let base = self.base_url.trim_end_matches('/');
+        let formatted_path = if path.starts_with('/') {
+            path.to_string()
+        } else {
+            format!("/{}", path)
+        };
+        let url = format!("{}{}", base, formatted_path);
         let mut req = match method {
             "GET" => Request::get(&url),
             "POST" => Request::post(&url),

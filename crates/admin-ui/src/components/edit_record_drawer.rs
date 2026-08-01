@@ -260,7 +260,7 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
             }
 
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
                 let payload = UpdateRecordRequest { data: data_map };
 
                 match client.update_record(&col_name, &record_id, payload).await {

@@ -30,7 +30,7 @@ pub fn collection_list(props: &CollectionListProps) -> Html {
         use_effect_with(refresh_trigger, move |_| {
             wasm_bindgen_futures::spawn_local(async move {
                 // Trunk handles proxying "/api" requests to "http://localhost:8989/api"
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
 
                 match client.get_collections().await {
                     Ok(res) => collections.set(res.items),

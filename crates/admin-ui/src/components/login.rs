@@ -80,7 +80,7 @@ pub fn login(props: &LoginProps) -> Html {
             let navigator_clone = navigator.clone();
 
             wasm_bindgen_futures::spawn_local(async move {
-                let client = crate::api::client::ApiClient::new("/api".to_string(), None);
+                let client = crate::api::client::ApiClient::default();
                 match client.login("_superusers", &email_val, &password_val).await {
                     Ok(_) => {
                         status_clone.set(LoginStatus::Success);

@@ -67,7 +67,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
         let available_collections = available_collections.clone();
         use_effect_with((), move |_| {
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
                 if let Ok(res) = client.get_collections().await {
                     available_collections.set(res.items);
                 }
@@ -537,7 +537,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
             }
 
             wasm_bindgen_futures::spawn_local(async move {
-                let client = ApiClient::new("/api".to_string(), None);
+                let client = ApiClient::default();
 
                 let index_field_names: std::collections::HashSet<String> = indexes_val
                     .iter()
