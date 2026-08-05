@@ -438,7 +438,7 @@ impl AuthService {
                 Some(receiver_name.to_owned()),
                 email.parse().unwrap(),
             ))
-            .subject("Password Reset")
+            .subject(templates.password_reset.subject)
             .multipart(
                 MultiPart::alternative()
                     .singlepart(
