@@ -252,10 +252,11 @@ where
     if let Some(raw) = value.as_str() {
         return match raw.to_ascii_uppercase().as_str() {
             "TEXT" | "PLAINTEXT" => Ok(DataTypes::PlainText),
-            "RICHTEXT" => Ok(DataTypes::RichText),
+            "RICHTEXT" | "EDITOR" => Ok(DataTypes::RichText),
             "INTEGER" | "INT" | "NUMBER" => Ok(DataTypes::Number),
             "BOOLEAN" | "BOOL" => Ok(DataTypes::Bool),
             "DATE" | "DATETIME" => Ok(DataTypes::Datetime),
+            "AUTODATE" | "AUTODATETIME" => Ok(DataTypes::AutoDatetime("now".to_string())),
             "EMAIL" => Ok(DataTypes::Email),
             "URL" => Ok(DataTypes::Url),
             "FILE" => Ok(DataTypes::File),
@@ -270,6 +271,32 @@ where
     }
 
     Err(D::Error::custom("invalid data_type format"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deserialize_autodate_string() {
+        let json_data = r#"{"name": "created", "type": "autodate"}"#;
+        let col: Column = serde_json::from_str(json_data).unwrap();
+        assert_eq!(col.data_type, DataTypes::AutoDatetime("now".to_string()));
+
+        let json_data_caps = r#"{"name": "created", "type": "AUTODATE"}"#;
+        let col_caps: Column = serde_json::from_str(json_data_caps).unwrap();
+        assert_eq!(
+            col_caps.data_type,
+            DataTypes::AutoDatetime("now".to_string())
+        );
+
+        let json_data_autodatetime = r#"{"name": "created", "type": "autodatetime"}"#;
+        let col_adt: Column = serde_json::from_str(json_data_autodatetime).unwrap();
+        assert_eq!(
+            col_adt.data_type,
+            DataTypes::AutoDatetime("now".to_string())
+        );
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

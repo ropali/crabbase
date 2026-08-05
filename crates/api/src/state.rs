@@ -3,6 +3,7 @@ use sqlx::{Pool, Postgres};
 
 use crabbase_db::repositories::{
     auth::UserRepository, collections::CollectionRepository, records::RecordsRepository,
+    settings::SettingsRepository,
 };
 
 #[derive(Debug, Clone)]
@@ -27,7 +28,11 @@ impl AppState {
         AuthRepository::new(self.db.clone())
     }
 
+    pub fn settings_repo(&self) -> SettingsRepository {
+        SettingsRepository::new(self.db.clone())
+    }
+
     pub fn auth_service(&self) -> AuthService {
-        AuthService::new(self.user_repo(), self.auth_repo())
+        AuthService::new(self.user_repo(), self.auth_repo(), self.settings_repo())
     }
 }
