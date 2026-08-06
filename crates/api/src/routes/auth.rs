@@ -87,7 +87,7 @@ async fn logout(
     Path(collection): Path<String>,
     state: State<AppState>,
     Json(payload): Json<LogoutRequest>,
-) -> Result<Json<serde_json::Value>, APIError> {
+) -> Result<Json<Value>, APIError> {
     state
         .auth_service()
         .logout_session(&collection, &payload.email, &payload.refresh_token)
@@ -100,7 +100,7 @@ async fn forget_password(
     state: State<AppState>,
     Path(collection): Path<String>,
     Json(payload): Json<PasswordResetRequest>,
-) -> Result<Json<serde_json::Value>, APIError> {
+) -> Result<Json<Value>, APIError> {
     state
         .auth_service()
         .password_reset(&collection, &payload.email)
