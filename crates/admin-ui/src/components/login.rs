@@ -4,6 +4,12 @@ use yew::prelude::*;
 use yew_router::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AuthMode {
+    Login,
+    ForgotPassword,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoginStatus {
     Idle,
     Authenticating,
@@ -17,13 +23,56 @@ pub struct LoginProps {
 
 #[function_component(Login)]
 pub fn login(props: &LoginProps) -> Html {
+    let navigator = use_navigator();
+    let route = use_route::<crate::routes::Route>();
+    let initial_mode = match route {
+        Some(crate::routes::Route::ForgotPassword) => AuthMode::ForgotPassword,
+        _ => AuthMode::Login,
+    };
+
+    let mode = use_state(|| initial_mode);
     let email = use_state(|| String::new());
     let password = use_state(|| String::new());
-    let remember_me = use_state(|| false);
     let show_password = use_state(|| false);
     let status = use_state(|| LoginStatus::Idle);
     let error_msg = use_state(|| None::<String>);
-    let navigator = use_navigator();
+    let success_msg = use_state(|| None::<String>);
+
+    let on_switch_mode = {
+        let mode = mode.clone();
+        let status = status.clone();
+        let error_msg = error_msg.clone();
+        let success_msg = success_msg.clone();
+        let navigator = navigator.clone();
+        Callback::from(move |target_mode: AuthMode| {
+            mode.set(target_mode);
+            status.set(LoginStatus::Idle);
+            error_msg.set(None);
+            success_msg.set(None);
+            if let Some(ref nav) = navigator {
+                match target_mode {
+                    AuthMode::Login => nav.push(&crate::routes::Route::Login),
+                    AuthMode::ForgotPassword => nav.push(&crate::routes::Route::ForgotPassword),
+                }
+            }
+        })
+    };
+
+    let on_click_forgot = {
+        let on_switch_mode = on_switch_mode.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.prevent_default();
+            on_switch_mode.emit(AuthMode::ForgotPassword);
+        })
+    };
+
+    let on_click_login = {
+        let on_switch_mode = on_switch_mode.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.prevent_default();
+            on_switch_mode.emit(AuthMode::Login);
+        })
+    };
 
     let on_input_email = {
         let email = email.clone();
@@ -48,20 +97,16 @@ pub fn login(props: &LoginProps) -> Html {
         })
     };
 
-    let on_toggle_remember = {
-        let remember_me = remember_me.clone();
-        Callback::from(move |_| {
-            remember_me.set(!*remember_me);
-        })
-    };
-
     let on_submit = {
+        let mode = mode.clone();
         let status = status.clone();
         let error_msg = error_msg.clone();
+        let success_msg = success_msg.clone();
         let email = email.clone();
         let password = password.clone();
         let on_login_success = props.on_login_success.clone();
         let navigator = navigator.clone();
+
         Callback::from(move |e: SubmitEvent| {
             e.prevent_default();
 
@@ -71,41 +116,70 @@ pub fn login(props: &LoginProps) -> Html {
 
             status.set(LoginStatus::Authenticating);
             error_msg.set(None);
+            success_msg.set(None);
 
             let status_clone = status.clone();
             let error_msg_clone = error_msg.clone();
+            let success_msg_clone = success_msg.clone();
             let email_val = (*email).clone();
             let password_val = (*password).clone();
             let on_login_success_clone = on_login_success.clone();
             let navigator_clone = navigator.clone();
+            let current_mode = *mode;
 
             wasm_bindgen_futures::spawn_local(async move {
                 let client = crate::api::client::ApiClient::default();
-                match client.login("_superusers", &email_val, &password_val).await {
-                    Ok(_) => {
-                        status_clone.set(LoginStatus::Success);
-                        let timeout = Timeout::new(800, move || {
-                            if let Some(ref nav) = navigator_clone {
-                                nav.push(&crate::routes::Route::Home);
+                match current_mode {
+                    AuthMode::Login => {
+                        match client.login("_superusers", &email_val, &password_val).await {
+                            Ok(_) => {
+                                status_clone.set(LoginStatus::Success);
+                                let timeout = Timeout::new(800, move || {
+                                    if let Some(ref nav) = navigator_clone {
+                                        nav.push(&crate::routes::Route::Home);
+                                    }
+                                    on_login_success_clone.emit(());
+                                });
+                                timeout.forget();
                             }
-                            on_login_success_clone.emit(());
-                        });
-                        timeout.forget();
+                            Err(e) => {
+                                status_clone.set(LoginStatus::Idle);
+                                let err_text = match e {
+                                    gloo_net::Error::GlooError(msg) => msg,
+                                    _ => format!("{}", e),
+                                };
+                                let user_friendly_msg = if err_text.contains("HTTP Status 401")
+                                    || err_text.contains("Unauthorized")
+                                {
+                                    "Invalid email or password. Please try again.".to_string()
+                                } else {
+                                    format!("Authentication failed: {}", err_text)
+                                };
+                                error_msg_clone.set(Some(user_friendly_msg));
+                            }
+                        }
                     }
-                    Err(e) => {
-                        status_clone.set(LoginStatus::Idle);
-                        let err_text = match e {
-                            gloo_net::Error::GlooError(msg) => msg,
-                            _ => format!("{}", e),
-                        };
-                        let user_friendly_msg = if err_text.contains("HTTP Status 401")
-                            || err_text.contains("Unauthorized")
-                        {
-                            "Invalid email or password. Please try again.".to_string()
-                        } else {
-                            format!("Authentication failed: {}", err_text)
-                        };
-                        error_msg_clone.set(Some(user_friendly_msg));
+                    AuthMode::ForgotPassword => {
+                        match client.forget_password("_superusers", &email_val).await {
+                            Ok(res) => {
+                                status_clone.set(LoginStatus::Success);
+                                let detail = res
+                                    .get("detail")
+                                    .and_then(|d| d.as_str())
+                                    .unwrap_or("Password reset link sent to your email address.")
+                                    .to_string();
+                                success_msg_clone.set(Some(detail));
+                            }
+                            Err(e) => {
+                                status_clone.set(LoginStatus::Idle);
+                                let err_text = match e {
+                                    gloo_net::Error::GlooError(msg) => msg,
+                                    _ => format!("{}", e),
+                                };
+                                error_msg_clone
+                                    .set(Some(format!("Failed to send reset link: {}", err_text)));
+                            }
+                        }
                     }
                 }
             });
@@ -120,14 +194,14 @@ pub fn login(props: &LoginProps) -> Html {
         "visibility"
     };
 
-    let button_content = match *status {
-        LoginStatus::Idle => html! {
+    let button_content = match (*mode, *status) {
+        (AuthMode::Login, LoginStatus::Idle) => html! {
             <>
                 <span>{"Login"}</span>
                 <span class="material-symbols-outlined text-[20px]">{"arrow_forward"}</span>
             </>
         },
-        LoginStatus::Authenticating => html! {
+        (AuthMode::Login, LoginStatus::Authenticating) => html! {
             <>
                 <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-on-primary-container" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -136,23 +210,53 @@ pub fn login(props: &LoginProps) -> Html {
                 {"Authenticating..."}
             </>
         },
-        LoginStatus::Success => html! {
+        (AuthMode::Login, LoginStatus::Success) => html! {
             <>
                 <span class="material-symbols-outlined">{"check_circle"}</span>
                 {"Success"}
+            </>
+        },
+        (AuthMode::ForgotPassword, LoginStatus::Idle) => html! {
+            <>
+                <span>{"Send Reset Link"}</span>
+                <span class="material-symbols-outlined text-[20px]">{"send"}</span>
+            </>
+        },
+        (AuthMode::ForgotPassword, LoginStatus::Authenticating) => html! {
+            <>
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-on-primary-container" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                {"Sending..."}
+            </>
+        },
+        (AuthMode::ForgotPassword, LoginStatus::Success) => html! {
+            <>
+                <span class="material-symbols-outlined">{"check_circle"}</span>
+                {"Reset Link Sent"}
             </>
         },
     };
 
     let button_class = match *status {
         LoginStatus::Idle => {
-            "w-full bg-primary-container text-on-primary-container h-12 rounded-lg font-headline-md text-headline-md hover:bg-primary transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm"
+            "w-full bg-primary-container text-on-primary-container h-12 rounded-lg font-headline-md text-headline-md hover:bg-primary transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm cursor-pointer"
         }
         LoginStatus::Authenticating => {
             "w-full bg-primary-container text-on-primary-container h-12 rounded-lg font-headline-md text-headline-md opacity-75 cursor-not-allowed flex items-center justify-center gap-2 shadow-sm"
         }
         LoginStatus::Success => {
             "w-full bg-[#16a34a] text-white h-12 rounded-lg font-headline-md text-headline-md flex items-center justify-center gap-2 shadow-sm transition-colors duration-300"
+        }
+    };
+
+    let subtitle = match *mode {
+        AuthMode::Login => {
+            "Welcome back. Please enter your credentials to access the management schema."
+        }
+        AuthMode::ForgotPassword => {
+            "Enter your email address below and we will send you a password reset link."
         }
     };
 
@@ -214,7 +318,7 @@ pub fn login(props: &LoginProps) -> Html {
                             <div>
                                 <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight mb-1">{"Crabbase"}</h1>
                                 <p class="font-body-sm text-body-sm text-on-surface-variant max-w-[280px] mx-auto">
-                                    {"Welcome back. Please enter your credentials to access the management schema."}
+                                    {subtitle}
                                 </p>
                             </div>
                         </div>
@@ -227,6 +331,18 @@ pub fn login(props: &LoginProps) -> Html {
                                         <div class="p-3 bg-error-container text-on-error-container rounded-lg text-body-sm flex items-center gap-2 border border-error/20">
                                             <span class="material-symbols-outlined text-[16px]">{"error"}</span>
                                             <span>{err}</span>
+                                        </div>
+                                    }
+                                } else {
+                                    html! {}
+                                }
+                            }
+                            {
+                                if let Some(ref msg) = *success_msg {
+                                    html! {
+                                        <div class="p-3 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 rounded-lg text-body-sm flex items-center gap-2 border border-emerald-500/20">
+                                            <span class="material-symbols-outlined text-[16px]">{"check_circle"}</span>
+                                            <span>{msg}</span>
                                         </div>
                                     }
                                 } else {
@@ -250,50 +366,48 @@ pub fn login(props: &LoginProps) -> Html {
                                     disabled={*status != LoginStatus::Idle}
                                 />
                             </div>
-                            <div class="space-y-1.5">
-                                <div class="flex justify-between items-center">
-                                    <label class="font-label-xs text-label-xs uppercase tracking-wider text-on-surface-variant flex items-center gap-2" for="password">
-                                        <span class="material-symbols-outlined text-[14px]">{"lock"}</span>
-                                        {"Password"}
-                                    </label>
-                                    <a class="font-label-xs text-label-xs text-primary hover:underline transition-colors" href="#">{"Forgot password?"}</a>
-                                </div>
-                                <div class="relative">
-                                    <input
-                                        class="w-full px-4 py-3 bg-surface border border-outline-variant rounded-lg font-code-md text-code-md transition-all placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                                        id="password"
-                                        name="password"
-                                        placeholder="••••••••••••"
-                                        required=true
-                                        type={password_type}
-                                        value={(*password).clone()}
-                                        oninput={on_input_password}
-                                        disabled={*status != LoginStatus::Idle}
-                                    />
-                                    <button
-                                        class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-primary transition-colors"
-                                        type="button"
-                                        onclick={on_toggle_show_password}
-                                        disabled={*status != LoginStatus::Idle}
-                                    >
-                                        <span class="material-symbols-outlined text-[20px]">{visibility_icon}</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <input
-                                    class="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary/20"
-                                    id="remember"
-                                    name="remember"
-                                    type="checkbox"
-                                    checked={*remember_me}
-                                    onclick={on_toggle_remember}
-                                    disabled={*status != LoginStatus::Idle}
-                                />
-                                <label class="font-body-sm text-body-sm text-on-surface-variant cursor-pointer select-none" for="remember">
-                                    {"Keep me logged in for 30 days"}
-                                </label>
-                            </div>
+
+                            {
+                                if *mode == AuthMode::Login {
+                                    html! {
+                                        <div class="space-y-1.5">
+                                            <div class="flex justify-between items-center">
+                                                <label class="font-label-xs text-label-xs uppercase tracking-wider text-on-surface-variant flex items-center gap-2" for="password">
+                                                    <span class="material-symbols-outlined text-[14px]">{"lock"}</span>
+                                                    {"Password"}
+                                                </label>
+                                                <a class="font-label-xs text-label-xs text-primary hover:underline transition-colors cursor-pointer" href="#" onclick={on_click_forgot}>
+                                                    {"Forgot password?"}
+                                                </a>
+                                            </div>
+                                            <div class="relative">
+                                                <input
+                                                    class="w-full px-4 py-3 bg-surface border border-outline-variant rounded-lg font-code-md text-code-md transition-all placeholder:text-on-surface-variant/40 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                                                    id="password"
+                                                    name="password"
+                                                    placeholder="••••••••••••"
+                                                    required=true
+                                                    type={password_type}
+                                                    value={(*password).clone()}
+                                                    oninput={on_input_password}
+                                                    disabled={*status != LoginStatus::Idle}
+                                                />
+                                                <button
+                                                    class="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-primary transition-colors cursor-pointer"
+                                                    type="button"
+                                                    onclick={on_toggle_show_password}
+                                                    disabled={*status != LoginStatus::Idle}
+                                                >
+                                                    <span class="material-symbols-outlined text-[20px]">{visibility_icon}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    }
+                                } else {
+                                    html! {}
+                                }
+                            }
+
                             <button
                                 class={button_class}
                                 type="submit"
@@ -302,6 +416,21 @@ pub fn login(props: &LoginProps) -> Html {
                                 {button_content}
                             </button>
                         </form>
+
+                        {
+                            if *mode == AuthMode::ForgotPassword {
+                                html! {
+                                    <div class="text-center mt-6">
+                                        <a class="font-label-xs text-label-xs text-primary hover:underline inline-flex items-center gap-1 transition-colors cursor-pointer" href="#" onclick={on_click_login}>
+                                            <span class="material-symbols-outlined text-[14px]">{"arrow_back"}</span>
+                                            {"Back to Login"}
+                                        </a>
+                                    </div>
+                                }
+                            } else {
+                                html! {}
+                            }
+                        }
                     </div>
                     <p class="text-center mt-6 font-label-xs text-label-xs text-on-surface-variant/60">
                         {"New to Crabbase? "}

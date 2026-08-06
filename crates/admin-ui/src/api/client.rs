@@ -350,4 +350,19 @@ impl ApiClient {
         Self::set_token(Some(token.clone()));
         Ok(token)
     }
+
+    pub async fn forget_password(
+        &self,
+        collection: &str,
+        email: &str,
+    ) -> Result<serde_json::Value, gloo_net::Error> {
+        let url = format!("/auth/{}/forget-password", collection);
+        let body = serde_json::json!({
+            "email": email,
+        });
+
+        let res = self.request("POST", &url).json(&body)?.send().await?;
+        let response = Self::check_response(res).await?;
+        response.json::<serde_json::Value>().await
+    }
 }
