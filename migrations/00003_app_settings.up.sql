@@ -21,11 +21,8 @@ VALUES (
     'base',
     '_settings',
     '[
-        {"name": "id", "type": "text", "required": true},
         {"name": "name", "type": "text", "required": true},
-        {"name": "value", "type": "json", "required": false},
-        {"name": "created", "type": "autodate"},
-        {"name": "updated", "type": "autodate"}
+        {"name": "value", "type": "json", "required": false}
     ]'::jsonb,
     '{}'::jsonb
 )

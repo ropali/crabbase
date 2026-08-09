@@ -18,6 +18,10 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
 
     // Add dynamically each field of the collection
     for field in &schema.fields {
+        if matches!(field.name.as_str(), "id" | "created" | "updated") {
+            continue;
+        }
+
         let key = field.name.clone();
         let header = field.name.clone();
         let data_type = field.data_type.clone();

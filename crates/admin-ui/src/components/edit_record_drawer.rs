@@ -421,7 +421,9 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                     html! {
                                         <>
                                             {
-                                                props.collection_fields.iter().map(|f| {
+                                                props.collection_fields.iter()
+                                                    .filter(|f| !matches!(f.name.as_str(), "id" | "created" | "updated"))
+                                                    .map(|f| {
                                                     let label_text = f.name.clone();
                                                     let key = f.name.clone();
 
