@@ -1,12 +1,21 @@
-use chrono::Utc;
-use crabbase_core::errors::APIError;
-use crabbase_db::repositories::auth::{AuthUser, UserRepository};
-use serde::{Deserialize, Serialize};
-
 use crate::{
     auth::{Claims, TokenParams, TokenType, create_token, verify_password, verify_token},
     repositories::auth::AuthRepository,
 };
+use chrono::Utc;
+use crabbase_core::errors::APIError;
+use crabbase_db::repositories::settings::{EmailTemplate, EmailTemplates};
+use crabbase_db::repositories::{
+    auth::{AuthUser, UserRepository},
+    settings::{MailSettings, SettingsRepository},
+};
+use lettre::{
+    Message, SmtpTransport, Transport,
+    message::{Mailbox, MultiPart, SinglePart, header::ContentType},
+    transport::smtp::authentication::Credentials,
+};
+use serde::{Deserialize, Serialize};
+use tokio::task;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthTokens {
@@ -20,13 +29,19 @@ pub struct AuthTokens {
 pub struct AuthService {
     user_repo: UserRepository,
     auth_repo: AuthRepository,
+    settings_repo: SettingsRepository,
 }
 
 impl AuthService {
-    pub fn new(user_repo: UserRepository, auth_repo: AuthRepository) -> Self {
+    pub fn new(
+        user_repo: UserRepository,
+        auth_repo: AuthRepository,
+        settings_repo: SettingsRepository,
+    ) -> Self {
         Self {
             user_repo,
             auth_repo,
+            settings_repo,
         }
     }
 
@@ -390,6 +405,81 @@ impl AuthService {
 
         Ok(())
     }
+
+    pub async fn password_reset(&self, collection: &str, email: &str) -> Result<(), APIError> {
+        // check if user exist
+        let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
+
+        if user_opt.is_none() {
+            // Do not say user exist or not to prevent guessing the user email
+            return Ok(());
+        }
+
+        let email_setting = self
+            .settings_repo
+            .get::<MailSettings>("mail")
+            .await?
+            .expect("Could not find the mail settings");
+
+        let templates = self
+            .settings_repo
+            .get::<EmailTemplates>("email_templates")
+            .await?
+            .expect("Email template not found");
+
+        let receiver_name = email.split_once("@").map(|(u, _)| u).unwrap_or(email);
+
+        let email_msg = Message::builder()
+            .from(Mailbox::new(
+                Some(email_setting.sender_name.parse().unwrap()),
+                email_setting.sender_address.parse().unwrap(),
+            ))
+            .to(Mailbox::new(
+                Some(receiver_name.to_owned()),
+                email.parse().unwrap(),
+            ))
+            .subject(templates.password_reset.subject)
+            .multipart(
+                MultiPart::alternative()
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(ContentType::TEXT_PLAIN)
+                            .body(String::from(templates.password_reset.body_text)), // Every message should have a plain text fallback.
+                    )
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(ContentType::TEXT_HTML)
+                            .body(String::from(templates.password_reset.body_html)),
+                    ),
+            )
+            .map_err(|e| APIError::Internal {
+                message: "Failed to build email message".to_string(),
+                details: serde_json::json!(format!("Failed to build email message: {}", e)),
+            })?;
+
+        let creds = Credentials::new(email_setting.smtp_username, email_setting.smtp_password);
+
+        // Open a remote connection
+        let mailer = SmtpTransport::relay(&*email_setting.smtp_host)
+            .unwrap()
+            .credentials(creds)
+            .build();
+
+        // Send the email
+        task::spawn_blocking(move || {
+            mailer.send(&email_msg).map_err(|e| APIError::Internal {
+                message: "Could not send email".to_string(),
+                details: serde_json::json!(e.to_string()),
+            })
+        })
+        .await
+        .map_err(|e| APIError::Internal {
+            message: "Failed to execute email task".to_string(),
+            details: serde_json::json!(e.to_string()),
+        })??;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -440,7 +530,8 @@ mod tests {
 
         let repo = UserRepository::new(pool.clone());
         let auth_repo = AuthRepository::new(pool.clone());
-        let service = AuthService::new(repo, auth_repo);
+        let settings_repo = SettingsRepository::new(pool.clone());
+        let service = AuthService::new(repo, auth_repo, settings_repo);
         (service, pool)
     }
 

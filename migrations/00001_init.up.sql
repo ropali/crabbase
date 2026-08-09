@@ -23,14 +23,6 @@ CREATE TABLE IF NOT EXISTS _collections (
 
 CREATE INDEX IF NOT EXISTS idx__collections_type ON _collections (type);
 
--- _params: Application settings/parameters
-CREATE TABLE IF NOT EXISTS _params (
-    id      TEXT PRIMARY KEY NOT NULL,
-    value   TEXT DEFAULT NULL,  -- JSON value
-    created TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
 -- _logs: Application audit logs
 CREATE TABLE IF NOT EXISTS _logs (
     id      TEXT PRIMARY KEY NOT NULL,

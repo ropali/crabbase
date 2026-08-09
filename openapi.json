@@ -56,6 +56,7 @@
         "tags": ["Collections"],
         "summary": "List all collections",
         "operationId": "listCollections",
+        "security": [{"bearerAuth": [], "requireAdmin": []}],
         "parameters": [
           {
             "name": "page",
@@ -88,6 +89,16 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
           "500": {
             "description": "Internal server error",
             "content": {
@@ -104,6 +115,7 @@
         "tags": ["Collections"],
         "summary": "Create a new collection",
         "operationId": "createCollection",
+        "security": [{"bearerAuth": [], "requireAdmin": []}],
         "requestBody": {
           "required": true,
           "content": {
@@ -232,6 +244,7 @@
         "tags": ["Collections"],
         "summary": "Get a collection by name",
         "operationId": "getCollection",
+        "security": [{"bearerAuth": [], "requireAdmin": []}],
         "parameters": [
           {
             "name": "name",
@@ -279,6 +292,7 @@
         "tags": ["Collections"],
         "summary": "Update a collection",
         "operationId": "updateCollection",
+        "security": [{"bearerAuth": [], "requireAdmin": []}],
         "parameters": [
           {
             "name": "name",
@@ -346,6 +360,7 @@
         "tags": ["Collections"],
         "summary": "Delete a collection",
         "operationId": "deleteCollection",
+        "security": [{"bearerAuth": [], "requireAdmin": []}],
         "parameters": [
           {
             "name": "name",
@@ -390,6 +405,7 @@
         "tags": ["Collections"],
         "summary": "Truncate a collection (delete all records)",
         "operationId": "truncateCollection",
+        "security": [{"bearerAuth": [], "requireAdmin": []}],
         "parameters": [
           {
             "name": "name",
@@ -617,6 +633,7 @@
         "summary": "Refresh authentication token",
         "description": "Refreshes an authentication token by validating the provided refresh token.",
         "operationId": "refreshToken",
+        "security": [{"bearerAuth": []}],
         "parameters": [
           {
             "name": "collection",
@@ -707,6 +724,62 @@
                     "success": {
                       "type": "boolean",
                       "example": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/{collection}/forget-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Request password reset",
+        "description": "Sends a password reset link to the user's email address",
+        "operationId": "forgetPassword",
+        "security": [],
+        "parameters": [
+          {
+            "name": "collection",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Collection name for the authentication context"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset email sent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string",
+                      "example": "Password reset link sent to your email address."
                     }
                   }
                 }
@@ -891,6 +964,12 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "requireAdmin": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Require-Admin",
+        "description": "Requires admin privileges to access this endpoint"
       }
     },
     "schemas": {
@@ -1290,6 +1369,17 @@
           "email": {
             "type": "string",
             "description": "Email address of the user logging out"
+          }
+        }
+      },
+      "PasswordResetRequest": {
+        "type": "object",
+        "required": ["email"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email address to send password reset link"
           }
         }
       },

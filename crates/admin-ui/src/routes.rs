@@ -8,6 +8,9 @@ pub enum Route {
     #[at("/login")]
     Login,
 
+    #[at("/forgot-password")]
+    ForgotPassword,
+
     #[at("/collection/:name")]
     Collection { name: String },
 
