@@ -61,7 +61,6 @@ pub struct DataTableProps {
 #[function_component(DataTable)]
 pub fn data_table(props: &DataTableProps) -> Html {
     let on_row_click = props.on_row_click.clone();
-
     let on_select_all = props.on_select_all.clone();
 
     let on_header_change = Callback::from(move |e: Event| {
@@ -218,7 +217,7 @@ pub fn data_table(props: &DataTableProps) -> Html {
                             });
 
                             html! {
-                                <tr class="hover:bg-surface-container-low transition-colors group relative" onclick={onclick}>
+                                <tr class="hover:bg-surface-container-low transition-colors group relative cursor-pointer" onclick={onclick}>
                                     if props.selectable {
                                         <td class="px-cell_padding_h py-cell_padding_v">
                                             <div class="absolute left-0 top-0 bottom-0 w-1 bg-secondary opacity-0 group-hover:opacity-100 transition-opacity"></div>
@@ -234,8 +233,8 @@ pub fn data_table(props: &DataTableProps) -> Html {
                                     { for props.columns.iter().map(|col| {
                                         let cell_val = row.get(&col.key);
                                         html! {
-                                            <td class="px-cell_padding_h py-cell_padding_v">
-                                                { (col.render)(cell_val) }
+                                            <td class="px-cell_padding_h py-cell_padding_v max-w-[260px]">
+                                                { (col.render)(cell_val, None) }
                                             </td>
                                         }
                                     }) }

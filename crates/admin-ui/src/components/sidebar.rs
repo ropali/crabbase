@@ -24,38 +24,6 @@ pub fn sidebar(props: &SidebarProps) -> Html {
         })
     };
 
-    let stylesheet = stylist::style!(
-        r#"
-        .material-symbols-outlined {
-              font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-              vertical-align: middle;
-              font-size: 18px;
-            }
-            .custom-scrollbar::-webkit-scrollbar {
-              width: 6px;
-              height: 6px;
-            }
-            .custom-scrollbar::-webkit-scrollbar-track {
-              background: transparent;
-            }
-            .custom-scrollbar::-webkit-scrollbar-thumb {
-              background: #e2bfb8;
-              border-radius: 10px;
-            }
-            body {
-              background-color: #fff8f6;
-              font-family: 'Inter', sans-serif;
-            }
-            .sidebar-transition {
-              transition: all 0.2s ease;
-            }
-            .active-nav-glow {
-              box-shadow: inset 4px 0 0 #b4281c;
-            }
-    "#
-    )
-    .expect("Failed to mount style");
-
     let is_settings_mode = props.active_view.starts_with("settings");
     let is_logs_mode = props.active_view == "logs";
 
@@ -70,7 +38,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
     };
 
     html! {
-        <aside class={classes!("bg-surface-container-low", "border-r", "border-outline-variant", "flex", "flex-col", "h-full", "w-[240px]", "py-4", "px-3", "gap-2", "shrink-0", "shadow-sm", stylesheet.get_class_name().to_string())} id="crabbase-sidebar">
+        <aside class={classes!("bg-surface-container-low", "border-r", "border-outline-variant", "flex", "flex-col", "h-full", "w-[240px]", "py-4", "px-3", "gap-2", "shrink-0", "shadow-sm")} id="crabbase-sidebar">
             {
                 if is_settings_mode {
                     html! {

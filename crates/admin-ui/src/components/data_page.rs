@@ -28,12 +28,25 @@ fn record_to_dynamic_row(r: Record, col: &CollectionModel) -> DynamicRow {
     // Add dynamic fields
     for field in &col.fields {
         let cell_value = if let Some(val) = r.data.get(&field.name) {
+            let is_json_field = field.data_type.to_lowercase() == "json";
             match val {
                 serde_json::Value::Null => CellValue::Null,
                 serde_json::Value::Bool(b) => CellValue::Bool(*b),
                 serde_json::Value::Number(n) => CellValue::Number(n.as_f64().unwrap_or(0.0)),
-                serde_json::Value::String(s) => CellValue::Text(s.clone()),
-                _ => CellValue::Text(val.to_string()),
+                serde_json::Value::String(s) => {
+                    if is_json_field {
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                            CellValue::Json(parsed)
+                        } else {
+                            CellValue::Text(s.clone())
+                        }
+                    } else {
+                        CellValue::Text(s.clone())
+                    }
+                }
+                serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                    CellValue::Json(val.clone())
+                }
             }
         } else {
             CellValue::Null
@@ -349,6 +362,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
                             }
                             CellValue::Bool(b) => serde_json::Value::Bool(*b),
                             CellValue::Null => serde_json::Value::Null,
+                            CellValue::Json(val) => val.clone(),
                         };
                         map.insert(k.clone(), val);
                     }

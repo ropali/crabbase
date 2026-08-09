@@ -6,6 +6,7 @@ pub enum CellValue {
     Number(f64),
     Bool(bool),
     Null,
+    Json(Value),
 }
 
 impl CellValue {
@@ -16,7 +17,7 @@ impl CellValue {
             Value::Number(n) => CellValue::Number(n.as_f64().unwrap_or(0.0)),
             Value::Bool(b) => CellValue::Bool(*b),
             Value::Null => CellValue::Null,
-            other => CellValue::Text(other.to_string()),
+            Value::Object(_) | Value::Array(_) => CellValue::Json(value.clone()),
         }
     }
 
@@ -33,6 +34,21 @@ impl CellValue {
             }
             CellValue::Bool(b) => if *b { "True" } else { "False" }.to_string(),
             CellValue::Null => "null".to_string(),
+            CellValue::Json(v) => serde_json::to_string(v).unwrap_or_else(|_| v.to_string()),
+        }
+    }
+
+    pub fn formatted_json(&self) -> Option<String> {
+        match self {
+            CellValue::Json(v) => serde_json::to_string_pretty(v).ok(),
+            CellValue::Text(s) => {
+                if let Ok(val) = serde_json::from_str::<Value>(s) {
+                    serde_json::to_string_pretty(&val).ok()
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 
@@ -42,6 +58,7 @@ impl CellValue {
             CellValue::Number(n) => n.to_string(),
             CellValue::Bool(b) => b.to_string(),
             CellValue::Null => "N/A".to_string(),
+            CellValue::Json(v) => v.to_string(),
         }
     }
 
@@ -54,5 +71,9 @@ impl CellValue {
             CellValue::Bool(b) => Some(*b),
             _ => None,
         }
+    }
+
+    pub fn is_json(&self) -> bool {
+        matches!(self, CellValue::Json(_))
     }
 }

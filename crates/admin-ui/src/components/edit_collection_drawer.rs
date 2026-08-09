@@ -1140,9 +1140,13 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                                     <div class="flex items-center gap-3">
                                                                         <select value={f_type.clone()} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
                                                                             <option value="Text" selected={f_type == "Text"}>{"Text"}</option>
+                                                                            <option value="RichText" selected={f_type == "RichText" || f_type == "Richtext"}>{"RichText"}</option>
                                                                             <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
                                                                             <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
                                                                             <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                            <option value="Email" selected={f_type == "Email"}>{"Email"}</option>
+                                                                            <option value="Url" selected={f_type == "Url"}>{"Url"}</option>
+                                                                            <option value="Datetime" selected={f_type == "Datetime"}>{"Datetime"}</option>
                                                                             <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
                                                                         </select>
 
@@ -1171,9 +1175,13 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                                 <div class="flex items-center gap-3">
                                                                     <select value={f_type.clone()} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
                                                                         <option value="Text" selected={f_type == "Text"}>{"Text"}</option>
+                                                                        <option value="RichText" selected={f_type == "RichText" || f_type == "Richtext"}>{"RichText"}</option>
                                                                         <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
                                                                         <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
                                                                         <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                        <option value="Email" selected={f_type == "Email"}>{"Email"}</option>
+                                                                        <option value="Url" selected={f_type == "Url"}>{"Url"}</option>
+                                                                        <option value="Datetime" selected={f_type == "Datetime"}>{"Datetime"}</option>
                                                                         <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
                                                                     </select>
 

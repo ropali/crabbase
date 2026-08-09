@@ -811,3 +811,171 @@ body {
     background-image: radial-gradient(var(--outline-variant) 1px, transparent 1px);
     background-size: 24px 24px;
 }
+
+
+
+/* ============================================
+   24. EASYMDE EDITOR STYLES
+   ============================================ */
+.easymde-wrapper {
+    --easymde-bg: var(--surface-container-lowest);
+    --easymde-border: var(--outline-variant);
+    --easymde-text: var(--on-surface);
+    --easymde-accent: var(--primary);
+}
+
+.easymde-wrapper .EasyMDEContainer {
+    background-color: var(--easymde-bg);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+}
+
+.easymde-wrapper .EasyMDEContainer .CodeMirror {
+    background-color: var(--easymde-bg);
+    color: var(--easymde-text);
+    border: 1px solid var(--easymde-border);
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    font-family: var(--font-family-code);
+    font-size: var(--text-body-sm);
+    line-height: 1.6;
+    min-height: 280px;
+}
+
+.easymde-wrapper .EasyMDEContainer .CodeMirror-focused {
+    border-color: var(--easymde-accent);
+    box-shadow: 0 0 0 2px rgba(171, 40, 21, 0.15);
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-toolbar {
+    background-color: var(--surface-container-low);
+    border: 1px solid var(--easymde-border);
+    border-bottom: none;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-toolbar button {
+    color: var(--on-surface-variant);
+    transition: all 0.15s ease;
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-toolbar button:hover,
+.easymde-wrapper .EasyMDEContainer .editor-toolbar button.active {
+    background-color: var(--surface-container-high);
+    color: var(--easymde-accent);
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-toolbar::before,
+.easymde-wrapper .EasyMDEContainer .editor-toolbar::after {
+    background: none;
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-toolbar a {
+    color: var(--on-surface-variant);
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-toolbar a:hover {
+    background-color: var(--surface-container-high);
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-statusbar {
+    background-color: var(--surface-container-low);
+    border: 1px solid var(--easymde-border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+    color: var(--on-surface-variant);
+    font-size: var(--text-label-xs);
+    padding: 0.5rem 1rem;
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-preview {
+    background-color: var(--easymde-bg);
+    padding: 1rem;
+    border: 1px solid var(--easymde-border);
+    border-radius: var(--radius-lg);
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-preview pre {
+    background-color: var(--surface-container-low);
+    padding: 1rem;
+    border-radius: var(--radius-default);
+    overflow-x: auto;
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-preview code {
+    font-family: var(--font-family-code);
+    font-size: var(--text-body-sm);
+}
+
+/* Markdown syntax highlighting in editor */
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-header-1 {
+    font-size: 1.75em;
+    line-height: 1.3;
+    color: var(--easymde-accent);
+    font-weight: bold;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-header-2 {
+    font-size: 1.5em;
+    line-height: 1.3;
+    color: var(--easymde-accent);
+    font-weight: bold;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-header-3 {
+    font-size: 1.25em;
+    line-height: 1.3;
+    color: var(--easymde-accent);
+    font-weight: bold;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-header-4,
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-header-5,
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-header-6 {
+    font-size: 1.1em;
+    line-height: 1.3;
+    color: var(--easymde-accent);
+    font-weight: bold;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-link {
+    color: var(--secondary);
+    text-decoration: underline;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-url {
+    color: var(--tertiary);
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-formatting-header {
+    color: var(--on-surface-variant);
+    opacity: 0.4;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-strong {
+    font-weight: bold;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-em {
+    font-style: italic;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-formatting-strong,
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-formatting-em {
+    opacity: 0.4;
+}
+
+.easymde-wrapper .EasyMDEContainer .cm-s-easymde .cm-quote {
+    color: var(--on-surface-variant);
+    font-style: italic;
+}
+
+/* EasyMDE fullscreen mode */
+.easymde-wrapper .EasyMDEContainer .CodeMirror-fullscreen {
+    background-color: var(--easymde-bg);
+    z-index: 1000;
+}
+
+.easymde-wrapper .EasyMDEContainer .editor-toolbar.fullscreen {
+    background-color: var(--surface-container-low);
+    z-index: 1000;
+}

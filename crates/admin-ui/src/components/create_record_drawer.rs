@@ -209,7 +209,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
 
     html! {
         <div onclick={on_close_click.clone()} class="absolute inset-0 bg-inverse-surface/10 bg-blur z-40 flex justify-end">
-            <div onclick={on_drawer_click} class="w-[480px] h-full bg-surface shadow-2xl z-50 flex flex-col border-l border-outline-variant animate-slide-in-right duration-300 relative">
+            <div onclick={on_drawer_click} class="w-[680px] max-w-[90vw] h-full bg-surface shadow-2xl z-50 flex flex-col border-l border-outline-variant animate-slide-in-right duration-300 relative">
                 <div class="p-6 border-b border-outline-variant flex justify-between items-center">
                     <div>
                         <h2 class="font-headline-md text-headline-md text-on-surface font-bold">{format!("Create {} record", props.collection_name)}</h2>
@@ -366,9 +366,19 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                         })
                                                     };
 
-                                                    let current_val = fields.get(&key).cloned().unwrap_or_default();
+                                                    let _on_textarea_input = {
+                                                        let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                        let key = key.clone();
+                                                        Callback::from(move |e: InputEvent| {
+                                                            let textarea: web_sys::HtmlTextAreaElement = e.target_unchecked_into();
+                                                            on_dynamic_field_change.emit((key.clone(), textarea.value()));
+                                                        })
+                                                    };
 
-                                                    if f.data_type.to_lowercase() == "bool" {
+                                                    let current_val = fields.get(&key).cloned().unwrap_or_default();
+                                                    let dt = f.data_type.to_lowercase();
+
+                                                    if dt == "bool" {
                                                         let is_checked = current_val == "true";
                                                         html! {
                                                             <div class="flex items-center justify-between p-3 bg-surface-container-low border border-outline-variant rounded" key={f.name.clone()}>
@@ -382,7 +392,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                                 </label>
                                                             </div>
                                                         }
-                                                    } else if f.data_type.to_lowercase() == "file" {
+                                                    } else if dt == "file" {
                                                         html! {
                                                             <div class="group" key={f.name.clone()}>
                                                                 <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
@@ -395,8 +405,45 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                                 </div>
                                                             </div>
                                                         }
-                                                    } else {
-                                                        let input_type = match f.data_type.to_lowercase().as_str() {
+                                                    } else if dt == "json" {
+                                                        let on_json_change = {
+                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                            let key = key.clone();
+                                                            Callback::from(move |new_val: String| {
+                                                                on_dynamic_field_change.emit((key.clone(), new_val));
+                                                            })
+                                                        };
+                                                        html! {
+                                                            <crate::components::JsonFieldSidebar
+                                                                key={f.name.clone()}
+                                                                label={label_text}
+                                                                value={current_val}
+                                                                on_change={on_json_change}
+                                                            />
+                                                        }
+                                                     } else if dt == "richtext" || dt == "editor" {
+                                                        let on_rt_change = {
+                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                            let key_clone = key.clone();
+                                                            Callback::from(move |new_val: String| {
+                                                                on_dynamic_field_change.emit((key_clone.clone(), new_val));
+                                                            })
+                                                        };
+                                                        let textarea_id = format!("markdown-create-{}", &f.name);
+                                                        html! {
+                                                            <div class="group" key={f.name.clone()}>
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
+                                                                </label>
+                                                                <crate::components::MarkdownEditor
+                                                                    id={textarea_id}
+                                                                    initial_value={Some(current_val)}
+                                                                    on_change={on_rt_change}
+                                                                />
+                                                            </div>
+                                                        }
+                                                     } else {
+                                                        let input_type = match dt.as_str() {
                                                             "number" => "number",
                                                             "email" => "email",
                                                             "url" => "url",

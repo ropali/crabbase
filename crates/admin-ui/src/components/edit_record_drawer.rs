@@ -33,6 +33,9 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                     CellValue::Number(n) => n.to_string(),
                     CellValue::Bool(b) => b.to_string(),
                     CellValue::Null => "".to_string(),
+                    CellValue::Json(val) => {
+                        serde_json::to_string_pretty(val).unwrap_or_else(|_| val.to_string())
+                    }
                 };
                 initial_fields.insert(k.clone(), str_val);
             }
@@ -280,7 +283,7 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
 
     html! {
         <div onclick={on_close_click.clone()} class="absolute inset-0 bg-inverse-surface/10 bg-blur z-40 flex justify-end">
-            <div onclick={on_drawer_click} class="w-[480px] h-full bg-surface shadow-2xl z-50 flex flex-col border-l border-outline-variant animate-slide-in-right duration-300 relative">
+            <div onclick={on_drawer_click} class="w-[680px] max-w-[90vw] h-full bg-surface shadow-2xl z-50 flex flex-col border-l border-outline-variant animate-slide-in-right duration-300 relative">
                 <div class="p-6 border-b border-outline-variant flex justify-between items-center">
                     <div>
                         <h2 class="font-headline-md text-headline-md text-on-surface font-bold">{format!("Edit {} record", props.collection_name)}</h2>
@@ -452,9 +455,19 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                         })
                                                     };
 
-                                                    let field_val = fields.get(&key).cloned().unwrap_or_default();
+                                                    let _on_textarea_input = {
+                                                        let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                        let key = key.clone();
+                                                        Callback::from(move |e: InputEvent| {
+                                                            let textarea: web_sys::HtmlTextAreaElement = e.target_unchecked_into();
+                                                            on_dynamic_field_change.emit((key.clone(), textarea.value()));
+                                                        })
+                                                    };
 
-                                                    if f.data_type.to_lowercase() == "bool" {
+                                                    let field_val = fields.get(&key).cloned().unwrap_or_default();
+                                                    let dt = f.data_type.to_lowercase();
+
+                                                    if dt == "bool" {
                                                         let is_checked = field_val == "true";
                                                         html! {
                                                             <div class="flex items-center justify-between p-3 bg-surface-container-low border border-outline-variant rounded" key={key.clone()}>
@@ -466,6 +479,46 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                                     <input class="sr-only peer" type="checkbox" checked={is_checked} onchange={on_change} />
                                                                     <div class="w-11 h-6 bg-outline-variant peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
                                                                 </label>
+                                                            </div>
+                                                        }
+                                                    } else if dt == "json" {
+                                                        let on_json_change = {
+                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                            let key = key.clone();
+                                                            Callback::from(move |new_val: String| {
+                                                                on_dynamic_field_change.emit((key.clone(), new_val));
+                                                            })
+                                                        };
+                                                        let formatted_val = if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&field_val) {
+                                                            serde_json::to_string_pretty(&parsed).unwrap_or_else(|_| field_val.clone())
+                                                        } else {
+                                                            field_val.clone()
+                                                        };
+                                                        html! {
+                                                            <crate::components::JsonFieldSidebar
+                                                                key={key.clone()}
+                                                                label={label_text}
+                                                                value={formatted_val}
+                                                                on_change={on_json_change}
+                                                            />
+                                                        }
+                                                    } else if dt == "richtext" || dt == "editor" {
+                                                        let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                        let key_clone = key.clone();
+                                                        let on_rt_change = Callback::from(move |new_val: String| {
+                                                            on_dynamic_field_change.emit((key_clone.clone(), new_val));
+                                                        });
+                                                        let textarea_id = format!("markdown-edit-{}", &key);
+                                                        html! {
+                                                            <div class="group" key={key.clone()}>
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
+                                                                </label>
+                                                                <crate::components::MarkdownEditor
+                                                                    id={textarea_id}
+                                                                    initial_value={Some(field_val)}
+                                                                    on_change={on_rt_change}
+                                                                />
                                                             </div>
                                                         }
                                                     } else {

@@ -1117,10 +1117,14 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
 
                                                                     <div class="flex items-center gap-3">
                                                                         <select value={f_type.clone()} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
-                                                                            <option value="Text" selected={f_type == "Text"}>{"Text"}</option>
+                                                                            <option value="PlainText" selected={f_type == "PlainText" || f_type == "Text"}>{"PlainText"}</option>
+                                                                            <option value="RichText" selected={f_type == "RichText" || f_type == "Richtext" || f_type == "Editor"}>{"RichText"}</option>
                                                                             <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
                                                                             <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
                                                                             <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                            <option value="Email" selected={f_type == "Email"}>{"Email"}</option>
+                                                                            <option value="Url" selected={f_type == "Url"}>{"Url"}</option>
+                                                                            <option value="Datetime" selected={f_type == "Datetime"}>{"Datetime"}</option>
                                                                             <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
                                                                         </select>
 
@@ -1146,14 +1150,18 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                 <span class="material-symbols-outlined text-on-surface-variant">{icon}</span>
                                                                 <input type="text" value={f_name} oninput={on_name_change} placeholder="field_name" class="flex-1 min-w-0 bg-transparent border-b border-dashed border-outline-variant hover:border-outline focus:border-primary focus:outline-none py-0.5 font-code-md text-code-md text-on-surface" />
 
-                                                                <div class="flex items-center gap-3">
-                                                                    <select value={f_type.clone()} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
-                                                                        <option value="Text" selected={f_type == "Text"}>{"Text"}</option>
-                                                                        <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
-                                                                        <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
-                                                                        <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
-                                                                        <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
-                                                                    </select>
+                                                                    <div class="flex items-center gap-3">
+                                                                        <select value={f_type.clone()} onchange={on_type_change} class="bg-surface-container-low border border-outline-variant px-2 py-1 rounded text-[11px] font-bold text-on-surface cursor-pointer focus:outline-none">
+                                                                            <option value="PlainText" selected={f_type == "PlainText" || f_type == "Text"}>{"PlainText"}</option>
+                                                                            <option value="RichText" selected={f_type == "RichText" || f_type == "Richtext" || f_type == "Editor"}>{"RichText"}</option>
+                                                                            <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
+                                                                            <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
+                                                                            <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                            <option value="Email" selected={f_type == "Email"}>{"Email"}</option>
+                                                                            <option value="Url" selected={f_type == "Url"}>{"Url"}</option>
+                                                                            <option value="Datetime" selected={f_type == "Datetime"}>{"Datetime"}</option>
+                                                                            <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
+                                                                        </select>
 
                                                                     <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>
                                                                         {"REQ"}
