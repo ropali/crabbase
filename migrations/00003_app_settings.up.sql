@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS _settings (
     id      TEXT PRIMARY KEY NOT NULL DEFAULT gen_random_uuid()::text,
-    name    VARCHAR(60) NOT NULL,
+    name    VARCHAR(60) UNIQUE NOT NULL,
     value   TEXT DEFAULT NULL,
     created TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated TIMESTAMPTZ NOT NULL DEFAULT now()

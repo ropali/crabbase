@@ -18,6 +18,7 @@ pub fn get_app_routes(state: AppState) -> Router {
         .route("/openapi.json", get(openapi_json))
         .route("/docs", get(swagger_ui))
         .nest("/auth", routes::auth::get_routes(state.clone()))
+        .nest("/settings", routes::setting::get_routes(state.clone()))
         .with_state(state);
 
     Router::new().nest("/api", api)
