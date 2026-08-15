@@ -1,3 +1,4 @@
+use crate::api::client::ApiClient;
 use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
@@ -10,25 +11,61 @@ pub struct SettingsMailProps {
 pub fn settings_mail(props: &SettingsMailProps) -> Html {
     let sender_name = use_state(|| String::new());
     let sender_address = use_state(|| String::new());
-    let smtp_enabled = use_state(|| false);
     let smtp_host = use_state(|| String::new());
     let smtp_port = use_state(|| "587".to_string());
     let smtp_username = use_state(|| String::new());
     let smtp_password = use_state(|| String::new());
     let show_password = use_state(|| false);
-    let show_more_options = use_state(|| false);
-    let is_saved = use_state(|| false);
 
-    let encryption = use_state(|| "TLS".to_string());
-    let auth_method = use_state(|| "PLAIN".to_string());
-    let timeout_seconds = use_state(|| "30".to_string());
+    let is_loading = use_state(|| true);
+    let is_saving = use_state(|| false);
+    let error_msg = use_state(|| Option::<String>::None);
 
-    let toggle_smtp = {
-        let smtp_enabled = smtp_enabled.clone();
-        Callback::from(move |_| {
-            smtp_enabled.set(!*smtp_enabled);
-        })
-    };
+    // Fetch settings on mount
+    {
+        let sender_name = sender_name.clone();
+        let sender_address = sender_address.clone();
+        let smtp_host = smtp_host.clone();
+        let smtp_port = smtp_port.clone();
+        let smtp_username = smtp_username.clone();
+        let smtp_password = smtp_password.clone();
+        let is_loading = is_loading.clone();
+        let error_msg = error_msg.clone();
+
+        use_effect_with((), move |_| {
+            wasm_bindgen_futures::spawn_local(async move {
+                let client = ApiClient::default();
+                match client.get_mail_settings().await {
+                    Ok(data) => {
+                        if let Some(v) = data.get("senderName").and_then(|v| v.as_str()) {
+                            sender_name.set(v.to_string());
+                        }
+                        if let Some(v) = data.get("senderAddress").and_then(|v| v.as_str()) {
+                            sender_address.set(v.to_string());
+                        }
+                        if let Some(v) = data.get("smtpHost").and_then(|v| v.as_str()) {
+                            smtp_host.set(v.to_string());
+                        }
+                        if let Some(v) = data.get("smtpPort").and_then(|v| v.as_u64()) {
+                            smtp_port.set(v.to_string());
+                        }
+                        if let Some(v) = data.get("smtpUsername").and_then(|v| v.as_str()) {
+                            smtp_username.set(v.to_string());
+                        }
+                        if let Some(v) = data.get("smtpPassword").and_then(|v| v.as_str()) {
+                            smtp_password.set(v.to_string());
+                        }
+                        is_loading.set(false);
+                    }
+                    Err(e) => {
+                        error_msg.set(Some(format!("Failed to load settings: {}", e)));
+                        is_loading.set(false);
+                    }
+                }
+            });
+            || ()
+        });
+    }
 
     let toggle_show_password = {
         let show_password = show_password.clone();
@@ -37,44 +74,73 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
         })
     };
 
-    let toggle_show_more = {
-        let show_more_options = show_more_options.clone();
-        Callback::from(move |_| {
-            show_more_options.set(!*show_more_options);
-        })
-    };
-
     let on_save_click = {
-        let is_saved = is_saved.clone();
+        let sender_name = sender_name.clone();
+        let sender_address = sender_address.clone();
+        let smtp_host = smtp_host.clone();
+        let smtp_port = smtp_port.clone();
+        let smtp_username = smtp_username.clone();
+        let smtp_password = smtp_password.clone();
+        let is_saving = is_saving.clone();
+        let error_msg = error_msg.clone();
         let on_save = props.on_save.clone();
+
         Callback::from(move |_| {
-            is_saved.set(true);
-            if let Some(ref cb) = on_save {
-                cb.emit(());
-            }
+            let sender_name = (*sender_name).clone();
+            let sender_address = (*sender_address).clone();
+            let smtp_host = (*smtp_host).clone();
+            let smtp_port = (*smtp_port).clone();
+            let smtp_username = (*smtp_username).clone();
+            let smtp_password = (*smtp_password).clone();
+            let is_saving = is_saving.clone();
+            let error_msg = error_msg.clone();
+            let on_save = on_save.clone();
+
+            is_saving.set(true);
+            error_msg.set(None);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let port: u16 = smtp_port.parse().unwrap_or(587);
+                let body = serde_json::json!({
+                    "senderName": sender_name,
+                    "senderAddress": sender_address,
+                    "smtpHost": smtp_host,
+                    "smtpPort": port,
+                    "smtpUsername": smtp_username,
+                    "smtpPassword": smtp_password,
+                });
+                let client = ApiClient::default();
+                match client.save_mail_settings(body).await {
+                    Ok(_) => {
+                        if let Some(ref cb) = on_save {
+                            cb.emit(());
+                        }
+                    }
+                    Err(e) => {
+                        error_msg.set(Some(format!("Failed to save settings: {}", e)));
+                    }
+                }
+                is_saving.set(false);
+            });
         })
     };
 
     let on_cancel_click = {
         let sender_name = sender_name.clone();
         let sender_address = sender_address.clone();
-        let smtp_enabled = smtp_enabled.clone();
         let smtp_host = smtp_host.clone();
         let smtp_port = smtp_port.clone();
         let smtp_username = smtp_username.clone();
         let smtp_password = smtp_password.clone();
-        let show_more_options = show_more_options.clone();
-        let is_saved = is_saved.clone();
+        let error_msg = error_msg.clone();
         Callback::from(move |_| {
             sender_name.set(String::new());
             sender_address.set(String::new());
-            smtp_enabled.set(false);
             smtp_host.set(String::new());
             smtp_port.set("587".to_string());
             smtp_username.set(String::new());
             smtp_password.set(String::new());
-            show_more_options.set(false);
-            is_saved.set(false);
+            error_msg.set(None);
         })
     };
 
@@ -93,18 +159,19 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                     </p>
                 </div>
 
+
                 {
-                    if *is_saved {
+                    if let Some(ref msg) = *error_msg {
                         html! {
-                            <div class="mb-6 p-4 bg-primary-container/10 border border-primary-container/30 text-primary rounded-lg flex items-center justify-between transition-all">
+                            <div class="mb-6 p-4 bg-error-container/10 border border-error-container/30 text-error rounded-lg flex items-center justify-between">
                                 <div class="flex items-center gap-2">
-                                    <span class="material-symbols-outlined">{"check_circle"}</span>
-                                    <span class="font-body-sm text-body-sm font-bold">{"Mail settings saved successfully!"}</span>
+                                    <span class="material-symbols-outlined">{"error"}</span>
+                                    <span class="font-body-sm text-body-sm font-bold">{msg.clone()}</span>
                                 </div>
                                 <button onclick={
-                                    let is_saved = is_saved.clone();
-                                    move |_| is_saved.set(false)
-                                } class="text-primary hover:opacity-80">
+                                    let error_msg = error_msg.clone();
+                                    move |_| error_msg.set(None)
+                                } class="text-error hover:opacity-80">
                                     <span class="material-symbols-outlined text-sm">{"close"}</span>
                                 </button>
                             </div>
@@ -114,7 +181,11 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                     }
                 }
 
-                <div class="bg-surface-container-lowest border border-outline-variant p-8 rounded-xl space-y-10 shadow-sm">
+                <div class={classes!(
+                    "bg-surface-container-lowest", "border", "border-outline-variant", "p-8",
+                    "rounded-xl", "space-y-10", "shadow-sm",
+                    if *is_loading { "opacity-60 pointer-events-none" } else { "" }
+                )}>
                     /* Top Grid Section */
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         /* Sender Name */
@@ -165,48 +236,8 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                         </div>
                     </div>
 
-                    /* SMTP Toggle */
-                    <div class="flex items-center gap-4 py-4 border-y border-outline-variant/30">
-                        <button
-                            id="smtp-toggle"
-                            type="button"
-                            onclick={toggle_smtp}
-                            class={classes!(
-                                "relative", "inline-flex", "h-6", "w-11", "shrink-0", "cursor-pointer",
-                                "rounded-full", "border-2", "border-transparent", "transition-colors",
-                                "duration-200", "ease-in-out", "focus:outline-none",
-                                if *smtp_enabled { "bg-primary-container" } else { "bg-outline-variant" }
-                            )}
-                        >
-                            <span
-                                id="smtp-toggle-thumb"
-                                class={classes!(
-                                    "pointer-events-none", "inline-block", "h-5", "w-5", "transform",
-                                    "rounded-full", "bg-white", "shadow", "ring-0", "transition",
-                                    "duration-200", "ease-in-out",
-                                    if *smtp_enabled { "translate-x-5" } else { "translate-x-0" }
-                                )}
-                            />
-                        </button>
-                        <div class="flex items-center gap-1.5">
-                            <span class="font-body-md text-body-md font-bold">{"Use SMTP mail server (recommended)"}</span>
-                            <span
-                                class="material-symbols-outlined text-[16px] text-outline cursor-help"
-                                title="Using an external SMTP server is highly recommended for production apps."
-                            >
-                                {"info"}
-                            </span>
-                        </div>
-                    </div>
-
-                    /* SMTP Form Grid */
-                    <div
-                        id="smtp-settings"
-                        class={classes!(
-                            "space-y-6", "transition-all", "duration-300",
-                            if *smtp_enabled { "opacity-100" } else { "opacity-50 pointer-events-none" }
-                        )}
-                    >
+                    /* SMTP Settings */
+                    <div id="smtp-settings" class="space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div class="md:col-span-3 space-y-1.5">
                                 <label class="font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider">
@@ -217,7 +248,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                     placeholder="smtp.postmarkapp.com"
                                     type="text"
                                     value={(*smtp_host).clone()}
-                                    disabled={!*smtp_enabled}
                                     oninput={
                                         let smtp_host = smtp_host.clone();
                                         Callback::from(move |e: InputEvent| {
@@ -237,7 +267,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                     placeholder="587"
                                     type="text"
                                     value={(*smtp_port).clone()}
-                                    disabled={!*smtp_enabled}
                                     oninput={
                                         let smtp_port = smtp_port.clone();
                                         Callback::from(move |e: InputEvent| {
@@ -260,7 +289,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                     placeholder="API Token or Username"
                                     type="text"
                                     value={(*smtp_username).clone()}
-                                    disabled={!*smtp_enabled}
                                     oninput={
                                         let smtp_username = smtp_username.clone();
                                         Callback::from(move |e: InputEvent| {
@@ -281,7 +309,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                         placeholder="Your secret password"
                                         type={if *show_password { "text" } else { "password" }}
                                         value={(*smtp_password).clone()}
-                                        disabled={!*smtp_enabled}
                                         oninput={
                                             let smtp_password = smtp_password.clone();
                                             Callback::from(move |e: InputEvent| {
@@ -301,95 +328,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                 </div>
                             </div>
                         </div>
-
-                        /* Show more options button & panel */
-                        <div class="flex flex-col pt-2 gap-4">
-                            <div>
-                                <button
-                                    type="button"
-                                    onclick={toggle_show_more}
-                                    class="flex items-center gap-2 px-3 py-1.5 border border-outline-variant rounded-lg font-label-xs text-label-xs text-on-surface-variant hover:bg-surface-container-high transition-colors active:scale-95 cursor-pointer"
-                                >
-                                    {if *show_more_options { "Hide options" } else { "Show more options" }}
-                                    <span class="material-symbols-outlined text-[14px]">
-                                        {if *show_more_options { "expand_less" } else { "expand_more" }}
-                                    </span>
-                                </button>
-                            </div>
-
-                            {
-                                if *show_more_options {
-                                    html! {
-                                        <div class="p-4 bg-surface-container-low border border-outline-variant/60 rounded-lg space-y-4">
-                                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                <div class="space-y-1.5">
-                                                    <label class="font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider">
-                                                        {"Encryption"}
-                                                    </label>
-                                                    <select
-                                                        class="w-full bg-surface-container p-2.5 border border-outline-variant rounded-lg font-body-sm text-body-sm outline-none focus:border-primary"
-                                                        value={(*encryption).clone()}
-                                                        onchange={
-                                                            let encryption = encryption.clone();
-                                                            Callback::from(move |e: Event| {
-                                                                if let Some(target) = e.target_dyn_into::<web_sys::HtmlSelectElement>() {
-                                                                    encryption.set(target.value());
-                                                                }
-                                                            })
-                                                        }
-                                                    >
-                                                        <option value="TLS">{"TLS (STARTTLS)"}</option>
-                                                        <option value="SSL">{"SSL/TLS"}</option>
-                                                        <option value="NONE">{"None (Plain)"}</option>
-                                                    </select>
-                                                </div>
-                                                <div class="space-y-1.5">
-                                                    <label class="font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider">
-                                                        {"Auth Method"}
-                                                    </label>
-                                                    <select
-                                                        class="w-full bg-surface-container p-2.5 border border-outline-variant rounded-lg font-body-sm text-body-sm outline-none focus:border-primary"
-                                                        value={(*auth_method).clone()}
-                                                        onchange={
-                                                            let auth_method = auth_method.clone();
-                                                            Callback::from(move |e: Event| {
-                                                                if let Some(target) = e.target_dyn_into::<web_sys::HtmlSelectElement>() {
-                                                                    auth_method.set(target.value());
-                                                                }
-                                                            })
-                                                        }
-                                                    >
-                                                        <option value="PLAIN">{"PLAIN"}</option>
-                                                        <option value="LOGIN">{"LOGIN"}</option>
-                                                        <option value="CRAM-MD5">{"CRAM-MD5"}</option>
-                                                    </select>
-                                                </div>
-                                                <div class="space-y-1.5">
-                                                    <label class="font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider">
-                                                        {"Timeout (sec)"}
-                                                    </label>
-                                                    <input
-                                                        type="number"
-                                                        class="w-full bg-surface-container p-2.5 border border-outline-variant rounded-lg font-code-md text-code-md outline-none focus:border-primary"
-                                                        value={(*timeout_seconds).clone()}
-                                                        oninput={
-                                                            let timeout_seconds = timeout_seconds.clone();
-                                                            Callback::from(move |e: InputEvent| {
-                                                                if let Some(target) = e.target_dyn_into::<web_sys::HtmlInputElement>() {
-                                                                    timeout_seconds.set(target.value());
-                                                                }
-                                                            })
-                                                        }
-                                                    />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    }
-                                } else {
-                                    html! {}
-                                }
-                            }
-                        </div>
                     </div>
 
                     /* Actions */
@@ -404,9 +342,18 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                         <button
                             type="button"
                             onclick={on_save_click}
-                            class="bg-primary text-on-primary px-8 py-2.5 font-label-xs text-label-xs font-bold rounded-lg shadow-sm active:scale-[0.98] transition-all hover:bg-on-primary-fixed-variant cursor-pointer"
+                            disabled={*is_saving}
+                            class={classes!(
+                                "px-8", "py-2.5", "font-label-xs", "text-label-xs", "font-bold",
+                                "rounded-lg", "shadow-sm", "transition-all",
+                                if *is_saving {
+                                    "bg-primary/60 text-on-primary cursor-not-allowed"
+                                } else {
+                                    "bg-primary text-on-primary active:scale-[0.98] hover:bg-on-primary-fixed-variant cursor-pointer"
+                                }
+                            )}
                         >
-                            {"Save changes"}
+                            { if *is_saving { "Saving..." } else { "Save changes" } }
                         </button>
                     </div>
                 </div>

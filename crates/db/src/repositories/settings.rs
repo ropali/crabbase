@@ -8,14 +8,10 @@ use sqlx::{Pool, Postgres};
 pub struct MailSettings {
     pub sender_name: String,
     pub sender_address: String,
-    pub smtp_enabled: bool,
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_username: String,
     pub smtp_password: String,
-    pub encryption: String,  // "TLS", "SSL", "NONE"
-    pub auth_method: String, // "PLAIN", "LOGIN", "CRAM-MD5"
-    pub timeout_seconds: u64,
 }
 
 impl Default for MailSettings {
@@ -23,16 +19,21 @@ impl Default for MailSettings {
         Self {
             sender_name: "Crabbase Support".to_string(),
             sender_address: "support@example.com".to_string(),
-            smtp_enabled: false,
             smtp_host: "".to_string(),
             smtp_port: 587,
             smtp_username: "".to_string(),
             smtp_password: "".to_string(),
-            encryption: "TLS".to_string(),
-            auth_method: "PLAIN".to_string(),
-            timeout_seconds: 30,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    pub app_name: String,
+    pub app_url: String,
+    pub contact_email: String,
+    pub allow_public_user_registration: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -84,21 +85,21 @@ impl SettingsRepository {
         }
     }
 
-    pub async fn set<T: Serialize>(&self, id: &str, value: &T) -> Result<(), RepositoryError> {
+    pub async fn set<T: Serialize>(&self, key: &str, value: &T) -> Result<(), RepositoryError> {
         let val_str = serde_json::to_string(value).map_err(|e| RepositoryError::Validation {
             message: format!("Failed to serialize setting value: {e}"),
-            field: Some(id.to_string()),
+            field: Some(key.to_string()),
         })?;
 
         sqlx::query(
             r#"
-            INSERT INTO _settings (id, name, value, updated)
-            VALUES ($1, $1, $2, now())
-            ON CONFLICT (id) DO UPDATE
+            INSERT INTO _settings (name, value, updated)
+            VALUES ($1, $2, now())
+            ON CONFLICT (name) DO UPDATE
             SET value = EXCLUDED.value, updated = now();
             "#,
         )
-        .bind(id)
+        .bind(key)
         .bind(val_str)
         .execute(&self.pool)
         .await?;
@@ -111,6 +112,13 @@ impl SettingsRepository {
         Ok(settings_opt.unwrap_or_default())
     }
 
+    pub async fn set_mail_settings(&self, settings: &MailSettings) -> Result<(), RepositoryError> {
+        self.set(enums::SettingsType::Mail.to_string(), settings)
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn get_email_templates(&self) -> Result<Option<EmailTemplates>, RepositoryError> {
         let templates = self
             .get::<EmailTemplates>(enums::SettingsType::EmailTemplates.to_string())
@@ -118,24 +126,6 @@ impl SettingsRepository {
 
         Ok(templates)
     }
-
-    // pub async fn get_email_template(
-    //     &self,
-    //     key: enums::EmailTemplateType,
-    // ) -> Result<Option<EmailTemplate>, RepositoryError> {
-    //     let templates = self.get_email_templates().await?;
-    //     Ok(templates.get(key.to_string()).cloned())
-    // }
-    //
-    // pub async fn save_email_template(
-    //     &self,
-    //     template: &EmailTemplate,
-    // ) -> Result<(), RepositoryError> {
-    //     let mut templates = self.get_email_templates().await?;
-    //
-    //     templates.insert(template.key.clone(), template.clone());
-    //     self.set(enums::SettingsType::EmailTemplates.to_string(), &templates).await
-    // }
 }
 
 #[cfg(test)]

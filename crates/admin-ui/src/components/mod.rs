@@ -35,7 +35,7 @@ pub use footer::Footer;
 pub use json_field_sidebar::JsonFieldSidebar;
 pub use login::Login;
 pub use markdown_editor::MarkdownEditor;
-pub use notification::{NotificationMessage, NotificationToast};
+pub use notification::{NotificationKind, NotificationMessage, NotificationToast};
 pub use page_header::PageHeader;
 pub use rich_text_field_sidebar::RichTextFieldSidebar;
 pub use settings_backups::SettingsBackups;

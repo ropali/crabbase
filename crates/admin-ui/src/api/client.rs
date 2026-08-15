@@ -365,4 +365,43 @@ impl ApiClient {
         let response = Self::check_response(res).await?;
         response.json::<serde_json::Value>().await
     }
+    pub async fn get_mail_settings(&self) -> Result<serde_json::Value, gloo_net::Error> {
+        let res = self.request("GET", "/settings/mail").send().await?;
+        Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
+
+    pub async fn save_mail_settings(&self, body: serde_json::Value) -> Result<(), gloo_net::Error> {
+        let res = self
+            .request("POST", "/settings/mail")
+            .json(&body)?
+            .send()
+            .await?;
+        Self::check_response(res).await?;
+        Ok(())
+    }
+
+    pub async fn get_app_settings(&self) -> Result<Option<serde_json::Value>, gloo_net::Error> {
+        let res = self.request("GET", "/settings/app").send().await?;
+        if res.status() == 204 {
+            return Ok(None);
+        }
+        let data = Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+        Ok(Some(data))
+    }
+
+    pub async fn save_app_settings(&self, body: serde_json::Value) -> Result<(), gloo_net::Error> {
+        let res = self
+            .request("POST", "/settings/app")
+            .json(&body)?
+            .send()
+            .await?;
+        Self::check_response(res).await?;
+        Ok(())
+    }
 }
