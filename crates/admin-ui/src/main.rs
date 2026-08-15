@@ -4,9 +4,9 @@ pub mod models;
 pub mod routes;
 
 use components::{
-    ActivityLogs, CreateCollectionDrawer, DataPage, Footer, Login, NotificationMessage,
-    NotificationToast, SettingsBackups, SettingsCrons, SettingsGeneral, SettingsMail,
-    SettingsStorage, Sidebar, Titlebar,
+    ActivityLogs, CreateCollectionDrawer, DataPage, Footer, Login, NotificationKind,
+    NotificationMessage, NotificationToast, SettingsBackups, SettingsCrons, SettingsGeneral,
+    SettingsMail, SettingsStorage, Sidebar, Titlebar,
 };
 use gloo_events::EventListener;
 use models::collection::Collection;
@@ -22,6 +22,7 @@ fn app_main() -> Html {
     let selected_collection = use_state(|| None::<Collection>);
     let is_create_drawer_open = use_state(|| false);
     let collections_refresh_trigger = use_state(|| 0usize);
+    let notification = use_state(|| None::<NotificationMessage>);
 
     let active_view = match &route {
         Route::SettingsMail => "settings_mail",
@@ -148,6 +149,14 @@ fn app_main() -> Html {
     };
 
     html! {
+        <>
+        <NotificationToast
+            notification={(*notification).clone()}
+            on_dismiss={{
+                let notification = notification.clone();
+                Callback::from(move |_| notification.set(None))
+            }}
+        />
         <div class="flex flex-col h-screen overflow-hidden bg-background text-on-surface">
             <Titlebar
                 title={active_title}
@@ -174,9 +183,33 @@ fn app_main() -> Html {
                 }
                 {
                     match &route {
-                        Route::SettingsMail => html! { <SettingsMail /> },
+                        Route::SettingsMail => {
+                            let notification = notification.clone();
+                            let on_mail_saved = Callback::from(move |_| {
+                                let id = js_sys::Date::now() as u64;
+                                notification.set(Some(NotificationMessage {
+                                    id,
+                                    kind: NotificationKind::Success,
+                                    title: "Settings saved".to_string(),
+                                    message: "Mail settings have been saved successfully.".to_string(),
+                                }));
+                            });
+                            html! { <SettingsMail on_save={on_mail_saved} /> }
+                        },
                         Route::SettingsStorage => html! { <SettingsStorage /> },
-                        Route::SettingsGeneral | Route::SettingsGeneralExplicit => html! { <SettingsGeneral /> },
+                        Route::SettingsGeneral | Route::SettingsGeneralExplicit => {
+                            let notification = notification.clone();
+                            let on_general_saved = Callback::from(move |_| {
+                                let id = js_sys::Date::now() as u64;
+                                notification.set(Some(NotificationMessage {
+                                    id,
+                                    kind: NotificationKind::Success,
+                                    title: "Settings saved".to_string(),
+                                    message: "General settings have been saved successfully.".to_string(),
+                                }));
+                            });
+                            html! { <SettingsGeneral on_save={on_general_saved} /> }
+                        },
                         Route::SettingsBackups => html! { <SettingsBackups /> },
                         Route::SettingsCrons => html! { <SettingsCrons /> },
                         Route::Logs => html! { <ActivityLogs /> },
@@ -201,6 +234,7 @@ fn app_main() -> Html {
             </div>
             <Footer />
         </div>
+        </>
     }
 }
 
@@ -225,6 +259,7 @@ fn app() -> Html {
                         let id = js_sys::Date::now() as u64;
                         notification.set(Some(NotificationMessage {
                             id,
+                            kind: NotificationKind::Error,
                             title: "401 Unauthorized".to_string(),
                             message:
                                 "Session expired or authentication required. Please log in again."

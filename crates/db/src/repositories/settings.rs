@@ -8,7 +8,6 @@ use sqlx::{Pool, Postgres};
 pub struct MailSettings {
     pub sender_name: String,
     pub sender_address: String,
-    pub smtp_enabled: bool,
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_username: String,
@@ -20,13 +19,21 @@ impl Default for MailSettings {
         Self {
             sender_name: "Crabbase Support".to_string(),
             sender_address: "support@example.com".to_string(),
-            smtp_enabled: false,
             smtp_host: "".to_string(),
             smtp_port: 587,
             smtp_username: "".to_string(),
             smtp_password: "".to_string(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettings {
+    pub app_name: String,
+    pub app_url: String,
+    pub contact_email: String,
+    pub allow_public_user_registration: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -106,33 +113,8 @@ impl SettingsRepository {
     }
 
     pub async fn set_mail_settings(&self, settings: &MailSettings) -> Result<(), RepositoryError> {
-        let val_str =
-            serde_json::to_string(&settings).map_err(|e| RepositoryError::Validation {
-                message: format!("Failed to serialize setting value: {e}"),
-                field: Some(e.to_string()),
-            })?;
-
-        self.set("mail", &val_str).await?;
-
-        // check if settings exist
-        // let exist = sqlx::query("SELECT value FROM _settings WHERE name = $1")
-        //     .bind(enums::SettingsType::Mail.to_string())
-        //     .fetch_optional(&self.pool)
-        //     .await?;
-        //
-        // if let Some(v_) = exist {
-        //     sqlx::query("UPDATE _settings SET value = $1 WHERE name = $2")
-        //         .bind(enums::SettingsType::Mail.to_string())
-        //         .bind(val_str)
-        //         .execute(&self.pool)
-        //         .await?;
-        // } else {
-        //     sqlx::query("INSERT INTO _settings(name, value) VALUES($1, $2)")
-        //         .bind(enums::SettingsType::Mail.to_string())
-        //         .bind(val_str)
-        //         .execute(&self.pool)
-        //         .await?;
-        // }
+        self.set(enums::SettingsType::Mail.to_string(), settings)
+            .await?;
 
         Ok(())
     }
@@ -144,15 +126,6 @@ impl SettingsRepository {
 
         Ok(templates)
     }
-    // pub async fn save_email_template(
-    //     &self,
-    //     template: &EmailTemplate,
-    // ) -> Result<(), RepositoryError> {
-    //     let mut templates = self.get_email_templates().await?;
-    //
-    //     templates.insert(template.key.clone(), template.clone());
-    //     self.set(enums::SettingsType::EmailTemplates.to_string(), &templates).await
-    // }
 }
 
 #[cfg(test)]

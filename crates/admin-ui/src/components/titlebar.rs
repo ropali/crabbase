@@ -96,7 +96,7 @@ pub fn titlebar(props: &TitlebarProps) -> Html {
                 </a>
                 <a
                   href="#"
-                  onclick={click_nav("settings_mail")}
+                  onclick={click_nav("settings_general")}
                   class={classes!(
                     "font-label-xs", "text-label-xs", "transition-colors", "pb-1",
                     if is_settings {
@@ -135,7 +135,7 @@ pub fn titlebar(props: &TitlebarProps) -> Html {
                         e.prevent_default();
                         is_dropdown_open.set(false);
                         if let Some(ref cb) = cb {
-                          cb.emit("settings_mail".to_string());
+                          cb.emit("settings_general".to_string());
                         }
                       })
                     };
