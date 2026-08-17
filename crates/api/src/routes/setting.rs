@@ -6,13 +6,14 @@ use axum::routing::get;
 use axum::{Json, Router};
 use crabbase_core::enums;
 use crabbase_core::errors::APIError;
-use crabbase_db::repositories::settings::{AppSettings, MailSettings};
+use crabbase_db::repositories::settings::{AppSettings, EmailTemplates, MailSettings};
 use serde_json::{Value, json};
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/mail", get(get_mail_settings).post(save_mail_settings))
         .route("/app", get(get_app_setings).post(save_app_settings))
+        .route("/email-templates", get(get_email_templates))
         .with_state(state)
 }
 
@@ -32,7 +33,7 @@ async fn save_mail_settings(
 async fn get_app_setings(state: State<AppState>) -> Result<impl IntoResponse, APIError> {
     let settings: Option<AppSettings> = state
         .settings_repo()
-        .get::<AppSettings>(enums::SettingsType::App.to_string())
+        .get::<AppSettings>(&enums::SettingsType::App.to_string())
         .await?;
 
     Ok(match settings {
@@ -47,8 +48,20 @@ async fn save_app_settings(
 ) -> Result<Json<Value>, APIError> {
     state
         .settings_repo()
-        .set(enums::SettingsType::App.to_string(), &payload)
+        .set(&enums::SettingsType::App.to_string(), &payload)
         .await?;
 
     Ok(Json(json!({"details": "App settings saved."})))
+}
+
+async fn get_email_templates(state: State<AppState>) -> Result<Json<EmailTemplates>, APIError> {
+    Ok(Json(
+        state
+            .settings_repo()
+            .get_email_templates()
+            .await?
+            .ok_or(APIError::NotFound {
+                resource: "email_templates".to_string(),
+            })?,
+    ))
 }

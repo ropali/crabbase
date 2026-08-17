@@ -113,7 +113,7 @@ impl SettingsRepository {
     }
 
     pub async fn set_mail_settings(&self, settings: &MailSettings) -> Result<(), RepositoryError> {
-        self.set(enums::SettingsType::Mail.to_string(), settings)
+        self.set(&enums::SettingsType::Mail.to_string(), settings)
             .await?;
 
         Ok(())
@@ -121,7 +121,7 @@ impl SettingsRepository {
 
     pub async fn get_email_templates(&self) -> Result<Option<EmailTemplates>, RepositoryError> {
         let templates = self
-            .get::<EmailTemplates>(enums::SettingsType::EmailTemplates.to_string())
+            .get::<EmailTemplates>(&enums::SettingsType::EmailTemplates.to_string())
             .await?;
 
         Ok(templates)
