@@ -38,12 +38,10 @@ pub struct AppSettings {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EmailTemplate {
-    #[serde(default)]
-    pub key: String,
-    #[serde(default)]
-    pub name: String,
     pub subject: String,
+    #[serde(rename = "bodyHtml", alias = "body_html")]
     pub body_html: String,
+    #[serde(rename = "bodyText", alias = "body_text")]
     pub body_text: String,
 }
 
@@ -125,6 +123,16 @@ impl SettingsRepository {
             .await?;
 
         Ok(templates)
+    }
+
+    pub async fn save_email_temaplates(
+        &self,
+        templ: &EmailTemplates,
+    ) -> Result<(), RepositoryError> {
+        self.set(&enums::SettingsType::EmailTemplates.to_string(), &templ)
+            .await?;
+
+        Ok(())
     }
 }
 

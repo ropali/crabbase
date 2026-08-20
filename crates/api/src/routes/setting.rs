@@ -1,8 +1,9 @@
+use crate::middleware::auth::require_admin;
 use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use crabbase_core::enums;
 use crabbase_core::errors::APIError;
@@ -13,7 +14,14 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/mail", get(get_mail_settings).post(save_mail_settings))
         .route("/app", get(get_app_setings).post(save_app_settings))
-        .route("/email-templates", get(get_email_templates))
+        .route(
+            "/email-templates",
+            get(get_email_templates).post(save_email_templates),
+        )
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            require_admin,
+        ))
         .with_state(state)
 }
 
@@ -64,4 +72,16 @@ async fn get_email_templates(state: State<AppState>) -> Result<Json<EmailTemplat
                 resource: "email_templates".to_string(),
             })?,
     ))
+}
+
+async fn save_email_templates(
+    state: State<AppState>,
+    Json(payload): Json<EmailTemplates>,
+) -> Result<Json<Value>, APIError> {
+    state
+        .settings_repo()
+        .save_email_temaplates(&payload)
+        .await?;
+
+    Ok(Json(json!({"details": "Email templates saved."})))
 }

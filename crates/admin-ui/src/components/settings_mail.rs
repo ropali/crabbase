@@ -115,12 +115,12 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                     .unwrap_or("")
                                     .to_string(),
                                 body_html: pr
-                                    .get("body_html")
+                                    .get("bodyHtml")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string(),
                                 body_text: pr
-                                    .get("body_text")
+                                    .get("bodyText")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string(),
@@ -134,12 +134,12 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                     .unwrap_or("")
                                     .to_string(),
                                 body_html: ur
-                                    .get("body_html")
+                                    .get("bodyHtml")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string(),
                                 body_text: ur
-                                    .get("body_text")
+                                    .get("bodyText")
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("")
                                     .to_string(),
