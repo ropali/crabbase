@@ -91,7 +91,7 @@ impl SettingsRepository {
 
         sqlx::query(
             r#"
-            INSERT INTO _settings (name, value, updated)
+           INSERT INTO _settings (name, value, updated)
             VALUES ($1, $2, now())
             ON CONFLICT (name) DO UPDATE
             SET value = EXCLUDED.value, updated = now();
