@@ -383,6 +383,30 @@ impl ApiClient {
         Ok(())
     }
 
+    pub async fn get_email_templates(&self) -> Result<serde_json::Value, gloo_net::Error> {
+        let res = self
+            .request("GET", "/settings/email-templates")
+            .send()
+            .await?;
+        Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
+
+    pub async fn save_email_templates(
+        &self,
+        body: serde_json::Value,
+    ) -> Result<(), gloo_net::Error> {
+        let res = self
+            .request("POST", "/settings/email-templates")
+            .json(&body)?
+            .send()
+            .await?;
+        Self::check_response(res).await?;
+        Ok(())
+    }
+
     pub async fn get_app_settings(&self) -> Result<Option<serde_json::Value>, gloo_net::Error> {
         let res = self.request("GET", "/settings/app").send().await?;
         if res.status() == 204 {

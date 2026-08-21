@@ -1,10 +1,12 @@
+use std::collections::HashMap;
+
 use crate::{
     auth::{Claims, TokenParams, TokenType, create_token, verify_password, verify_token},
     repositories::auth::AuthRepository,
 };
 use chrono::Utc;
-use crabbase_core::errors::APIError;
-use crabbase_db::repositories::settings::{EmailTemplate, EmailTemplates};
+use crabbase_core::{enums, errors::APIError};
+use crabbase_db::repositories::settings::{AppSettings, EmailTemplate, EmailTemplates};
 use crabbase_db::repositories::{
     auth::{AuthUser, UserRepository},
     settings::{MailSettings, SettingsRepository},
@@ -415,19 +417,43 @@ impl AuthService {
             return Ok(());
         }
 
+        let user = user_opt.unwrap();
+
+        let app_settins = self
+            .settings_repo
+            .get::<AppSettings>(&enums::SettingsType::App.to_string())
+            .await?
+            .ok_or(APIError::NotFound {
+                resource: "App settings".to_string(),
+            })?;
+
         let email_setting = self
             .settings_repo
-            .get::<MailSettings>("mail")
+            .get::<MailSettings>(&enums::SettingsType::Mail.to_string())
             .await?
-            .expect("Could not find the mail settings");
+            .ok_or(APIError::NotFound {
+                resource: "email SMTP settings".to_string(),
+            })?;
 
-        let templates = self
+        let mut templates = self
             .settings_repo
-            .get::<EmailTemplates>("email_templates")
+            .get::<EmailTemplates>(&enums::EmailTemplateType::PasswordReset.to_string())
             .await?
-            .expect("Email template not found");
+            .ok_or(APIError::NotFound {
+                resource: "Password reset email template".to_string(),
+            })?;
 
         let receiver_name = email.split_once("@").map(|(u, _)| u).unwrap_or(email);
+
+        // Prepare the email template variables replacement
+        let vars = HashMap::from([
+            ("name", receiver_name),
+            ("app_name", app_settins.app_name.as_str()),
+            ("email", user.email.as_str()),
+            ("link", app_settins.app_url.as_str()),
+        ]);
+
+        let pwd_reset_tmpl = templates.password_reset.render(&vars);
 
         let email_msg = Message::builder()
             .from(Mailbox::new(
@@ -444,12 +470,12 @@ impl AuthService {
                     .singlepart(
                         SinglePart::builder()
                             .header(ContentType::TEXT_PLAIN)
-                            .body(String::from(templates.password_reset.body_text)), // Every message should have a plain text fallback.
+                            .body(String::from(pwd_reset_tmpl.body_text)), // Every message should have a plain text fallback.
                     )
                     .singlepart(
                         SinglePart::builder()
                             .header(ContentType::TEXT_HTML)
-                            .body(String::from(templates.password_reset.body_html)),
+                            .body(String::from(pwd_reset_tmpl.body_html)),
                     ),
             )
             .map_err(|e| APIError::Internal {
