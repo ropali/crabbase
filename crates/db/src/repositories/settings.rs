@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crabbase_core::enums;
 use crabbase_core::errors::RepositoryError;
 use serde::{Deserialize, Serialize};
@@ -43,6 +45,18 @@ pub struct EmailTemplate {
     pub body_html: String,
     #[serde(rename = "bodyText", alias = "body_text")]
     pub body_text: String,
+}
+
+impl EmailTemplate {
+    pub fn render(&mut self, vars: &HashMap<&str, &str>) -> Self {
+        for (k, v) in vars {
+            let placeholder = format!("{{{{{}}}}}", k); // produces {{name}}
+            self.body_html = self.body_html.replace(&placeholder, v);
+            self.body_text = self.body_text.replace(&placeholder, v);
+        }
+
+        self.to_owned()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
