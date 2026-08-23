@@ -97,8 +97,8 @@ async fn logout(
 }
 
 async fn forget_password(
-    state: State<AppState>,
     Path(collection): Path<String>,
+    state: State<AppState>,
     Json(payload): Json<PasswordResetRequest>,
 ) -> Result<Json<Value>, APIError> {
     state

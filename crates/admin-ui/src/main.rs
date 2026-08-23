@@ -5,8 +5,8 @@ pub mod routes;
 
 use components::{
     ActivityLogs, CreateCollectionDrawer, DataPage, Footer, Login, NotificationKind,
-    NotificationMessage, NotificationToast, SettingsBackups, SettingsCrons, SettingsGeneral,
-    SettingsMail, SettingsStorage, Sidebar, Titlebar,
+    NotificationMessage, NotificationToast, ResetPassword, SettingsBackups, SettingsCrons,
+    SettingsGeneral, SettingsMail, SettingsStorage, Sidebar, Titlebar,
 };
 use gloo_events::EventListener;
 use models::collection::Collection;
@@ -296,7 +296,13 @@ fn app() -> Html {
             {
                 if !*is_logged_in {
                     html! {
-                        <Login on_login_success={on_login_success} />
+                        <Switch<Route> render={{
+                            let on_login_success = on_login_success.clone();
+                            move |route| match route {
+                                Route::ResetPassword => html! { <ResetPassword /> },
+                                _ => html! { <Login on_login_success={on_login_success.clone()} /> },
+                            }
+                        }} />
                     }
                 } else {
                     html! {

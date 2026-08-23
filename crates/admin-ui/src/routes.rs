@@ -11,6 +11,9 @@ pub enum Route {
     #[at("/forgot-password")]
     ForgotPassword,
 
+    #[at("/reset-password")]
+    ResetPassword,
+
     #[at("/collection/:name")]
     Collection { name: String },
 

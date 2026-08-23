@@ -16,8 +16,10 @@ use lettre::{
     message::{Mailbox, MultiPart, SinglePart, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::task;
+use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthTokens {
@@ -413,13 +415,17 @@ impl AuthService {
         let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
 
         if user_opt.is_none() {
+            info!(
+                "Password reset truggered for non-existent user with email {}",
+                email
+            );
             // Do not say user exist or not to prevent guessing the user email
             return Ok(());
         }
 
         let user = user_opt.unwrap();
 
-        let app_settins = self
+        let app_settings = self
             .settings_repo
             .get::<AppSettings>(&enums::SettingsType::App.to_string())
             .await?
@@ -437,7 +443,7 @@ impl AuthService {
 
         let mut templates = self
             .settings_repo
-            .get::<EmailTemplates>(&enums::EmailTemplateType::PasswordReset.to_string())
+            .get::<EmailTemplates>(&enums::SettingsType::EmailTemplates.to_string())
             .await?
             .ok_or(APIError::NotFound {
                 resource: "Password reset email template".to_string(),
@@ -445,12 +451,20 @@ impl AuthService {
 
         let receiver_name = email.split_once("@").map(|(u, _)| u).unwrap_or(email);
 
+        // Scope rng tightly so it is dropped before any await — ThreadRng is !Send
+        let otp = {
+            let mut rng = rand::thread_rng();
+            rng.gen_range(100_000..=999_999)
+        };
+
         // Prepare the email template variables replacement
+        let otp_str = otp.to_string();
         let vars = HashMap::from([
             ("name", receiver_name),
-            ("app_name", app_settins.app_name.as_str()),
+            ("app_name", app_settings.app_name.as_str()),
             ("email", user.email.as_str()),
-            ("link", app_settins.app_url.as_str()),
+            ("link", app_settings.app_url.as_str()),
+            ("otp", otp_str.as_str()),
         ]);
 
         let pwd_reset_tmpl = templates.password_reset.render(&vars);
@@ -486,10 +500,20 @@ impl AuthService {
         let creds = Credentials::new(email_setting.smtp_username, email_setting.smtp_password);
 
         // Open a remote connection
-        let mailer = SmtpTransport::relay(&*email_setting.smtp_host)
-            .unwrap()
-            .credentials(creds)
-            .build();
+        let mailer = if email_setting.smtp_port == 465 {
+            // Implicit TLS
+            SmtpTransport::relay(&*email_setting.smtp_host)
+                .unwrap()
+                .credentials(creds)
+                .build()
+        } else {
+            // STARTTLS (port 587 or 25)
+            SmtpTransport::starttls_relay(&*email_setting.smtp_host)
+                .unwrap()
+                .port(email_setting.smtp_port)
+                .credentials(creds)
+                .build()
+        };
 
         // Send the email
         task::spawn_blocking(move || {

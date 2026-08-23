@@ -734,7 +734,7 @@ fn templates_panel(p: &TemplatesPanelProps) -> Html {
             <TemplateCard
                 title="Password Reset"
                 icon="lock_reset"
-                description="Sent when a user requests a password reset link."
+                description="Sent when a user requests a password reset."
                 template={p.password_reset.clone()}
                 is_expanded={pr_expanded}
                 on_expand={on_expand_pr}
@@ -991,7 +991,7 @@ fn template_card(p: &TemplateCardProps) -> Html {
                         // Variable hints
                         <div class="flex flex-wrap gap-2 items-center">
                             <span class="font-label-xs text-label-xs text-on-surface-variant">{"Available variables:"}</span>
-                            { for ["{{name}}", "{{email}}", "{{link}}", "{{app_name}}"].iter().map(|v| html! {
+                            { for ["{{name}}", "{{email}}", "{{app_name}}"].iter().map(|v| html! {
                                 <span class="px-2 py-0.5 bg-surface-container rounded text-primary font-code-sm text-code-sm">{*v}</span>
                             })}
                         </div>

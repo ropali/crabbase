@@ -31,7 +31,14 @@ pub fn login(props: &LoginProps) -> Html {
     };
 
     let mode = use_state(|| initial_mode);
+    #[cfg(debug_assertions)]
+    let email = use_state(|| "admin@crabbase.local".to_string());
+    #[cfg(not(debug_assertions))]
     let email = use_state(|| String::new());
+
+    #[cfg(debug_assertions)]
+    let password = use_state(|| "admin123".to_string());
+    #[cfg(not(debug_assertions))]
     let password = use_state(|| String::new());
     let show_password = use_state(|| false);
     let status = use_state(|| LoginStatus::Idle);
@@ -120,7 +127,6 @@ pub fn login(props: &LoginProps) -> Html {
 
             let status_clone = status.clone();
             let error_msg_clone = error_msg.clone();
-            let success_msg_clone = success_msg.clone();
             let email_val = (*email).clone();
             let password_val = (*password).clone();
             let on_login_success_clone = on_login_success.clone();
@@ -161,14 +167,19 @@ pub fn login(props: &LoginProps) -> Html {
                     }
                     AuthMode::ForgotPassword => {
                         match client.forget_password("_superusers", &email_val).await {
-                            Ok(res) => {
+                            Ok(_) => {
                                 status_clone.set(LoginStatus::Success);
-                                let detail = res
-                                    .get("detail")
-                                    .and_then(|d| d.as_str())
-                                    .unwrap_or("Password reset link sent to your email address.")
-                                    .to_string();
-                                success_msg_clone.set(Some(detail));
+                                // Navigate to the OTP + new-password screen
+                                gloo_timers::callback::Timeout::new(600, move || {
+                                    if let Some(ref nav) = navigator_clone {
+                                        // Pass email as query param so the reset screen can pre-fill it
+                                        let _ = nav.push_with_query(
+                                            &crate::routes::Route::ResetPassword,
+                                            &[("email", email_val.as_str())],
+                                        );
+                                    }
+                                })
+                                .forget();
                             }
                             Err(e) => {
                                 status_clone.set(LoginStatus::Idle);
