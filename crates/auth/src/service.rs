@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     auth::{Claims, TokenParams, TokenType, create_token, verify_password, verify_token},
-    repositories::auth::AuthRepository,
+    repositories::{auth::AuthRepository, otp::OtpRepository},
 };
 use chrono::Utc;
 use crabbase_core::{enums, errors::APIError};
@@ -34,6 +34,7 @@ pub struct AuthService {
     user_repo: UserRepository,
     auth_repo: AuthRepository,
     settings_repo: SettingsRepository,
+    otp_repo: OtpRepository,
 }
 
 impl AuthService {
@@ -41,11 +42,13 @@ impl AuthService {
         user_repo: UserRepository,
         auth_repo: AuthRepository,
         settings_repo: SettingsRepository,
+        otp_repo: OtpRepository,
     ) -> Self {
         Self {
             user_repo,
             auth_repo,
             settings_repo,
+            otp_repo,
         }
     }
 
@@ -410,13 +413,17 @@ impl AuthService {
         Ok(())
     }
 
-    pub async fn password_reset(&self, collection: &str, email: &str) -> Result<(), APIError> {
+    pub async fn send_password_reset_email(
+        &self,
+        collection: &str,
+        email: &str,
+    ) -> Result<(), APIError> {
         // check if user exist
         let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
 
         if user_opt.is_none() {
             info!(
-                "Password reset truggered for non-existent user with email {}",
+                "Password reset triggered for non-existent user with email {}",
                 email
             );
             // Do not say user exist or not to prevent guessing the user email
@@ -452,10 +459,7 @@ impl AuthService {
         let receiver_name = email.split_once("@").map(|(u, _)| u).unwrap_or(email);
 
         // Scope rng tightly so it is dropped before any await — ThreadRng is !Send
-        let otp = {
-            let mut rng = rand::thread_rng();
-            rng.gen_range(100_000..=999_999)
-        };
+        let otp = self.otp_repo.generate_otp(&collection, &user).await?;
 
         // Prepare the email template variables replacement
         let otp_str = otp.to_string();
@@ -499,24 +503,24 @@ impl AuthService {
 
         let creds = Credentials::new(email_setting.smtp_username, email_setting.smtp_password);
 
-        // Open a remote connection
-        let mailer = if email_setting.smtp_port == 465 {
-            // Implicit TLS
-            SmtpTransport::relay(&*email_setting.smtp_host)
-                .unwrap()
-                .credentials(creds)
-                .build()
-        } else {
-            // STARTTLS (port 587 or 25)
-            SmtpTransport::starttls_relay(&*email_setting.smtp_host)
-                .unwrap()
-                .port(email_setting.smtp_port)
-                .credentials(creds)
-                .build()
-        };
-
         // Send the email
         task::spawn_blocking(move || {
+            // Open a remote connection
+            let mailer = if email_setting.smtp_port == 465 {
+                // Implicit TLS
+                SmtpTransport::relay(&*email_setting.smtp_host)
+                    .unwrap()
+                    .credentials(creds)
+                    .build()
+            } else {
+                // STARTTLS (port 587 or 25)
+                SmtpTransport::starttls_relay(&*email_setting.smtp_host)
+                    .unwrap()
+                    .port(email_setting.smtp_port)
+                    .credentials(creds)
+                    .build()
+            };
+
             mailer.send(&email_msg).map_err(|e| APIError::Internal {
                 message: "Could not send email".to_string(),
                 details: serde_json::json!(e.to_string()),
@@ -527,6 +531,42 @@ impl AuthService {
             message: "Failed to execute email task".to_string(),
             details: serde_json::json!(e.to_string()),
         })??;
+
+        Ok(())
+    }
+
+    pub async fn reset_password(
+        &self,
+        collection: &str,
+        email: &str,
+        otp: u32,
+        new_pwd: &str,
+    ) -> Result<(), APIError> {
+        let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
+
+        if user_opt.is_none() {
+            info!(
+                "Password reset attempted for non-existent user with email {}",
+                email
+            );
+            // Do not say user exist or not to prevent guessing the user email
+            return Ok(());
+        }
+
+        let user = user_opt.unwrap();
+
+        let otp_record = self.otp_repo.get_otp(otp, &user).await?;
+
+        let record = otp_record.ok_or_else(|| APIError::Validation {
+            message: "Invalid OTP".to_string(),
+            details: serde_json::Value::String("OTP maybe incorrent or expired".to_string()),
+        })?;
+
+        self.user_repo
+            .update_password(&record.collection_ref, &email, &new_pwd)
+            .await?;
+
+        self.otp_repo.delete(record.id).await?;
 
         Ok(())
     }

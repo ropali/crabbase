@@ -365,6 +365,25 @@ impl ApiClient {
         let response = Self::check_response(res).await?;
         response.json::<serde_json::Value>().await
     }
+
+    pub async fn reset_password(
+        &self,
+        collection: &str,
+        email: &str,
+        otp: u32,
+        new_pwd: &str,
+    ) -> Result<serde_json::Value, gloo_net::Error> {
+        let url = format!("/auth/{}/reset-password", collection);
+        let body = serde_json::json!({
+            "email": email,
+            "otp": otp,
+            "new_pwd": new_pwd,
+        });
+
+        let res = self.request("POST", &url).json(&body)?.send().await?;
+        let response = Self::check_response(res).await?;
+        response.json::<serde_json::Value>().await
+    }
     pub async fn get_mail_settings(&self) -> Result<serde_json::Value, gloo_net::Error> {
         let res = self.request("GET", "/settings/mail").send().await?;
         Self::check_response(res)

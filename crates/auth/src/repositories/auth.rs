@@ -1,4 +1,5 @@
 use crabbase_core::errors::RepositoryError;
+use crabbase_db::repositories::auth::AuthUser;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
 
@@ -33,6 +34,7 @@ impl AuthRepository {
     pub fn new(db: Pool<Postgres>) -> Self {
         AuthRepository { db }
     }
+
     pub async fn create_refresh_token(
         &self,
         family_id: uuid::Uuid,

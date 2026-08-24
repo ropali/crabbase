@@ -137,28 +137,50 @@ pub fn reset_password() -> Html {
             error_msg.set(None);
             status.set(ResetStatus::Submitting);
 
-            // TODO: call the reset-password API once the backend endpoint is ready.
-            // wasm_bindgen_futures::spawn_local(async move {
-            //     let client = crate::api::client::ApiClient::default();
-            //     match client.reset_password("_superusers", &email_val, &otp_val, &pwd_val).await {
-            //         Ok(_) => { status_clone.set(ResetStatus::Success); ... }
-            //         Err(e) => { status_clone.set(ResetStatus::Idle); error_msg_clone.set(Some(...)); }
-            //     }
-            // });
+            let otp_num: u32 = match otp_val.parse() {
+                Ok(n) => n,
+                Err(_) => {
+                    error_msg.set(Some("Invalid OTP format.".to_string()));
+                    status.set(ResetStatus::Idle);
+                    return;
+                }
+            };
 
-            // Placeholder: simulate success and redirect to login
             let status_clone = status.clone();
+            let error_msg_clone = error_msg.clone();
             let navigator_clone = navigator.clone();
-            gloo_timers::callback::Timeout::new(800, move || {
-                status_clone.set(ResetStatus::Success);
-                gloo_timers::callback::Timeout::new(1500, move || {
-                    if let Some(ref nav) = navigator_clone {
-                        nav.push(&crate::routes::Route::Login);
+
+            wasm_bindgen_futures::spawn_local(async move {
+                let client = crate::api::client::ApiClient::default();
+                match client
+                    .reset_password("_superusers", &email_val, otp_num, &pwd_val)
+                    .await
+                {
+                    Ok(_) => {
+                        status_clone.set(ResetStatus::Success);
+                        gloo_timers::callback::Timeout::new(1500, move || {
+                            if let Some(ref nav) = navigator_clone {
+                                nav.push(&crate::routes::Route::Login);
+                            }
+                        })
+                        .forget();
                     }
-                })
-                .forget();
-            })
-            .forget();
+                    Err(e) => {
+                        status_clone.set(ResetStatus::Idle);
+                        let err_text = match e {
+                            gloo_net::Error::GlooError(msg) => msg,
+                            _ => format!("{}", e),
+                        };
+                        let user_msg =
+                            if err_text.contains("422") || err_text.contains("Validation") {
+                                "Invalid or expired OTP. Please request a new one.".to_string()
+                            } else {
+                                format!("Password reset failed: {}", err_text)
+                            };
+                        error_msg_clone.set(Some(user_msg));
+                    }
+                }
+            });
         })
     };
 

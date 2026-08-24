@@ -120,12 +120,39 @@ impl UserRepository {
     ) -> Result<Option<Collection>, RepositoryError> {
         let sql = "SELECT * FROM _collections WHERE id = $1 LIMIT 1";
 
-        let col = sqlx::query_as::<_, Collection>(sql)
-            .bind(id)
-            .fetch_optional(&self.db)
-            .await?;
+        let col = if let Some(uuid) = uuid::Uuid::parse_str(id).ok() {
+            sqlx::query_as::<_, Collection>(sql)
+                .bind(uuid)
+                .fetch_optional(&self.db)
+                .await?
+        } else {
+            sqlx::query_as::<_, Collection>(sql)
+                .bind(id)
+                .fetch_optional(&self.db)
+                .await?
+        };
 
         Ok(col)
+    }
+
+    pub async fn update_password(
+        &self,
+        collection: &str,
+        email: &str,
+        new_pwd: &str,
+    ) -> Result<(), RepositoryError> {
+        let hashed_pw = bcrypt::hash(new_pwd, bcrypt::DEFAULT_COST)
+            .map_err(|e| RepositoryError::OtherError(format!("Failed to hash password: {e}")))?;
+
+        let sql = format!("UPDATE {} SET password = $1 WHERE email = $2", collection);
+
+        sqlx::query(&sql)
+            .bind(&hashed_pw)
+            .bind(&email)
+            .execute(&self.db)
+            .await?;
+
+        Ok(())
     }
 }
 

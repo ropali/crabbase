@@ -1,4 +1,7 @@
-use crabbase_auth::{repositories::auth::AuthRepository, service::AuthService};
+use crabbase_auth::{
+    repositories::{auth::AuthRepository, otp::OtpRepository},
+    service::AuthService,
+};
 use sqlx::{Pool, Postgres};
 
 use crabbase_db::repositories::{
@@ -32,7 +35,16 @@ impl AppState {
         SettingsRepository::new(self.db.clone())
     }
 
+    pub fn otp_repo(&self) -> OtpRepository {
+        OtpRepository::new(self.db.clone())
+    }
+
     pub fn auth_service(&self) -> AuthService {
-        AuthService::new(self.user_repo(), self.auth_repo(), self.settings_repo())
+        AuthService::new(
+            self.user_repo(),
+            self.auth_repo(),
+            self.settings_repo(),
+            self.otp_repo(),
+        )
     }
 }

@@ -69,16 +69,15 @@ CREATE INDEX IF NOT EXISTS idx_mfas_collection_ref_record_ref ON _mfas (collecti
 
 -- _otps: One-Time Password records
 CREATE TABLE IF NOT EXISTS _otps (
-    id             TEXT PRIMARY KEY NOT NULL,
-    collection_ref TEXT NOT NULL,
-    record_ref     TEXT NOT NULL,
-    password_hash  TEXT NOT NULL,  -- Hashed OTP
-    sent_to        TEXT,           -- Email sent to
-    created        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated        TIMESTAMPTZ NOT NULL DEFAULT now()
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    collection_ref  TEXT NOT NULL,
+    otp_hash        TEXT NOT NULL,
+    sent_to         TEXT NOT NULL,           -- Email sent to
+    valid_for       INTEGER NULL,
+    created         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_otps_collection_ref_record_ref ON _otps (collection_ref, record_ref);
+CREATE INDEX IF NOT EXISTS idx_otps_collection_ref_record_ref ON _otps (collection_ref, otp_hash);
 
 -- _external_auths: OAuth2 / external auth integrations
 CREATE TABLE IF NOT EXISTS _external_auths (

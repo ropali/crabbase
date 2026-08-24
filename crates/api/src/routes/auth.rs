@@ -37,12 +37,36 @@ pub struct LogoutRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PasswordResetRequest {
     email: String,
+    otp: Option<u32>,
+    new_pwd: Option<String>,
+}
+
+impl PasswordResetRequest {
+    fn validate(&self) -> Result<(), APIError> {
+        // Validate if otp and new password is provided
+        if self.otp.is_none() {
+            return Err(APIError::Validation {
+                message: "otp value is not set".to_string(),
+                details: serde_json::Value::String("otp field is missing".to_string()),
+            });
+        }
+
+        if self.new_pwd.is_none() {
+            return Err(APIError::Validation {
+                message: "password value is not set".to_string(),
+                details: serde_json::Value::String("password field is missing".to_string()),
+            });
+        }
+
+        Ok(())
+    }
 }
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/{collection}/login", post(login))
         .route("/{collection}/forget-password", post(forget_password))
+        .route("/{collection}/reset-password", post(reset_password))
         .route("/profile", get(profile))
         .route("/{collection}/auth-refresh", post(refresh_token))
         .route("/{collection}/logout", post(logout))
@@ -103,10 +127,31 @@ async fn forget_password(
 ) -> Result<Json<Value>, APIError> {
     state
         .auth_service()
-        .password_reset(&collection, &payload.email)
+        .send_password_reset_email(&collection, &payload.email)
         .await?;
 
     Ok(Json(
         serde_json::json!({ "detail": "Password reset link sent to your email adddress."}),
+    ))
+}
+
+async fn reset_password(
+    Path(collection): Path<String>,
+    state: State<AppState>,
+    Json(payload): Json<PasswordResetRequest>,
+) -> Result<Json<Value>, APIError> {
+    payload.validate()?;
+
+    state
+        .auth_service()
+        .reset_password(
+            &collection,
+            &payload.email.as_str(),
+            payload.otp.unwrap(),
+            &payload.new_pwd.unwrap(),
+        )
+        .await?;
+    Ok(Json(
+        serde_json::json!({ "detail": "Password reset successfully."}),
     ))
 }
