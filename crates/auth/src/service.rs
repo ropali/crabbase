@@ -521,16 +521,10 @@ impl AuthService {
                     .build()
             };
 
-            mailer.send(&email_msg).map_err(|e| APIError::Internal {
-                message: "Could not send email".to_string(),
-                details: serde_json::json!(e.to_string()),
-            })
-        })
-        .await
-        .map_err(|e| APIError::Internal {
-            message: "Failed to execute email task".to_string(),
-            details: serde_json::json!(e.to_string()),
-        })??;
+            if let Err(e) = mailer.send(&email_msg) {
+                tracing::error!("Failed to send email: {}", e);
+            }
+        });
 
         Ok(())
     }
