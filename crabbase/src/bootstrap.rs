@@ -1,9 +1,10 @@
-use crabbase_core::{config::Config, utils::string_utils::random_str};
+use crabbase_core::utils::string_utils::random_str;
 use crabbase_db::connection::pool;
 use crabbase_db::repositories::auth::AuthUser;
 use sqlx::migrate;
 use sqlx::{PgPool, migrate::Migrator};
 
+use crate::config::Config;
 use crate::errors::AppError;
 
 // Embed all .sql files from migrations/ into the binary at compile time
@@ -20,13 +21,13 @@ pub async fn bootstrap(config: &Config) -> Result<PgPool, AppError> {
     run_migrations(&db_pool).await?;
 
     // setup superuser
-    setup_superuser(
-        &db_pool,
-        config.admin_username.clone(),
-        config.admin_password.clone(),
-    )
-    .await
-    .map_err(|e| AppError::Database(e.to_string()))?;
+    // setup_superuser(
+    //     &db_pool,
+    //     config.admin_username.clone(),
+    //     config.admin_password.clone(),
+    // )
+    // .await
+    // .map_err(|e| AppError::Database(e.to_string()))?;
 
     // Print Info
     print_startup_info(config);
@@ -76,9 +77,9 @@ fn print_startup_info(config: &Config) {
     tracing::info!("version:  {}", env!("CARGO_PKG_VERSION"));
     tracing::info!("database: connected ✓");
     tracing::info!("Database: Migration Applied ✓");
-    if let Some(ref email) = config.admin_username {
-        tracing::info!("superuser: {} configured ✓", email);
-    }
+    // if let Some(ref email) = config.admin_username {
+    //     tracing::info!("superuser: {} configured ✓", email);
+    // }
     tracing::info!("admin UI: http://{}/admin", config.admin_bind_addr);
     tracing::info!("api:      http://{}/api", config.server_bind_addr);
 }

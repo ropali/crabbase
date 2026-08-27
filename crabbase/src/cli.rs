@@ -1,9 +1,14 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "crabbase")]
 #[command(about = "Crabbase CLI Tool.")]
 pub struct Cli {
+    #[arg(long, value_name = "FILE", default_value = "crabbase.toml")]
+    pub config: PathBuf,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -13,21 +18,21 @@ pub enum Commands {
     /// Start the backend API server
     Serve {
         /// Port to bind the API server to
-        #[arg(long, default_value = "8989")]
-        port: u16,
+        #[arg(long)]
+        port: Option<u16>,
 
         /// Host address to bind the API server to
-        #[arg(long, default_value = "0.0.0.0")]
-        host: String,
+        #[arg(long)]
+        host: Option<String>,
     },
     /// Start the admin dashboard
     Admin {
         /// Port to bind the admin server to
-        #[arg(long, default_value = "8181")]
-        port: u16,
+        #[arg(long)]
+        port: Option<u16>,
 
         /// Host address to bind the admin server to
-        #[arg(long, default_value = "0.0.0.0")]
-        host: String,
+        #[arg(long)]
+        host: Option<String>,
     },
 }

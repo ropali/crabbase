@@ -5,7 +5,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use crabbase_api::{get_app_routes, state::AppState};
-use crabbase_core::config::Config;
 use rust_embed::RustEmbed;
 use sqlx::{Pool, Postgres};
 use tokio::net::TcpListener;
@@ -14,6 +13,8 @@ use tower_http::{
     trace::TraceLayer,
 };
 use tracing::{info, info_span};
+
+use crate::config::Config;
 
 #[derive(RustEmbed, Clone)]
 #[folder = "../crates/admin-ui/dist"]

@@ -33,6 +33,7 @@ bcrypt = "0.15.1"
 rand = "0.8"
 serde_urlencoded = "0.7.1"
 dotenvy = "0.15.7"
+toml = "1.1.4+spec-1.1.0"
 # Workspace local members
 crabbase_core = { path = "crates/core" }
 crabbase_db = { path = "crates/db" }
