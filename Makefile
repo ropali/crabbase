@@ -42,7 +42,7 @@ test:
 	fi
 
 watch:
-	RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- serve
+	RUST_BACKTRACE=1 RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- serve
 
 watch-fe:
 	@cd crates/admin-ui && trunk serve

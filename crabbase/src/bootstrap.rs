@@ -1,10 +1,12 @@
+use std::collections::HashSet;
+
 use crabbase_core::utils::string_utils::random_str;
 use crabbase_db::connection::pool;
 use crabbase_db::repositories::auth::AuthUser;
 use sqlx::migrate;
 use sqlx::{PgPool, migrate::Migrator};
 
-use crate::config::Config;
+use crate::config::{Config, InitialUser};
 use crate::errors::AppError;
 
 // Embed all .sql files from migrations/ into the binary at compile time
@@ -21,13 +23,12 @@ pub async fn bootstrap(config: &Config) -> Result<PgPool, AppError> {
     run_migrations(&db_pool).await?;
 
     // setup superuser
-    // setup_superuser(
-    //     &db_pool,
-    //     config.admin_username.clone(),
-    //     config.admin_password.clone(),
-    // )
-    // .await
-    // .map_err(|e| AppError::Database(e.to_string()))?;
+
+    if let Some(intial_users) = &config.initial_users {
+        setup_superuser(&db_pool, intial_users)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?;
+    }
 
     // Print Info
     print_startup_info(config);
@@ -77,55 +78,51 @@ fn print_startup_info(config: &Config) {
     tracing::info!("version:  {}", env!("CARGO_PKG_VERSION"));
     tracing::info!("database: connected ✓");
     tracing::info!("Database: Migration Applied ✓");
-    // if let Some(ref email) = config.admin_username {
-    //     tracing::info!("superuser: {} configured ✓", email);
-    // }
+    if let Some(_) = config.initial_users {
+        tracing::info!(
+            "Intial Superuser: {} configured ✓",
+            config.initial_users.iter().len(),
+        );
+    }
     tracing::info!("admin UI: http://{}/admin", config.admin_bind_addr);
     tracing::info!("api:      http://{}/api", config.server_bind_addr);
 }
 
 async fn setup_superuser(
     db_pool: &sqlx::PgPool,
-    email: Option<String>,
-    password: Option<String>,
+    users: &Vec<InitialUser>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let email = email.unwrap_or_else(|| "admin@crabbase.local".to_string());
+    let emails: Vec<&str> = users.iter().map(|u| u.email.as_str()).collect();
 
     // Check if any superuser already exists (in case user created one manually)
-    let existing_user = sqlx::query_as::<_, AuthUser>("SELECT * FROM _superusers WHERE email = $1")
-        .bind(&email)
-        .fetch_one(db_pool)
-        .await;
+    let existing_users =
+        sqlx::query_as::<_, AuthUser>("SELECT * FROM _superusers WHERE email = ANY($1)")
+            .bind(&emails)
+            .fetch_all(db_pool)
+            .await?;
 
-    match existing_user {
-        Ok(user) => {
-            // Check if user has token key set
-            if user.token_key.is_empty() {
-                sqlx::query("UPDATE _superusers SET token_key = $1 WHERE email = $2")
-                    .bind(random_str(None))
-                    .bind(email)
-                    .execute(db_pool)
-                    .await?;
-            }
+    let existing_emails: HashSet<&str> = existing_users.iter().map(|u| u.email.as_str()).collect();
+
+    for user in users {
+        if existing_emails.contains(user.email.as_str()) {
+            continue;
         }
-        Err(_) => {
-            // No superusers exist, we MUST create one!
-            let pw = password.expect("Admin password not set while creating superuser");
-            let password_hash = crabbase_auth::auth::hash_password(&pw)?;
-            let token_key = random_str(None);
-            let id = uuid::Uuid::new_v4();
 
-            sqlx::query(
+        let pw = &user.password;
+        let password_hash = crabbase_auth::auth::hash_password(&pw)?;
+        let token_key = random_str(None);
+        let id = uuid::Uuid::new_v4();
+
+        sqlx::query(
                         "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)",
                     )
                     .bind(id)
-                    .bind(&email)
+                    .bind(&user.email)
                     .bind(password_hash)
                     .bind(token_key)
                     .bind(true)
                     .execute(db_pool)
                     .await?;
-        }
     }
 
     Ok(())

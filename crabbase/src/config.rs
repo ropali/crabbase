@@ -2,17 +2,20 @@ use std::{env, os, path::Path};
 
 use clap::builder::Str;
 use serde::Deserialize;
+use tracing::info;
 
-fn read_from_env(key: &str) -> Option<String> {
-    env::var(key).ok()
-}
+fn deserialize_env_or_value<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = String::deserialize(deserializer)?;
 
-fn parse_env_value(key: &str) -> String {
-    if let Some(parsed_val) = read_from_env(&key.replacen("$", key, 1)) {
-        return parsed_val;
+    if let Some(var_name) = s.strip_prefix("$") {
+        std::env::var(var_name)
+            .map_err(|_| serde::de::Error::custom(format!("env variable `{var_name}` not set.")))
+    } else {
+        Ok(s)
     }
-
-    key.to_string()
 }
 
 #[derive(Deserialize, Default)]
@@ -30,6 +33,8 @@ pub struct DatabaseSection {
     pub host: String,
     pub port: u16,
     pub user: String,
+
+    #[serde(deserialize_with = "deserialize_env_or_value")]
     pub password: String, // env var name holding the password
     pub database: String,
     pub schema: String,
@@ -95,6 +100,8 @@ impl Default for AdminSection {
 pub struct InitialUser {
     pub name: String,
     pub email: String,
+
+    #[serde(deserialize_with = "deserialize_env_or_value")]
     pub password: String,
 }
 
