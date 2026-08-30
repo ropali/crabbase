@@ -14,8 +14,13 @@ use routes::Route;
 use yew::prelude::*;
 use yew_router::prelude::*;
 
+#[derive(Properties, PartialEq)]
+struct AppMainProps {
+    pub on_logout: Callback<()>,
+}
+
 #[function_component(AppMain)]
-fn app_main() -> Html {
+fn app_main(props: &AppMainProps) -> Html {
     let navigator = use_navigator();
     let route = use_route::<Route>().unwrap_or(Route::Home);
 
@@ -35,12 +40,10 @@ fn app_main() -> Html {
     };
 
     let on_logout = {
-        let navigator = navigator.clone();
+        let on_logout = props.on_logout.clone();
         Callback::from(move |_| {
             api::client::ApiClient::set_token(None);
-            if let Some(ref nav) = navigator {
-                nav.push(&Route::Login);
-            }
+            on_logout.emit(());
         })
     };
 
@@ -290,6 +293,13 @@ fn app() -> Html {
         })
     };
 
+    let on_logout = {
+        let is_logged_in = is_logged_in.clone();
+        Callback::from(move |_| {
+            is_logged_in.set(false);
+        })
+    };
+
     html! {
         <BrowserRouter>
             <NotificationToast notification={(*notification).clone()} on_dismiss={on_dismiss_notification} />
@@ -306,7 +316,7 @@ fn app() -> Html {
                     }
                 } else {
                     html! {
-                        <AppMain />
+                        <AppMain on_logout={on_logout} />
                     }
                 }
             }

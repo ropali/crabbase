@@ -17,10 +17,19 @@ pub struct SidebarProps {
 
 #[function_component(Sidebar)]
 pub fn sidebar(props: &SidebarProps) -> Html {
+    let system_expanded = use_state(|| false);
+
     let on_create_click = {
         let cb = props.on_create_click.clone();
         Callback::from(move |_| {
             cb.emit(());
+        })
+    };
+
+    let toggle_system = {
+        let system_expanded = system_expanded.clone();
+        Callback::from(move |_: MouseEvent| {
+            system_expanded.set(!*system_expanded);
         })
     };
 
@@ -216,16 +225,43 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                                   refresh_trigger={props.refresh_trigger}
                               />
 
-                              <div class="mt-6 mb-2 px-3 border-t border-outline-variant pt-4">
-                                <span class="font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider opacity-50">{"System"}</span>
+                              /* Collapsible System collections header */
+                              <div class="mt-6 mb-1 px-3 border-t border-outline-variant pt-4">
+                                <button
+                                  onclick={toggle_system}
+                                  class="w-full flex items-center justify-between group cursor-pointer"
+                                >
+                                  <span class="font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider opacity-50">{"System"}</span>
+                                  <span class={classes!(
+                                    "material-symbols-outlined",
+                                    "text-sm",
+                                    "text-on-surface-variant",
+                                    "opacity-50",
+                                    "transition-transform",
+                                    "duration-200",
+                                    "group-hover:opacity-80",
+                                    if *system_expanded { "rotate-180" } else { "" }
+                                  )}>
+                                    {"expand_more"}
+                                  </span>
+                                </button>
                               </div>
 
-                              <CollectionList
-                                  is_system={true}
-                                  selected_collection_id={props.selected_collection_id.clone()}
-                                  on_select={props.on_select.clone()}
-                                  refresh_trigger={props.refresh_trigger}
-                              />
+                              /* System collections list — only shown when expanded */
+                              {
+                                if *system_expanded {
+                                  html! {
+                                    <CollectionList
+                                        is_system={true}
+                                        selected_collection_id={props.selected_collection_id.clone()}
+                                        on_select={props.on_select.clone()}
+                                        refresh_trigger={props.refresh_trigger}
+                                    />
+                                  }
+                                } else {
+                                  html! {}
+                                }
+                              }
                             </nav>
 
                             /* New collection button */

@@ -1,6 +1,4 @@
-use crate::routes::Route;
 use yew::prelude::*;
-use yew_router::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct TitlebarProps {
@@ -15,7 +13,6 @@ pub struct TitlebarProps {
 #[function_component(Titlebar)]
 pub fn titlebar(props: &TitlebarProps) -> Html {
     let is_dropdown_open = use_state(|| false);
-    let navigator = use_navigator();
 
     let toggle_dropdown = {
         let is_dropdown_open = is_dropdown_open.clone();
@@ -27,12 +24,8 @@ pub fn titlebar(props: &TitlebarProps) -> Html {
     let on_logout_click = {
         let is_dropdown_open = is_dropdown_open.clone();
         let on_logout = props.on_logout.clone();
-        let navigator = navigator.clone();
         Callback::from(move |_| {
             is_dropdown_open.set(false);
-            if let Some(ref nav) = navigator {
-                nav.push(&Route::Login);
-            }
             on_logout.emit(());
         })
     };
