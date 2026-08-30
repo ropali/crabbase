@@ -6,21 +6,15 @@ validate:
 
 # Run the default subcommand (serve)
 run:
-	cargo run -- serve
+	cargo run -- serve --config crabbase.toml
 
 # Start the API server
-# Usage:
-#   make serve
-#   make serve port=9000 host=127.0.0.1
 serve:
-	cargo run -- serve $(if $(port),--port $(port)) $(if $(host),--host $(host))
+	cargo run -- serve --config crabbase.toml
 
 # Start the admin dashboard
-# Usage:
-#   make admin
-#   make admin port=8181 host=127.0.0.1
 admin:
-	cargo run -- admin $(if $(port),--port $(port)) $(if $(host),--host $(host))
+	cargo run -- admin --config crabbase.toml
 
 release:
 	CRABBASE_API_URL="http://0.0.0.0:8989/api" cd crates/admin-ui && trunk build --release
@@ -42,7 +36,7 @@ test:
 	fi
 
 watch:
-	RUST_BACKTRACE=1 RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- serve
+	RUST_BACKTRACE=1 RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- serve --config crabbase.toml
 
 watch-fe:
 	@cd crates/admin-ui && trunk serve

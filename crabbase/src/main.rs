@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use clap::Parser;
 use tracing::error;
 
@@ -16,35 +18,51 @@ use crate::{
 pub mod cli;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     let _log_guard = init_logging();
 
     let cli = Cli::parse();
-    let mut config = Config::load(Some(&cli.config))?;
 
     match cli.command {
-        Commands::Serve { port, host } => {
-            if let (Some(host), Some(port)) = (host, port) {
-                config.server_bind_addr = format!("{host}:{port}");
-            }
-            let pool = bootstrap::bootstrap(&config).await?;
-
-            if let Err(err) = run_server(&config, pool).await {
+        Commands::Serve { config } => {
+            let cfg = match Config::load(Some(&config)) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let pool = match bootstrap::bootstrap(&cfg).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            };
+            if let Err(err) = run_server(&cfg, pool).await {
                 error!(error = %err, "Application failed to start.");
-                std::process::exit(1)
+                std::process::exit(1);
             }
         }
-        Commands::Admin { port, host } => {
-            if let (Some(host), Some(port)) = (host, port) {
-                config.admin_bind_addr = format!("{host}:{port}");
-            }
-            let pool = bootstrap::bootstrap(&config).await?;
-            if let Err(err) = run_admin(&config, pool).await {
+        Commands::Admin { config } => {
+            let cfg = match Config::load(Some(&config)) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            };
+            let pool = match bootstrap::bootstrap(&cfg).await {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Error: {e}");
+                    std::process::exit(1);
+                }
+            };
+            if let Err(err) = run_admin(&cfg, pool).await {
                 error!(error = %err, "Admin dashboard failed to start.");
-                std::process::exit(1)
+                std::process::exit(1);
             }
         }
-    };
-
-    Ok(())
+    }
 }
