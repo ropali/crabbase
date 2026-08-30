@@ -1,0 +1,33 @@
+[database]
+host = "localhost"
+port = 5432
+user = "postgres"
+password = "postgres" # use $ prefix to load it from environment like $DB_PASSWORD
+database = "crabbase"
+schema = "crabbase"
+max_connections = 10
+
+[server]
+api_host = "0.0.0.0"
+api_port = 8989
+admin_host = "0.0.0.0"
+admin_port = 9898
+
+[admin]
+host = "0.0.0.0"
+port = 9898
+
+[[initial_users]]
+email = "admin@crabbase.local"
+name = "admin"
+password = "admin123"          # use $ prefix to load it from environment like $ADMIN_PASSWORD
+
+[[initial_users]]
+email = "admin2@example.com"
+name = "admin2"
+password = "admin456"
+
+[[initial_users]]
+email = "admin3@example.com"
+name = "admin3"
+password = "$ADMIN_PASS"
