@@ -31,12 +31,12 @@ pub fn notification_toast(props: &NotificationToastProps) -> Html {
         let (container_cls, icon_wrap_cls, icon_name) = match note.kind {
             NotificationKind::Success => (
                 // Explicit green — unaffected by the red primary theme
-                "fixed bottom-6 right-6 z-[9999] max-w-md w-full p-4 bg-[#1a3a2a] text-[#d4f0e0] border border-[#2d6b47]/60 rounded-xl shadow-2xl flex items-start gap-3",
+                "fixed top-6 right-6 z-[9999] max-w-md w-full p-4 bg-[#1a3a2a] text-[#d4f0e0] border border-[#2d6b47]/60 rounded-xl shadow-2xl flex items-start gap-3",
                 "p-2 rounded-lg bg-[#2d6b47]/30 text-[#4ade80] flex items-center justify-center shrink-0",
                 "check_circle",
             ),
             NotificationKind::Error => (
-                "fixed bottom-6 right-6 z-[9999] max-w-md w-full p-4 bg-error-container text-on-error-container border border-error/30 rounded-xl shadow-2xl flex items-start gap-3",
+                "fixed top-6 right-6 z-[9999] max-w-md w-full p-4 bg-error-container text-on-error-container border border-error/30 rounded-xl shadow-2xl flex items-start gap-3",
                 "p-2 rounded-lg bg-error/10 text-error flex items-center justify-center shrink-0",
                 "error",
             ),
