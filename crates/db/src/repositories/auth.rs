@@ -1,5 +1,7 @@
 use crabbase_core::{
-    errors::RepositoryError, models::Collection, utils::string_utils::quote_ident,
+    errors::RepositoryError,
+    models::Collection,
+    utils::string_utils::{quote_ident, random_str},
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
@@ -144,10 +146,17 @@ impl UserRepository {
         let hashed_pw = bcrypt::hash(new_pwd, bcrypt::DEFAULT_COST)
             .map_err(|e| RepositoryError::OtherError(format!("Failed to hash password: {e}")))?;
 
-        let sql = format!("UPDATE {} SET password = $1 WHERE email = $2", collection);
+        // Also update the user's token key for secuirty
+        let new_token_key = random_str(None);
+
+        let sql = format!(
+            "UPDATE {} SET password = $1, token_key = $2 WHERE email = $3",
+            collection
+        );
 
         sqlx::query(&sql)
             .bind(&hashed_pw)
+            .bind(&new_token_key)
             .bind(&email)
             .execute(&self.db)
             .await?;
