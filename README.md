@@ -7,7 +7,7 @@ Crabbase follows one philosophy: **the whole backend in one static binary — bu
 What that means in practice:
 
 - **Single binary, zero code.** Define collections through the admin dashboard or REST API, and instant CRUD endpoints, JWT auth, password-reset emails, and settings appear — no custom routes, no redeployments.
-- **Bring your own PostgreSQL.** Point `DATABASE_URL` at any Postgres you already run — local, managed (RDS, Cloud SQL, Supabase, Neon), or self-hosted. Your data lives in ordinary Postgres tables you can inspect, back up, and query with `psql` at any time.
+- **Bring your own PostgreSQL.** Set the `[database]` section in `crabbase.toml` to point at any Postgres you already run — local, managed (RDS, Cloud SQL, Supabase, Neon), or self-hosted. Your data lives in ordinary Postgres tables you can inspect, back up, and query with `psql` at any time.
 - **Scales like your database.** Because state lives in Postgres, scaling is the solved problem of scaling Postgres: vertical sizing, read replicas, connection poolers (PgBouncer), managed backups and HA — not bespoke tooling. Run multiple Crabbase instances against the same database; they share everything by construction.
 - **No lock-in.** Every collection is a real table, every record a real row. Leave whenever you want — your schema and data are already portable standard SQL.
 
@@ -70,33 +70,73 @@ Because all state lives in Postgres (data, sessions, settings, logs), scaling Cr
 
 For the prebuilt admin dashboard flow you only need `cargo`; rebuilding the dashboard additionally needs [Trunk](https://trunkrs.dev) and the WASM target.
 
-### 1. Point it at your Postgres
+### 1. Configure with `crabbase.toml`
 
-Create a `.env` file in the project root:
+Crabbase is configured entirely through a **TOML file** (default: `crabbase.toml` in the project root). Copy the example and edit it:
 
-```dotenv
-DATABASE_URL=postgres://postgres:postgres@localhost:5432/crabbase
-ADMIN_PASSWORD=change-me          # required on first boot to create the superuser
-# ADMIN_USERNAME=admin@crabbase.local   # optional, this is the default
+```sh
+cp exampl.crabbase.toml crabbase.toml
 ```
 
-`DATABASE_URL` is the single knob that decides where your backend lives — swap it for a managed Postgres connection string in production and nothing else changes.
+The file has four sections:
+
+```toml
+[database]
+host = "localhost"
+port = 5432
+user = "postgres"
+password = "postgres"   # prefix with $ to load from an env var, e.g. $DB_PASSWORD
+database = "crabbase"
+schema = "crabbase"
+max_connections = 10
+
+[server]
+api_host = "0.0.0.0"
+api_port = 8989
+admin_host = "0.0.0.0"
+admin_port = 9898
+
+[admin]
+host = "0.0.0.0"
+port = 9898
+
+# Superusers to create/ensure on first boot (array of tables)
+[[initial_users]]
+email = "admin@crabbase.local"
+name = "admin"
+password = "change-me"   # or $ADMIN_PASSWORD to pull from env
+```
+
+**Secret values** — any string value that starts with `$` is treated as an environment variable reference. For example:
+
+```toml
+password = "$DB_PASSWORD"   # reads the DB_PASSWORD env var at startup
+```
+
+This keeps credentials out of the config file while still letting you commit a sanitised version to version control.
+
+**Custom config path** — pass `--config <path>` to either subcommand if you want to keep the file somewhere else:
+
+```sh
+cargo run -- serve --config /etc/crabbase/prod.toml
+cargo run -- admin --config /etc/crabbase/prod.toml
+```
 
 ### 2. Run
 
 ```sh
-make serve        # API server on http://0.0.0.0:8989
-make admin        # Admin dashboard + API on http://0.0.0.0:8181
+make serve        # API server  →  http://0.0.0.0:8989
+make admin        # Admin dashboard + API  →  http://0.0.0.0:9898
 ```
 
-Or directly:
+Or directly (the `--config` flag defaults to `crabbase.toml` in the current directory):
 
 ```sh
-cargo run -- serve --port 8989
-cargo run -- admin --host 127.0.0.1 --port 8181
+cargo run -- serve --config crabbase.toml
+cargo run -- admin --config crabbase.toml
 ```
 
-On startup Crabbase connects to Postgres, runs all pending migrations, creates/repairs the superuser, and prints the banner.
+On startup Crabbase reads the TOML file, connects to Postgres, runs all pending migrations, ensures the `initial_users` superusers exist, and prints the banner.
 
 ### 3. Open the dashboard
 
