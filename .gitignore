@@ -9,6 +9,6 @@ logs/*
 
 .env
 
-crates/admin-ui/dist/*
+crates/admin-ui/dist/
 
 crabbase.toml
