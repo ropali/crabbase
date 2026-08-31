@@ -412,4 +412,93 @@ mod tests {
             .unwrap();
         assert!(none_id.is_none());
     }
+
+    // ── get_collection_by_id ──────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_get_collection_by_id() {
+        let pool = setup_pool("db_auth_get_collection_by_id").await;
+        let repo = UserRepository::new(pool.clone());
+
+        sqlx::query(
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)"
+        )
+        .bind("col_id_abc")
+        .bind(0)
+        .bind("base")
+        .bind("articles")
+        .bind("[]")
+        .bind("{}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let col = repo
+            .get_collection_by_id("col_id_abc")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(col.id, "col_id_abc");
+        assert_eq!(col.name, "articles");
+
+        let none_col = repo.get_collection_by_id("nonexistent_id").await.unwrap();
+        assert!(none_col.is_none());
+    }
+
+    // ── update_password ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_update_password_changes_hash_and_token_key() {
+        let pool = setup_pool("db_auth_update_password").await;
+        create_users_table(&pool).await;
+        let repo = UserRepository::new(pool.clone());
+
+        let original_hash = bcrypt::hash("old_password", bcrypt::DEFAULT_COST).unwrap();
+        let original_token_key = "original_token_key";
+
+        sqlx::query(
+            "INSERT INTO users (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)"
+        )
+        .bind("user_pw_test")
+        .bind("pw@example.com")
+        .bind(&original_hash)
+        .bind(original_token_key)
+        .bind(true)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Update password
+        repo.update_password("users", "pw@example.com", "new_secure_password")
+            .await
+            .unwrap();
+
+        // Fetch the updated user
+        let updated_user = repo
+            .get_user_by_email("users", "pw@example.com")
+            .await
+            .unwrap()
+            .unwrap();
+
+        // Password hash should have changed (new hash, not the old one)
+        assert_ne!(updated_user.password, original_hash);
+        // The new password should verify against "new_secure_password"
+        assert!(bcrypt::verify("new_secure_password", &updated_user.password).unwrap());
+
+        // Token key should have changed (for security — new random key)
+        assert_ne!(updated_user.token_key, original_token_key);
+    }
+
+    #[tokio::test]
+    async fn test_update_password_for_nonexistent_user_is_a_noop() {
+        let pool = setup_pool("db_auth_update_password_noop").await;
+        create_users_table(&pool).await;
+        let repo = UserRepository::new(pool);
+
+        // Should not error even if user doesn't exist
+        let result = repo
+            .update_password("users", "ghost@example.com", "new_pw")
+            .await;
+        assert!(result.is_ok());
+    }
 }

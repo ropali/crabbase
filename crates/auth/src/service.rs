@@ -570,6 +570,7 @@ impl AuthService {
 mod tests {
     use super::*;
     use crate::auth::{Claims, hash_password, verify_token};
+    use crate::repositories::otp::OtpRepository;
     use crabbase_core::errors::APIError;
     use sqlx::postgres::PgPoolOptions;
 
@@ -615,7 +616,8 @@ mod tests {
         let repo = UserRepository::new(pool.clone());
         let auth_repo = AuthRepository::new(pool.clone());
         let settings_repo = SettingsRepository::new(pool.clone());
-        let service = AuthService::new(repo, auth_repo, settings_repo);
+        let otp_repo = OtpRepository::new(pool.clone());
+        let service = AuthService::new(repo, auth_repo, settings_repo, otp_repo);
         (service, pool)
     }
 
@@ -1031,5 +1033,127 @@ mod tests {
 
         assert!(!refreshed_tokens.access_token.is_empty());
         assert!(!refreshed_tokens.refresh_token.is_empty());
+    }
+
+    // ── logout_session ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_logout_session_success() {
+        let (service, pool) = setup_service("auth_logout_success").await;
+
+        let password = "logout_pass";
+        let hash = hash_password(password).unwrap();
+        let admin_uuid = uuid::Uuid::parse_str("936da01f-9abd-4d9d-80c7-02af85c822a8").unwrap();
+
+        sqlx::query(
+            "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(admin_uuid)
+        .bind("logout@example.com")
+        .bind(hash)
+        .bind("token")
+        .bind(true)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query(
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)",
+        )
+        .bind("logout_col_id")
+        .bind(1)
+        .bind("auth")
+        .bind("_superusers")
+        .bind("[]")
+        .bind("{\"authToken\": {\"secret\": \"logout-secret-key\"}}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Login first to get tokens
+        let tokens = service
+            .authenticate("_superusers", "logout@example.com", password)
+            .await
+            .unwrap();
+
+        // Logout should succeed
+        service
+            .logout_session("_superusers", "logout@example.com", &tokens.refresh_token)
+            .await
+            .unwrap();
+
+        // After logout, using the old refresh token should fail (family is revoked)
+        let err = service
+            .refresh_token("_superusers", "logout@example.com", &tokens.refresh_token)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, APIError::Unauthorized));
+    }
+
+    #[tokio::test]
+    async fn test_logout_session_nonexistent_user_returns_error() {
+        let (service, pool) = setup_service("auth_logout_nonexistent").await;
+
+        sqlx::query(
+            "INSERT INTO _collections (id, system, type, name, fields, options) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)",
+        )
+        .bind("col_id_x")
+        .bind(1)
+        .bind("auth")
+        .bind("_superusers")
+        .bind("[]")
+        .bind("{\"authToken\": {\"secret\": \"some-secret\"}}")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let err = service
+            .logout_session("_superusers", "ghost@example.com", "fake_token")
+            .await
+            .unwrap_err();
+        assert!(matches!(err, APIError::NotFound { .. }));
+    }
+
+    // ── reset_password ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_reset_password_nonexistent_user_silently_succeeds() {
+        // Per design, non-existent email on reset should not reveal user existence
+        let (service, _pool) = setup_service("auth_reset_pw_nonexistent").await;
+
+        let result = service
+            .reset_password("_superusers", "ghost@example.com", 123456, "new_pw")
+            .await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_reset_password_invalid_otp_returns_validation_error() {
+        let (service, pool) = setup_service("auth_reset_pw_invalid_otp").await;
+
+        let password = "old_pw";
+        let hash = hash_password(password).unwrap();
+        let uid = uuid::Uuid::parse_str("936da01f-9abd-4d9d-80c7-02af85c822a8").unwrap();
+
+        sqlx::query(
+            "INSERT INTO _superusers (id, email, password, token_key, verified) VALUES ($1, $2, $3, $4, $5)",
+        )
+        .bind(uid)
+        .bind("reset@example.com")
+        .bind(hash)
+        .bind("reset_token")
+        .bind(true)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Provide a wrong OTP value (no OTP record in DB at all)
+        let result = service
+            .reset_password("_superusers", "reset@example.com", 999999, "new_pw")
+            .await;
+
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), APIError::Validation { .. }));
     }
 }

@@ -277,6 +277,126 @@ where
 mod tests {
     use super::*;
 
+    // ── DataTypes::to_db_type ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_data_type_to_db_type_text_variants() {
+        assert_eq!(DataTypes::PlainText.to_db_type(), "TEXT");
+        assert_eq!(DataTypes::RichText.to_db_type(), "TEXT");
+        assert_eq!(DataTypes::Email.to_db_type(), "TEXT");
+        assert_eq!(DataTypes::Url.to_db_type(), "TEXT");
+        assert_eq!(DataTypes::File.to_db_type(), "TEXT");
+        assert_eq!(DataTypes::Select.to_db_type(), "TEXT");
+        assert_eq!(DataTypes::Json.to_db_type(), "TEXT");
+        assert_eq!(DataTypes::GeoPoint.to_db_type(), "TEXT");
+    }
+
+    #[test]
+    fn test_data_type_to_db_type_number() {
+        assert_eq!(DataTypes::Number.to_db_type(), "BIGINT");
+    }
+
+    #[test]
+    fn test_data_type_to_db_type_bool() {
+        assert_eq!(DataTypes::Bool.to_db_type(), "BOOLEAN");
+    }
+
+    #[test]
+    fn test_data_type_to_db_type_datetime() {
+        assert_eq!(DataTypes::Datetime.to_db_type(), "TIMESTAMPTZ");
+        assert_eq!(
+            DataTypes::AutoDatetime("now".to_string()).to_db_type(),
+            "TIMESTAMPTZ"
+        );
+    }
+
+    #[test]
+    fn test_data_type_to_db_type_relation() {
+        assert_eq!(DataTypes::Relation.to_db_type(), "UUID");
+    }
+
+    // ── Column::to_sql_definition ─────────────────────────────────────────────
+
+    #[test]
+    fn test_column_sql_definition_plain_text() {
+        let col = Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            ..Default::default()
+        };
+        assert_eq!(col.to_sql_definition(), "\"title\" TEXT");
+    }
+
+    #[test]
+    fn test_column_sql_definition_number() {
+        let col = Column {
+            name: "count".to_string(),
+            data_type: DataTypes::Number,
+            ..Default::default()
+        };
+        assert_eq!(col.to_sql_definition(), "\"count\" BIGINT");
+    }
+
+    #[test]
+    fn test_column_sql_definition_bool() {
+        let col = Column {
+            name: "active".to_string(),
+            data_type: DataTypes::Bool,
+            ..Default::default()
+        };
+        assert_eq!(col.to_sql_definition(), "\"active\" BOOLEAN");
+    }
+
+    #[test]
+    fn test_column_sql_definition_relation_with_target() {
+        let col = Column {
+            name: "user_id".to_string(),
+            data_type: DataTypes::Relation,
+            related_to: Some("users".to_string()),
+            ..Default::default()
+        };
+        let sql = col.to_sql_definition();
+        assert!(sql.contains("\"user_id\" UUID REFERENCES"));
+        assert!(sql.contains("\"users\""));
+    }
+
+    #[test]
+    fn test_column_sql_definition_relation_without_target_uses_unknown() {
+        let col = Column {
+            name: "ref_id".to_string(),
+            data_type: DataTypes::Relation,
+            related_to: None,
+            ..Default::default()
+        };
+        let sql = col.to_sql_definition();
+        assert!(sql.contains("unknown"));
+    }
+
+    #[test]
+    fn test_column_sql_definition_auto_datetime_now() {
+        let col = Column {
+            name: "created_at".to_string(),
+            data_type: DataTypes::AutoDatetime("now".to_string()),
+            ..Default::default()
+        };
+        let sql = col.to_sql_definition();
+        assert!(sql.contains("TIMESTAMPTZ DEFAULT now()"));
+    }
+
+    #[test]
+    fn test_column_sql_definition_auto_datetime_non_now_falls_through() {
+        // Non-"now" action should fall through to the plain type mapping (TIMESTAMPTZ)
+        let col = Column {
+            name: "ts".to_string(),
+            data_type: DataTypes::AutoDatetime("custom".to_string()),
+            ..Default::default()
+        };
+        let sql = col.to_sql_definition();
+        assert_eq!(sql, "\"ts\" TIMESTAMPTZ");
+    }
+
+    // ── Deserialization backward-compat ────────────────────────────────────────
+
     #[test]
     fn test_deserialize_autodate_string() {
         let json_data = r#"{"name": "created", "type": "autodate"}"#;
@@ -296,6 +416,41 @@ mod tests {
             col_adt.data_type,
             DataTypes::AutoDatetime("now".to_string())
         );
+    }
+
+    #[test]
+    fn test_deserialize_all_legacy_type_strings() {
+        let cases = vec![
+            (r#"{"name":"c","type":"TEXT"}"#, DataTypes::PlainText),
+            (r#"{"name":"c","type":"PLAINTEXT"}"#, DataTypes::PlainText),
+            (r#"{"name":"c","type":"RICHTEXT"}"#, DataTypes::RichText),
+            (r#"{"name":"c","type":"EDITOR"}"#, DataTypes::RichText),
+            (r#"{"name":"c","type":"INTEGER"}"#, DataTypes::Number),
+            (r#"{"name":"c","type":"NUMBER"}"#, DataTypes::Number),
+            (r#"{"name":"c","type":"BOOLEAN"}"#, DataTypes::Bool),
+            (r#"{"name":"c","type":"BOOL"}"#, DataTypes::Bool),
+            (r#"{"name":"c","type":"DATE"}"#, DataTypes::Datetime),
+            (r#"{"name":"c","type":"DATETIME"}"#, DataTypes::Datetime),
+            (r#"{"name":"c","type":"EMAIL"}"#, DataTypes::Email),
+            (r#"{"name":"c","type":"URL"}"#, DataTypes::Url),
+            (r#"{"name":"c","type":"FILE"}"#, DataTypes::File),
+            (r#"{"name":"c","type":"RELATION"}"#, DataTypes::Relation),
+            (r#"{"name":"c","type":"SELECT"}"#, DataTypes::Select),
+            (r#"{"name":"c","type":"JSON"}"#, DataTypes::Json),
+            (r#"{"name":"c","type":"GEOPOINT"}"#, DataTypes::GeoPoint),
+        ];
+
+        for (json, expected) in cases {
+            let col: Column = serde_json::from_str(json).unwrap();
+            assert_eq!(col.data_type, expected, "failed for json: {json}");
+        }
+    }
+
+    #[test]
+    fn test_deserialize_invalid_type_string_errors() {
+        let json = r#"{"name": "c", "type": "INVALID_TYPE"}"#;
+        let result: Result<Column, _> = serde_json::from_str(json);
+        assert!(result.is_err());
     }
 }
 
