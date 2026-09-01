@@ -17,3 +17,12 @@ serde_urlencoded = { workspace = true }
 tracing = { workspace = true }
 sqlx = { workspace = true }
 uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+http-body-util = "0.1"
+tower = { version = "0.5", features = ["util"] }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+sqlx = { workspace = true }
+bcrypt = { workspace = true }

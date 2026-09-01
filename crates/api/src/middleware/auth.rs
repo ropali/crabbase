@@ -1,4 +1,4 @@
-use std::{ascii::AsciiExt, collections::HashMap};
+use std::collections::HashMap;
 
 use axum::{
     extract::{FromRequestParts, State},

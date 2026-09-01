@@ -472,13 +472,16 @@ name = "crabbase_api"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "bcrypt",
  "crabbase_auth",
  "crabbase_core",
  "crabbase_db",
+ "http-body-util",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "sqlx",
+ "tokio",
  "tower",
  "tower-http",
  "tracing",

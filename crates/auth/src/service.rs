@@ -4,9 +4,8 @@ use crate::{
     auth::{Claims, TokenParams, TokenType, create_token, verify_password, verify_token},
     repositories::{auth::AuthRepository, otp::OtpRepository},
 };
-use chrono::Utc;
 use crabbase_core::{enums, errors::APIError};
-use crabbase_db::repositories::settings::{AppSettings, EmailTemplate, EmailTemplates};
+use crabbase_db::repositories::settings::{AppSettings, EmailTemplates};
 use crabbase_db::repositories::{
     auth::{AuthUser, UserRepository},
     settings::{MailSettings, SettingsRepository},
@@ -16,7 +15,6 @@ use lettre::{
     message::{Mailbox, MultiPart, SinglePart, header::ContentType},
     transport::smtp::authentication::Credentials,
 };
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::task;
 use tracing::info;
