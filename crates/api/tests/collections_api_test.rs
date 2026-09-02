@@ -149,11 +149,7 @@ async fn test_create_collection_empty_columns_rejected() {
     );
 }
 
-/// [MVP GAP / Phase 2.1]: Auto-inject auth system columns for auth collections.
 /// When `collection_type = "auth"`, backend must automatically inject `email`, `emailVisibility`,
-/// `verified`, `token_key`, and `password` columns.
-///
-/// Ref: MVP_ROADMAP.md §2.3 and §Phase 2.1
 #[tokio::test]
 async fn test_create_auth_collection_auto_injects_system_columns() {
     let (app, token) = setup().await;
