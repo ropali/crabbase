@@ -225,11 +225,6 @@ async fn test_list_collections_returns_created_collection() {
     );
 }
 
-/// [MVP BUG / §2.1]: Collection List Pagination Total Count.
-/// `CollectionRepository::list` currently sets `total: result.len()` instead of `COUNT(*)`.
-/// If there are 3 collections and `per_page=1`, `total` must be 3 (or total in DB), NOT 1.
-///
-/// Ref: MVP_ROADMAP.md §2.1 Bug (crates/db/src/repositories/collections.rs:185)
 #[tokio::test]
 async fn test_collection_list_pagination_total_count() {
     let (app, token) = setup().await;

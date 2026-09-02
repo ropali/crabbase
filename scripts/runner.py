@@ -776,15 +776,15 @@ def main():
             test_suites_to_run = [
                 (
                     "🧠 Unit Tests (crabbase_core)",
-                    ["cargo", "test", "-p", "crabbase_core", "--", "--nocapture"],
+                    ["cargo", "test", "-p", "crabbase_core", "--no-fail-fast", "--", "--nocapture"],
                 ),
                 (
                     "🗄️ DB Repository Tests (crabbase_db)",
-                    ["cargo", "test", "-p", "crabbase_db", "--", "--nocapture"],
+                    ["cargo", "test", "-p", "crabbase_db", "--no-fail-fast", "--", "--nocapture"],
                 ),
                 (
                     "👤 Auth Repository Tests (crabbase_auth)",
-                    ["cargo", "test", "-p", "crabbase_auth", "--", "--nocapture"],
+                    ["cargo", "test", "-p", "crabbase_auth", "--no-fail-fast", "--", "--nocapture"],
                 ),
                 (
                     "🌐 HTTP API Tests (crabbase_api)",
@@ -794,6 +794,7 @@ def main():
                         "-p",
                         "crabbase_api",
                         "--tests",
+                        "--no-fail-fast",
                         "--",
                         "--nocapture",
                     ],
@@ -816,19 +817,19 @@ def main():
         test_suites_to_run = [
             (
                 "🧠 Unit Tests (crabbase_core)",
-                ["cargo", "test", "-p", "crabbase_core", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_core", "--no-fail-fast", "--", "--nocapture"],
             ),
             (
                 "🗄️ DB Repository Tests (crabbase_db)",
-                ["cargo", "test", "-p", "crabbase_db", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_db", "--no-fail-fast", "--", "--nocapture"],
             ),
             (
                 "👤 Auth Repository Tests (crabbase_auth)",
-                ["cargo", "test", "-p", "crabbase_auth", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_auth", "--no-fail-fast", "--", "--nocapture"],
             ),
             (
                 "🌐 HTTP API Tests (crabbase_api)",
-                ["cargo", "test", "-p", "crabbase_api", "--tests", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_api", "--tests", "--no-fail-fast", "--", "--nocapture"],
             ),
         ]
     elif mode in ["unit", "core"]:
@@ -836,7 +837,7 @@ def main():
         test_suites_to_run = [
             (
                 "🧠 Unit Tests: Parser, Compiler, Models (crabbase_core)",
-                ["cargo", "test", "-p", "crabbase_core", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_core", "--no-fail-fast", "--", "--nocapture"],
             )
         ]
     elif mode in ["db", "repo", "repositories"]:
@@ -844,11 +845,11 @@ def main():
         test_suites_to_run = [
             (
                 "🗄️ Collections & Records DB Tests (crabbase_db)",
-                ["cargo", "test", "-p", "crabbase_db", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_db", "--no-fail-fast", "--", "--nocapture"],
             ),
             (
                 "👤 Auth & OTP DB Tests (crabbase_auth)",
-                ["cargo", "test", "-p", "crabbase_auth", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_auth", "--no-fail-fast", "--", "--nocapture"],
             ),
         ]
     elif mode in ["api", "integration", "http"]:
@@ -856,7 +857,7 @@ def main():
         test_suites_to_run = [
             (
                 "🌐 HTTP API Integration Tests (crabbase_api)",
-                ["cargo", "test", "-p", "crabbase_api", "--tests", "--", "--nocapture"],
+                ["cargo", "test", "-p", "crabbase_api", "--tests", "--no-fail-fast", "--", "--nocapture"],
             )
         ]
     else:

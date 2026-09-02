@@ -182,11 +182,13 @@ impl CollectionRepository {
             .fetch_all(&self.db)
             .await?;
 
-        let total = result.len();
+        let total_cols: i64 = sqlx::query_scalar("SELECT COUNT(id) FROM _collections;")
+            .fetch_one(&self.db)
+            .await?;
 
         Ok(CollectionListResponse {
             items: result,
-            total: total as u64,
+            total: total_cols as u64,
             page,
             per_page,
         })

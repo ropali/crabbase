@@ -177,10 +177,6 @@ async fn test_list_records_page_2() {
 
 // ─── Update record ────────────────────────────────────────────────────────────
 
-/// [MVP BUG / §2.1]: `update_record` route must return full `Record` JSON response.
-/// Currently returns `{"details": "record updatedsuccessfully."}` instead of `Record`.
-///
-/// Ref: MVP_ROADMAP.md §2.1 Bug (crates/api/src/routes/records.rs:72)
 #[tokio::test]
 async fn test_update_record_returns_full_record_json() {
     let (app, token) = setup().await;

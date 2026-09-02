@@ -67,9 +67,9 @@ async fn update_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
     Json(body): Json<UpdateRecordRequest>,
-) -> Result<Json<Value>, APIError> {
+) -> Result<Json<Record>, APIError> {
     match state.records_repo().update_record(&name, &id, body).await {
-        Ok(_) => Ok(Json(json!({"details": "record updatedsuccessfully."}))),
+        Ok(r) => Ok(Json(r)),
         Err(err) => Err(err.into()),
     }
 }
