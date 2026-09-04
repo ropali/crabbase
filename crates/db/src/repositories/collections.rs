@@ -10,7 +10,7 @@ use crabbase_core::{
         Collection, CollectionListResponse, CollectionOptions, Column, CreateCollectionRequest,
         DataTypes, UpdateCollectionRequest,
     },
-    utils::string_utils::random_str,
+    utils::string_utils::{quote_ident, random_str},
 };
 
 #[derive(Debug, Clone)]
@@ -379,7 +379,14 @@ impl CollectionRepository {
     }
 
     pub async fn truncate(&self, name: String) -> Result<bool, RepositoryError> {
-        let sql = format!("DELETE FROM {};", name);
+        validate_identifier(&name);
+
+        if !self.exists(&name).await {
+            return Err(RepositoryError::NotFound(name));
+        }
+        let quoted_table = quote_ident(&name);
+
+        let sql = format!("DELETE FROM {};", quoted_table);
 
         sqlx::query(&sql).execute(&self.db).await?;
         Ok(true)

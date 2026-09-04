@@ -357,18 +357,20 @@ async fn test_truncate_collection_removes_all_records() {
     app.post_json(
         "/api/collections/temp_data/records",
         json!({ "data": { "val": "row1" } }),
-        None,
+        Some(&token),
     )
     .await;
     app.post_json(
         "/api/collections/temp_data/records",
         json!({ "data": { "val": "row2" } }),
-        None,
+        Some(&token),
     )
     .await;
 
     // Verify 2 records exist
-    let list_res = app.get("/api/collections/temp_data/records").await;
+    let list_res = app
+        .get_auth("/api/collections/temp_data/records", &token)
+        .await;
     let list_body = expect(list_res, StatusCode::OK).await;
     assert_eq!(list_body["items"].as_array().unwrap().len(), 2);
 
@@ -383,7 +385,9 @@ async fn test_truncate_collection_removes_all_records() {
     expect(trunc_res, StatusCode::OK).await;
 
     // Verify collection is now empty
-    let empty_res = app.get("/api/collections/temp_data/records").await;
+    let empty_res = app
+        .get_auth("/api/collections/temp_data/records", &token)
+        .await;
     let empty_body = expect(empty_res, StatusCode::OK).await;
     assert_eq!(empty_body["items"].as_array().unwrap().len(), 0);
 }

@@ -105,10 +105,7 @@ async fn test_list_rule_empty_string_is_public() {
     assert!(!items.is_empty(), "public collection returned no items");
 }
 
-/// [MVP SECURITY BUG / §2.2 / §Phase 1.4]:
 /// `list_rule = null` MUST require superuser authentication (403 Forbidden for public/unauthenticated).
-///
-/// Ref: MVP_ROADMAP.md §2.2 and §Phase 1.4
 #[tokio::test]
 async fn test_list_rule_null_requires_admin() {
     let (app, token) = setup().await;

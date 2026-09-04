@@ -41,7 +41,7 @@ impl RecordsRepository {
         let mut count_base_query = format!("SELECT COUNT(id) FROM {}", collection);
         let mut bindings: Vec<String> = vec![];
 
-        match &col.create_rule {
+        match &col.list_rule {
             // Public access if not set
             Some(rule) => if rule.is_empty() {},
 
