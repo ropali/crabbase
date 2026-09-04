@@ -1,5 +1,4 @@
 use crabbase_core::errors::RepositoryError;
-use crabbase_db::repositories::auth::AuthUser;
 use sha2::{Digest, Sha256};
 use sqlx::{Pool, Postgres};
 

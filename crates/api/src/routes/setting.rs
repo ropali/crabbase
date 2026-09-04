@@ -3,7 +3,7 @@ use crate::state::AppState;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
-use axum::routing::{get, post};
+use axum::routing::get;
 use axum::{Json, Router};
 use crabbase_core::enums;
 use crabbase_core::errors::APIError;

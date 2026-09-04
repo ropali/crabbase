@@ -1,11 +1,10 @@
 use serde_json::Value;
 use sqlx::{Pool, Postgres, Row};
-use tracing::info;
 
 use crate::repositories::collections::CollectionRepository;
 use crabbase_core::{
     errors::RepositoryError,
-    models::{Collection, CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
+    models::{CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
     rules::{
         compiler::{RulesSqlCompiler, SqlContext},
         parser::{RuleParser, tokenize},

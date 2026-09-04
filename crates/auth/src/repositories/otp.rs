@@ -1,5 +1,5 @@
 use crabbase_core::errors::RepositoryError;
-use crabbase_db::repositories::auth::{AuthUser, UserRepository};
+use crabbase_db::repositories::auth::AuthUser;
 use hmac::{Hmac, Mac};
 use rand::{Rng, rng};
 use sha2::Sha256;

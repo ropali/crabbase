@@ -39,6 +39,64 @@ impl CollectionRepository {
         validate_identifier(&collection.name)?;
         validate_columns(&collection.columns)?;
 
+        let required_cols_for_auth_col = vec![
+            Column {
+                name: "password".to_string(),
+                data_type: DataTypes::PlainText,
+                hidden: false,
+                required: true,
+                related_to: None,
+                index: false,
+                min: Some(8),
+                max: Some(255),
+                pattern: None,
+            },
+            Column {
+                name: "email".to_string(),
+                data_type: DataTypes::Email,
+                hidden: false,
+                required: true,
+                related_to: None,
+                index: true,
+                min: Some(3),
+                max: Some(150),
+                pattern: None,
+            },
+            Column {
+                name: "token_key".to_string(),
+                data_type: DataTypes::PlainText,
+                hidden: false,
+                required: true,
+                related_to: None,
+                index: false,
+                min: None,
+                max: None,
+                pattern: None,
+            },
+            Column {
+                name: "emailVisibility".to_string(),
+                data_type: DataTypes::Bool,
+                hidden: false,
+                required: true,
+                related_to: None,
+                index: false,
+                min: None,
+                max: None,
+                pattern: None,
+            },
+            Column {
+                name: "verified".to_string(),
+                data_type: DataTypes::Bool,
+                hidden: false,
+                required: true,
+                related_to: None,
+                index: false,
+                min: None,
+                max: None,
+                pattern: None,
+            },
+        ];
+
         for col in &collection.columns {
             if col.data_type == DataTypes::Relation
                 && let Some(ref target) = col.related_to
@@ -52,10 +110,21 @@ impl CollectionRepository {
             }
         }
 
+        let mut collection = collection;
+
         let col_type = collection
             .collection_type
             .clone()
             .unwrap_or_else(|| "base".to_string());
+
+        // Inject the default auth collection columns
+        if col_type == "auth" {
+            for req_col in required_cols_for_auth_col {
+                if !collection.columns.iter().any(|c| c.name == req_col.name) {
+                    collection.columns.push(req_col);
+                }
+            }
+        }
 
         let mut tx = self.db.begin().await?;
 
@@ -182,11 +251,13 @@ impl CollectionRepository {
             .fetch_all(&self.db)
             .await?;
 
-        let total = result.len();
+        let total_cols: i64 = sqlx::query_scalar("SELECT COUNT(id) FROM _collections;")
+            .fetch_one(&self.db)
+            .await?;
 
         Ok(CollectionListResponse {
             items: result,
-            total: total as u64,
+            total: total_cols as u64,
             page,
             per_page,
         })

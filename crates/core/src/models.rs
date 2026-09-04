@@ -64,8 +64,16 @@ impl Record {
             return Value::String(v);
         }
 
+        if let Ok(v) = row.try_get::<Uuid, _>(col_name) {
+            return Value::String(v.to_string());
+        }
+
         if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(col_name) {
             return Value::String(v.to_rfc3339());
+        }
+
+        if let Ok(v) = row.try_get::<serde_json::Value, _>(col_name) {
+            return v;
         }
 
         Value::Null

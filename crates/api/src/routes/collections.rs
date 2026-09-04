@@ -1,11 +1,12 @@
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
+    middleware::from_fn_with_state,
     routing::{get, post},
 };
 use serde_json::{Value, json};
 
-use crate::state::AppState;
+use crate::{middleware::auth::extract_auth_context, state::AppState};
 use crate::{middleware::auth::require_admin, routes::records};
 use crabbase_core::{
     errors::APIError,
@@ -16,19 +17,19 @@ use crabbase_core::{
 };
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
-    Router::new()
-        .nest("/{name}/records", records::get_routes(state.clone()))
+    let records_router = records::get_routes(state.clone())
+        .layer(from_fn_with_state(state.clone(), extract_auth_context));
+
+    // Collection management: strictly admin only
+    let collection_admin = Router::new()
         .route("/", get(list).post(create))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_admin,
-        ))
         .route("/{name}/truncate", post(truncate))
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            require_admin,
-        ))
         .route("/{name}", get(get_one).patch(update).delete(delete))
+        .layer(from_fn_with_state(state.clone(), require_admin));
+
+    Router::new()
+        .nest("/{name}/records", records_router)
+        .merge(collection_admin)
         .with_state(state)
 }
 
