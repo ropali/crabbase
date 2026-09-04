@@ -8,6 +8,17 @@ pub struct SqlContext {
     pub query: HashMap<String, String>,  // Maps "@request.query.x" etc
 }
 
+impl SqlContext {
+    pub fn is_admin(&self) -> bool {
+        self.auth
+            .as_ref()
+            .and_then(|v| v.get("collectionName"))
+            .and_then(|v| v.as_str())
+            .map(|name| name.eq_ignore_ascii_case("_superusers"))
+            .unwrap_or(false)
+    }
+}
+
 pub struct RulesSqlCompiler {
     context: SqlContext,
     pub bindings: Vec<String>,

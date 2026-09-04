@@ -6,7 +6,7 @@ use crabbase_core::{
     errors::RepositoryError,
     models::{CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
     rules::{
-        compiler::{RulesSqlCompiler, SqlContext},
+        compiler::{self, RulesSqlCompiler, SqlContext},
         parser::{RuleParser, tokenize},
     },
     utils::string_utils::{quote_ident, random_str},
@@ -31,6 +31,8 @@ impl RecordsRepository {
         per_page: u64,
         sql_context: SqlContext,
     ) -> Result<RecordListResponse, RepositoryError> {
+        let is_admin = sql_context.is_admin();
+
         let col = CollectionRepository::new(self.db.clone())
             .get_by_name(collection)
             .await?;
@@ -39,22 +41,35 @@ impl RecordsRepository {
         let mut count_base_query = format!("SELECT COUNT(id) FROM {}", collection);
         let mut bindings: Vec<String> = vec![];
 
-        if let Some(rule) = &col.list_rule
-            && !rule.trim().is_empty()
-        {
-            let tokens = tokenize(rule);
-            let mut parser = RuleParser::new(tokens);
+        match &col.create_rule {
+            // Public access if not set
+            Some(rule) => if rule.is_empty() {},
 
-            if let Ok(ast) = parser.parse() {
-                let mut compiler = RulesSqlCompiler::new(sql_context);
+            // "expression" -> Filter applied for non-admins, bypassed for admins
+            Some(rule) => {
+                if !is_admin {
+                    let tokens = tokenize(rule);
+                    let mut parser = RuleParser::new(tokens);
 
-                if let Ok(sql_clause) = compiler.compile(&ast) {
-                    base_query.push_str(" WHERE ");
-                    base_query.push_str(&sql_clause);
+                    if let Ok(ast) = parser.parse() {
+                        let mut compiler = RulesSqlCompiler::new(sql_context);
 
-                    count_base_query.push_str(" WHERE ");
-                    count_base_query.push_str(&sql_clause);
-                    bindings = compiler.bindings;
+                        if let Ok(sql_clause) = compiler.compile(&ast) {
+                            base_query.push_str(" WHERE ");
+                            base_query.push_str(&sql_clause);
+
+                            count_base_query.push_str(" WHERE ");
+                            count_base_query.push_str(&sql_clause);
+                            bindings = compiler.bindings;
+                        }
+                    }
+                }
+            }
+            None => {
+                if !is_admin {
+                    return Err(RepositoryError::Forbidden(
+                        "Only admin can perform this action".to_string(),
+                    ));
                 }
             }
         }
@@ -119,7 +134,10 @@ impl RecordsRepository {
         &self,
         collection: String,
         mut body: CreateRecordRequest,
+        sql_context: SqlContext,
     ) -> Result<Record, RepositoryError> {
+        let is_admin = sql_context.is_admin();
+
         let obj = &mut body.data;
 
         if obj.is_empty() {

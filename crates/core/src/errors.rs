@@ -1,3 +1,5 @@
+use std::fmt::write;
+
 use axum::{
     Json,
     http::StatusCode,
@@ -105,6 +107,7 @@ pub enum RepositoryError {
         field: Option<String>,
     },
     OtherError(String),
+    Forbidden(String),
 }
 
 impl From<sqlx::Error> for RepositoryError {
@@ -166,6 +169,7 @@ impl From<RepositoryError> for APIError {
                 message: "Database connection failure".to_string(),
                 details: serde_json::json!({"source": message}),
             },
+            RepositoryError::Forbidden(mesaage) => APIError::Forbidden,
         }
     }
 }
@@ -192,6 +196,7 @@ impl std::fmt::Display for RepositoryError {
                 }
             }
             RepositoryError::OtherError(msg) => write!(f, "Error: {}", msg),
+            RepositoryError::Forbidden(msg) => write!(f, "Error: {}", msg),
         }
     }
 }

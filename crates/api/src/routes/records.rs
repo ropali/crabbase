@@ -55,9 +55,14 @@ async fn get_record(
 async fn create_record(
     Path(name): Path<String>,
     state: axum::extract::State<AppState>,
+    RequestContext(sql_context): RequestContext,
     Json(body): Json<CreateRecordRequest>,
 ) -> Result<Json<Record>, APIError> {
-    match state.records_repo().create_record(name, body).await {
+    match state
+        .records_repo()
+        .create_record(name, body, sql_context)
+        .await
+    {
         Ok(res) => Ok(Json(res)),
         Err(err) => Err(err.into()),
     }
