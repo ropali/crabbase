@@ -39,6 +39,10 @@ async fn setup_posts(app: &TestApp, token: &str) {
         token,
     )
     .await;
+
+    // Allow public listing of records on the `posts` collection
+    app.patch_json("/api/collections/posts", json!({ "list_rule": "" }), token)
+        .await;
 }
 
 // ─── Create record ────────────────────────────────────────────────────────────
@@ -149,7 +153,7 @@ async fn test_list_records_per_page_limiting() {
     let body = expect(res, StatusCode::OK).await;
     let items = body["items"].as_array().expect("items");
     assert_eq!(items.len(), 2, "per_page=2 should return 2 items");
-    assert_eq!(body["perPage"], 2);
+    assert_eq!(body["per_page"], 2);
 }
 
 #[tokio::test]
