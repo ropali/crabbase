@@ -52,18 +52,13 @@ impl RulesSqlCompiler {
                         .unwrap_or_default();
 
                     self.bindings.push(val);
-
                     Ok(format!("${}", self.bindings.len()))
                 } else if name.starts_with("@request.query.") {
                     let key = name.strip_prefix("@request.query.").unwrap();
-
                     let val = self.context.query.get(key).cloned().unwrap_or_default();
-
                     self.bindings.push(val);
-
                     Ok(format!("${}", self.bindings.len()))
                 } else {
-                    // Safe verification: Ensure characters are safe alphnum to prevent SQL  injection
                     if name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                         Ok(format!("\"{}\"", name))
                     } else {
@@ -72,35 +67,40 @@ impl RulesSqlCompiler {
                 }
             }
             Expr::Binary { left, op, right } => {
+                if matches!(**right, Expr::Null) || matches!(**left, Expr::Null) {
+                    let target = if matches!(**right, Expr::Null) {
+                        left
+                    } else {
+                        right
+                    };
+                    let sql_target = self.compile(target)?;
+                    return match op.as_str() {
+                        "=" => Ok(format!("({} IS NULL)", sql_target)),
+                        "!=" => Ok(format!("({} IS NOT NULL)", sql_target)),
+                        _ => Err(format!("Operator {} cannot be used with NULL", op)),
+                    };
+                }
+
                 let sql_left = self.compile(left)?;
                 let sql_right = self.compile(right)?;
-                let sql_op = match op.as_str() {
-                    "=" => {
-                        if matches!(**right, Expr::Null) {
-                            return Ok(format!("({} IS NULL)", sql_left));
-                        }
-                        if matches!(**left, Expr::Null) {
-                            return Ok(format!("({} IS NULL)", sql_right));
-                        }
-                        "="
-                    }
-                    "!=" => {
-                        if matches!(**right, Expr::Null) {
-                            return Ok(format!("({} IS NOT NULL)", sql_left));
-                        }
-                        if matches!(**left, Expr::Null) {
-                            return Ok(format!("({} IS NOT NULL)", sql_right));
-                        }
-                        "!="
-                    }
-                    "<" => "<",
-                    ">" => ">",
-                    "<=" => "<=",
-                    ">=" => ">=",
-                    "~" => "LIKE",
-                    _ => return Err(format!("Unsupported operator: {}", op)),
-                };
-                Ok(format!("({} {} {})", sql_left, sql_op, sql_right))
+
+                match op.as_str() {
+                    "=" => Ok(format!("({} = {})", sql_left, sql_right)),
+                    "!=" => Ok(format!("({} != {})", sql_left, sql_right)),
+                    "<" => Ok(format!("({} < {})", sql_left, sql_right)),
+                    "<=" => Ok(format!("({} <= {})", sql_left, sql_right)),
+                    ">" => Ok(format!("({} > {})", sql_left, sql_right)),
+                    ">=" => Ok(format!("({} >= {})", sql_left, sql_right)),
+                    "~" => Ok(format!(
+                        "({} ILIKE ('%' || {} || '%'))",
+                        sql_left, sql_right
+                    )),
+                    "!~" => Ok(format!(
+                        "({0} IS NULL OR {0} NOT ILIKE ('%' || {1} || '%'))",
+                        sql_left, sql_right
+                    )),
+                    _ => Err(format!("Unsupported operator: {}", op)),
+                }
             }
             Expr::Logical { left, op, right } => {
                 let sql_left = self.compile(left)?;
@@ -111,13 +111,11 @@ impl RulesSqlCompiler {
                 self.bindings.push(val.clone());
                 Ok(format!("${}", self.bindings.len()))
             }
-            Expr::Bool(b) => {
-                if *b {
-                    Ok("TRUE".to_string())
-                } else {
-                    Ok("FALSE".to_string())
-                }
-            }
+            Expr::Bool(b) => Ok(if *b {
+                "TRUE".to_string()
+            } else {
+                "FALSE".to_string()
+            }),
             Expr::Null => Ok("NULL".to_string()),
             Expr::Number(val) => Ok(val.clone()),
         }
@@ -186,7 +184,7 @@ mod tests {
             ("age > '18'", "(\"age\" > $1)"),
             ("age <= '18'", "(\"age\" <= $1)"),
             ("age >= '18'", "(\"age\" >= $1)"),
-            ("name ~ 'admin'", "(\"name\" LIKE $1)"),
+            ("name ~ 'admin'", "(\"name\" ILIKE ('%' || $1 || '%'))"),
         ];
 
         for (input, expected_sql) in operators {
@@ -237,7 +235,7 @@ mod tests {
         let context = SqlContext { auth: None, query };
 
         let (sql, bindings) = compile_helper("title ~ @request.query.search", context).unwrap();
-        assert_eq!(sql, "(\"title\" LIKE $1)");
+        assert_eq!(sql, "(\"title\" ILIKE ('%' || $1 || '%'))");
         assert_eq!(bindings, vec!["rust".to_string()]);
     }
 

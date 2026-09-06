@@ -4,7 +4,9 @@ use sqlx::{Pool, Postgres, Row};
 use crate::repositories::collections::CollectionRepository;
 use crabbase_core::{
     errors::RepositoryError,
-    models::{CreateRecordRequest, Record, RecordListResponse, UpdateRecordRequest},
+    models::{
+        CreateRecordRequest, PaginationParams, Record, RecordListResponse, UpdateRecordRequest,
+    },
     rules::{
         compiler::{self, RulesSqlCompiler, SqlContext},
         parser::{RuleParser, tokenize},
@@ -27,51 +29,65 @@ impl RecordsRepository {
     pub async fn list(
         &self,
         collection: &str,
-        page: u64,
-        per_page: u64,
         sql_context: SqlContext,
+        params: PaginationParams,
     ) -> Result<RecordListResponse, RepositoryError> {
         let is_admin = sql_context.is_admin();
+        let page = params.page.unwrap_or(1);
+        let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
 
         let col = CollectionRepository::new(self.db.clone())
             .get_by_name(collection)
             .await?;
 
-        let mut base_query = format!("SELECT * FROM {}", collection);
-        let mut count_base_query = format!("SELECT COUNT(id) FROM {}", collection);
-        let mut bindings: Vec<String> = vec![];
+        let client_filter = params
+            .filter
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
 
-        match &col.list_rule {
-            // Public access if not set
-            Some(rule) => if rule.is_empty() {},
-
-            // "expression" -> Filter applied for non-admins, bypassed for admins
-            Some(rule) => {
-                if !is_admin {
-                    let tokens = tokenize(rule);
-                    let mut parser = RuleParser::new(tokens);
-
-                    if let Ok(ast) = parser.parse() {
-                        let mut compiler = RulesSqlCompiler::new(sql_context);
-
-                        if let Ok(sql_clause) = compiler.compile(&ast) {
-                            base_query.push_str(" WHERE ");
-                            base_query.push_str(&sql_clause);
-
-                            count_base_query.push_str(" WHERE ");
-                            count_base_query.push_str(&sql_clause);
-                            bindings = compiler.bindings;
-                        }
-                    }
-                }
-            }
-            None => {
-                if !is_admin {
+        let effective_rule: Option<String> = if is_admin {
+            client_filter.map(|f| f.to_string())
+        } else {
+            match &col.list_rule {
+                None => {
                     return Err(RepositoryError::Forbidden(
                         "Only admin can perform this action".to_string(),
                     ));
                 }
+                Some(rule) if rule.trim().is_empty() => client_filter.map(|f| f.to_string()),
+                Some(rule) => match client_filter {
+                    Some(cf) => Some(format!("({}) && ({})", rule, cf)),
+                    None => Some(rule.clone()),
+                },
             }
+        };
+
+        let mut base_query = format!("SELECT * FROM {}", collection);
+        let mut count_base_query = format!("SELECT COUNT(id) FROM {}", collection);
+        let bindings: Vec<String> = vec![];
+
+        if let Some(rule_expr) = effective_rule {
+            let tokens = tokenize(&rule_expr);
+
+            let mut parser = RuleParser::new(tokens);
+
+            let ast = parser.parse().map_err(|e| RepositoryError::Validation {
+                message: format!("Invalid filter expression: {}", e),
+                field: None,
+            })?;
+
+            let mut compiler = RulesSqlCompiler::new(sql_context);
+
+            let sql_clause = compiler
+                .compile(&ast)
+                .map_err(|e| RepositoryError::Validation {
+                    message: format!("failed to compile filter: {}", e),
+                    field: None,
+                })?;
+
+            base_query.push_str(&format!(" WHERE {}", sql_clause));
+            count_base_query.push_str(&format!(" WHERE {}", sql_clause));
         }
 
         let limit_idx = bindings.len() + 1;

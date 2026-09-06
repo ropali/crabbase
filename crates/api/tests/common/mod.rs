@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use axum::http::{Method, Request, Response, StatusCode};
+use axum::http::{Method, Request, Response, StatusCode, Uri};
 use axum::{Router, body::Body};
 use crabbase_api::{get_app_routes, state::AppState};
 use http_body_util::BodyExt;
@@ -109,22 +109,24 @@ impl TestApp {
 
     /// GET without auth
     pub async fn get(&self, path: &str) -> Response<axum::body::Body> {
+        let uri = safe_uri(path);
         self.request(
             Request::builder()
                 .method(Method::GET)
-                .uri(path)
+                .uri(uri)
                 .body(Body::empty())
-                .unwrap(),
+                .expect("failed to send request"),
         )
         .await
     }
 
     /// GET with Bearer token
     pub async fn get_auth(&self, path: &str, token: &str) -> Response<axum::body::Body> {
+        let uri = safe_uri(path);
         self.request(
             Request::builder()
                 .method(Method::GET)
-                .uri(path)
+                .uri(uri)
                 .header("Authorization", format!("Bearer {token}"))
                 .body(Body::empty())
                 .unwrap(),
@@ -139,9 +141,10 @@ impl TestApp {
         body: Value,
         token: Option<&str>,
     ) -> Response<axum::body::Body> {
+        let uri = safe_uri(path);
         let mut b = Request::builder()
             .method(Method::POST)
-            .uri(path)
+            .uri(uri)
             .header("Content-Type", "application/json");
         if let Some(t) = token {
             b = b.header("Authorization", format!("Bearer {t}"));
@@ -157,10 +160,11 @@ impl TestApp {
         body: Value,
         token: &str,
     ) -> Response<axum::body::Body> {
+        let uri = safe_uri(path);
         self.request(
             Request::builder()
                 .method(Method::PATCH)
-                .uri(path)
+                .uri(uri)
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {token}"))
                 .body(Body::from(body.to_string()))
@@ -171,15 +175,61 @@ impl TestApp {
 
     /// DELETE with Bearer token
     pub async fn delete_auth(&self, path: &str, token: &str) -> Response<axum::body::Body> {
+        let uri = safe_uri(path);
         self.request(
             Request::builder()
                 .method(Method::DELETE)
-                .uri(path)
+                .uri(uri)
                 .header("Authorization", format!("Bearer {token}"))
                 .body(Body::empty())
                 .unwrap(),
         )
         .await
+    }
+}
+
+fn safe_uri(path: &str) -> String {
+    if path.parse::<Uri>().is_ok() {
+        return path.to_string();
+    }
+    if let Some((base, query)) = path.split_once('?') {
+        let mut encoded_query = String::new();
+        for byte in query.bytes() {
+            match byte {
+                b'a'..=b'z'
+                | b'A'..=b'Z'
+                | b'0'..=b'9'
+                | b'-'
+                | b'.'
+                | b'_'
+                | b'~'
+                | b'='
+                | b'&'
+                | b'/'
+                | b'?'
+                | b':'
+                | b'@'
+                | b'!'
+                | b'$'
+                | b'\''
+                | b'('
+                | b')'
+                | b'*'
+                | b'+'
+                | b','
+                | b';'
+                | b'%' => {
+                    encoded_query.push(byte as char);
+                }
+                _ => {
+                    use std::fmt::Write;
+                    let _ = write!(encoded_query, "%{:02X}", byte);
+                }
+            }
+        }
+        format!("{base}?{encoded_query}")
+    } else {
+        path.to_string()
     }
 }
 

@@ -304,11 +304,8 @@ async fn test_create_auth_record_hashes_password() {
 
 // ─── MVP Query Engine: Filter, Sort, Expand, Fields ──────────────────────────
 
-/// [MVP GAP / Phase 1.1]: `?filter` query parameter.
 /// Records list MUST filter results according to the filter expression.
 /// E.g. `?filter=(views > 50)` must only return records where views > 50.
-///
-/// Ref: MVP_ROADMAP.md §1.1 / §Phase 1.1
 #[tokio::test]
 async fn test_filter_parameter_evaluates_where_clause() {
     let (app, token) = setup().await;

@@ -102,6 +102,10 @@ pub struct UpdateRecordRequest {
 pub struct PaginationParams {
     pub page: Option<u64>,
     pub per_page: Option<u64>,
+    pub filter: Option<String>,
+    pub sort: Option<String>,
+    pub expand: Option<String>,
+    pub fields: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow, PartialEq)]

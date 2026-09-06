@@ -50,23 +50,28 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 chars.next();
             }
             '&' => {
-                tokens.push(Token::And);
                 chars.next();
+                if let Some(&'&') = chars.peek() {
+                    chars.next();
+                }
+                tokens.push(Token::And);
             }
             '|' => {
-                tokens.push(Token::Or);
                 chars.next();
+                if let Some(&'|') = chars.peek() {
+                    chars.next();
+                }
+                tokens.push(Token::Or);
             }
             '=' | '!' | '<' | '>' | '~' => {
                 let mut op = String::new();
                 op.push(chars.next().unwrap());
 
-                if let Some(&next_c) = chars.peek()
-                    && (next_c == '=' || next_c == '~')
-                {
-                    op.push(chars.next().unwrap());
+                if let Some(&next_c) = chars.peek() {
+                    if next_c == '=' || next_c == '~' {
+                        op.push(chars.next().unwrap());
+                    }
                 }
-
                 tokens.push(Token::Operator(op));
             }
             '\'' | '"' => {
@@ -74,6 +79,14 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 let mut literal = String::new();
 
                 while let Some(&next_c) = chars.peek() {
+                    if next_c == '\\' {
+                        chars.next();
+                        if let Some(&escaped) = chars.peek() {
+                            literal.push(escaped);
+                            chars.next();
+                            continue;
+                        }
+                    }
                     if next_c == quote {
                         chars.next();
                         break;
@@ -82,7 +95,6 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
                 tokens.push(Token::Literal(literal));
             }
-
             '0'..='9' => {
                 let mut num = String::new();
                 while let Some(&next_c) = chars.peek() {
@@ -94,15 +106,14 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
                 tokens.push(Token::Number(num));
             }
-
             '-' | '+' => {
                 let mut temp_chars = chars.clone();
-                temp_chars.next(); // consume the sign
+                temp_chars.next();
                 if let Some(&next_c) = temp_chars.peek()
                     && next_c.is_ascii_digit()
                 {
                     let mut num = String::new();
-                    num.push(chars.next().unwrap()); // consume sign
+                    num.push(chars.next().unwrap());
                     while let Some(&next_c) = chars.peek() {
                         if next_c.is_ascii_digit() || next_c == '.' {
                             num.push(chars.next().unwrap());
@@ -113,30 +124,27 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     tokens.push(Token::Number(num));
                     continue;
                 }
-                // If not followed by a digit, let the default handle it or consume if operator
                 chars.next();
             }
-
             _ => {
-                let mut indent = String::new();
-
+                let mut ident = String::new();
                 while let Some(&next_c) = chars.peek() {
                     if next_c.is_alphanumeric() || next_c == '_' || next_c == '.' || next_c == '@' {
-                        indent.push(chars.next().unwrap());
+                        ident.push(chars.next().unwrap());
                     } else {
                         break;
                     }
                 }
 
-                if !indent.is_empty() {
-                    if indent == "true" {
+                if !ident.is_empty() {
+                    if ident == "true" || ident == "TRUE" {
                         tokens.push(Token::Bool(true));
-                    } else if indent == "false" {
+                    } else if ident == "false" || ident == "FALSE" {
                         tokens.push(Token::Bool(false));
-                    } else if indent == "null" || indent == "NULL" {
+                    } else if ident.eq_ignore_ascii_case("null") {
                         tokens.push(Token::Null);
                     } else {
-                        tokens.push(Token::Ident(indent));
+                        tokens.push(Token::Ident(ident));
                     }
                 } else {
                     chars.next();
