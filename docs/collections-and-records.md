@@ -29,7 +29,7 @@ Collection management requires a **superuser** login (dashboard) or superuser JW
 | `PATCH` | `/api/collections/{name}` | superuser | Update schema / rename / set rules |
 | `DELETE` | `/api/collections/{name}` | superuser | Delete collection **and drop its table** |
 | `POST` | `/api/collections/{name}/truncate` | superuser | Delete all records |
-| `GET` | `/api/collections/{name}/records?page=&per_page=` | rules apply | List records |
+| `GET` | `/api/collections/{name}/records?page=1&per_page=20&filter=` | rules apply | List records (with pagination & dynamic filtering) |
 | `POST` | `/api/collections/{name}/records` | open* | Create record |
 | `GET` | `/api/collections/{name}/records/{id}` | open* | Get record |
 | `PATCH` | `/api/collections/{name}/records/{id}` | open* | Update record |
@@ -144,6 +144,10 @@ curl -X POST http://localhost:8989/api/collections/products/records \
 curl 'http://localhost:8989/api/collections/products/records?page=1&per_page=20'
 # -> { "items": [...], "total": 42, "page": 1, "per_page": 20 }
 
+# List with dynamic filter
+curl -G 'http://localhost:8989/api/collections/products/records' \
+  --data-urlencode "filter=active=true && price < 1500"
+
 # Get one
 curl http://localhost:8989/api/collections/products/records/<id>
 
@@ -157,6 +161,114 @@ curl -X DELETE http://localhost:8989/api/collections/products/records/<id>
 ```
 
 Pagination defaults: `page=1`, `per_page=20` (clamped to 1–100).
+
+## Dynamic record filtering (`?filter`)
+
+Crabbase supports client-side dynamic record filtering on `GET /api/collections/{name}/records` with full PocketBase compatibility. Clients can filter records by passing an expression in the `filter` query parameter. The expression is parsed into a safe AST and compiled to parameterized PostgreSQL SQL.
+
+### Quick Examples
+
+```sh
+# Exact equality
+curl -G 'http://localhost:8989/api/collections/posts/records' \
+  --data-urlencode "filter=status='published'"
+
+# Case-insensitive substring search (ILIKE '%pocket%')
+curl -G 'http://localhost:8989/api/collections/products/records' \
+  --data-urlencode "filter=title ~ 'pocket'"
+
+# Negated substring search
+curl -G 'http://localhost:8989/api/collections/users/records' \
+  --data-urlencode "filter=email !~ 'spam'"
+
+# Numeric and date range comparisons
+curl -G 'http://localhost:8989/api/collections/orders/records' \
+  --data-urlencode "filter=(total >= 100 && created > '2024-01-01 00:00:00Z')"
+
+# Logical grouping with AND (&&), OR (||), and parentheses
+curl -G 'http://localhost:8989/api/collections/tickets/records' \
+  --data-urlencode "filter=(priority='urgent' || priority='high') && status!='resolved'"
+
+# NULL and NOT NULL checks
+curl -G 'http://localhost:8989/api/collections/tasks/records' \
+  --data-urlencode "filter=completed_at = null"
+curl -G 'http://localhost:8989/api/collections/tasks/records' \
+  --data-urlencode "filter=assigned_to != null"
+
+# Dynamic macro context (match current authenticated user)
+curl -G 'http://localhost:8989/api/collections/posts/records' \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  --data-urlencode "filter=author = @request.auth.id"
+```
+
+### Supported Operators
+
+| Operator | Meaning | Example Filter | Generated PostgreSQL SQL |
+|---|---|---|---|
+| `=` | Equal | `status = 'active'` | `("status" = $1)` |
+| `!=` | Not equal | `status != 'draft'` | `("status" != $1)` |
+| `>` | Greater than | `created > '2024-01-01'` | `("created" > $1)` |
+| `>=` | Greater or equal | `views >= 100` | `("views" >= 100)` |
+| `<` | Less than | `price < 50` | `("price" < 50)` |
+| `<=` | Less or equal | `age <= 18` | `("age" <= 18)` |
+| `~` | Like / Contains (case-insensitive) | `title ~ 'rust'` | `("title" ILIKE ('%' \|\| $1 \|\| '%'))` |
+| `!~` | Not like / Not contains | `email !~ 'spam'` | `("email" IS NULL OR "email" NOT ILIKE ('%' \|\| $1 \|\| '%'))` |
+| `&&` / `&` | Logical AND | `status = 'active' && views > 0` | `(("status" = $1) AND ("views" > 0))` |
+| `\|\|` / `\|` | Logical OR | `role = 'admin' \|\| role = 'editor'` | `(("role" = $1) OR ("role" = $2))` |
+| `(...)` | Parentheses grouping | `(a = 1 \|\| b = 2) && c = 3` | `((("a" = 1) OR ("b" = 2)) AND ("c" = 3))` |
+| `= null` | IS NULL check | `deleted_at = null` | `("deleted_at" IS NULL)` |
+| `!= null` | IS NOT NULL check | `avatar != null` | `("avatar" IS NOT NULL)` |
+
+### Literal Types & Escaping
+
+- **Strings**: `'single-quoted'` or `"double-quoted"` (supports `\'` and `\"` escaping).
+- **Numbers**: Integers (`42`), decimals (`3.14`), and signed values (`-5`, `+10`).
+- **Booleans**: `true`, `false`, `TRUE`, `FALSE` (compiled to SQL `TRUE` / `FALSE`).
+- **Null**: `null`, `NULL` (translated to `IS NULL` / `IS NOT NULL`).
+- **Dates & Times**: RFC-3339 strings, e.g. `'2024-01-01'` or `'2024-01-01T12:00:00Z'`.
+
+### Context Macros
+
+- `@request.auth.<field>` — Dynamically resolved from the authenticated record's JWT claims (e.g. `@request.auth.id`, `@request.auth.email`).
+- `@request.query.<param>` — Dynamically resolved from URL query parameters (e.g. `@request.query.search`).
+
+### Security & Access Control Interaction
+
+The client filter works alongside the collection's access control (`list_rule`):
+- **Non-Admin (Public / Authenticated)**: If the collection has a `list_rule`, Crabbase automatically combines them safely as `({list_rule}) && ({client_filter})`. The client cannot bypass or weaken the server security rules. If `list_rule` is `None` (Admin-only), non-admin requests receive `403 Forbidden`.
+- **Superuser (Admin)**: Superusers bypass the collection's `list_rule`, and the client `filter` expression is applied directly.
+
+### Client Library / JavaScript Usage
+
+```javascript
+// Fetch filtered records with JavaScript / TypeScript fetch
+async function fetchProducts({ search = '', minPrice = 0, page = 1 } = {}) {
+  const filters = [];
+  if (search) filters.push(`title ~ '${search.replace(/'/g, "\\'")}'`);
+  if (minPrice > 0) filters.push(`price >= ${minPrice}`);
+
+  const params = new URLSearchParams({
+    page: page.toString(),
+    per_page: '20',
+  });
+
+  if (filters.length > 0) {
+    params.set('filter', filters.join(' && '));
+  }
+
+  const res = await fetch(`http://localhost:8989/api/collections/products/records?${params.toString()}`);
+  return res.json();
+}
+```
+
+### Searching & Filtering in the Admin Dashboard
+
+In the Crabbase Admin Dashboard (`crabbase admin`):
+1. Navigate to any collection.
+2. In the top search bar (`Filter records (e.g. status = 'active' || title ~ 'john')...`), type any valid filter query.
+3. The UI automatically debounces input by 350ms (or applies instantly when pressing `Enter`).
+4. When a filter is active, clicking the `✕` icon clears the filter and restores all records.
+5. If a filter expression has syntax errors, an inline error notification is displayed with the exact compiler error.
 
 ## Relations
 
@@ -174,7 +286,7 @@ Each collection stores rule strings — `list_rule`, `view_rule`, `create_rule`,
 
 Supported syntax:
 
-- Operators: `= != < > <= >= ~` (`~` is SQL `LIKE`)
+- Operators: `= != < > <= >= ~ !~` (`~` is SQL `LIKE` / `ILIKE`, `!~` is `NOT LIKE`)
 - Boolean combinators: `&&` and `||`, grouping with parentheses
 - Literals: quoted strings, numbers, `true`/`false`, `null`
 - Context variables:
