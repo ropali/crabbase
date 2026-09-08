@@ -220,6 +220,7 @@ impl ApiClient {
         collection_name: &str,
         page: Option<usize>,
         per_page: Option<usize>,
+        filter: Option<&str>,
     ) -> Result<RecordsResponse, gloo_net::Error> {
         let mut url = format!("/collections/{}/records", collection_name);
         let mut query = Vec::new();
@@ -228,6 +229,13 @@ impl ApiClient {
         }
         if let Some(pp) = per_page {
             query.push(format!("per_page={}", pp));
+        }
+        if let Some(f) = filter {
+            let trimmed = f.trim();
+            if !trimmed.is_empty() {
+                let encoded: String = js_sys::encode_uri_component(trimmed).into();
+                query.push(format!("filter={}", encoded));
+            }
         }
         if !query.is_empty() {
             url = format!("{}?{}", url, query.join("&"));

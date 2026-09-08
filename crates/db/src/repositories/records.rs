@@ -63,9 +63,9 @@ impl RecordsRepository {
             }
         };
 
-        let mut base_query = format!("SELECT * FROM {}", collection);
-        let mut count_base_query = format!("SELECT COUNT(id) FROM {}", collection);
-        let bindings: Vec<String> = vec![];
+        let mut base_query = format!("SELECT * FROM {}", quote_ident(collection));
+        let mut count_base_query = format!("SELECT COUNT(id) FROM {}", quote_ident(collection));
+        let mut bindings: Vec<String> = vec![];
 
         if let Some(rule_expr) = effective_rule {
             let tokens = tokenize(&rule_expr);
@@ -88,6 +88,7 @@ impl RecordsRepository {
 
             base_query.push_str(&format!(" WHERE {}", sql_clause));
             count_base_query.push_str(&format!(" WHERE {}", sql_clause));
+            bindings = compiler.bindings;
         }
 
         let limit_idx = bindings.len() + 1;
@@ -99,8 +100,8 @@ impl RecordsRepository {
         let mut query = sqlx::query(&base_query);
         let mut count_query = sqlx::query_scalar(&count_base_query);
 
-        for bind_val in bindings {
-            query = query.bind(bind_val.clone());
+        for bind_val in &bindings {
+            query = query.bind(bind_val);
             count_query = count_query.bind(bind_val);
         }
 
@@ -475,7 +476,7 @@ mod tests {
         data.insert("views".to_string(), Value::Number(1.into()));
         let create_req = CreateRecordRequest { data: data.clone() };
         let created = repo
-            .create_record("articles".to_string(), create_req)
+            .create_record("articles".to_string(), create_req, SqlContext::default())
             .await
             .unwrap();
         assert_eq!(
@@ -507,7 +508,7 @@ mod tests {
         data.insert("title".to_string(), Value::String("hello".to_string()));
         let create_req = CreateRecordRequest { data: data.clone() };
         let created = repo
-            .create_record("items".to_string(), create_req)
+            .create_record("items".to_string(), create_req, SqlContext::default())
             .await
             .unwrap();
 
@@ -541,7 +542,7 @@ mod tests {
         data.insert("title".to_string(), Value::String("hello".to_string()));
         let create_req = CreateRecordRequest { data: data.clone() };
         let created = repo
-            .create_record("items".to_string(), create_req)
+            .create_record("items".to_string(), create_req, SqlContext::default())
             .await
             .unwrap();
 
@@ -599,7 +600,7 @@ mod tests {
         );
         let create_req = CreateRecordRequest { data };
         let created = repo
-            .create_record("users".to_string(), create_req)
+            .create_record("users".to_string(), create_req, SqlContext::default())
             .await
             .unwrap();
 
@@ -686,13 +687,24 @@ mod tests {
         };
         col_repo.create(create_col).await.unwrap();
 
+        col_repo
+            .update(
+                "blogs".to_string(),
+                crabbase_core::models::UpdateCollectionRequest {
+                    list_rule: Some("".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+
         let repo = RecordsRepository::new(pool.clone());
         for i in 0..3 {
             let mut data = Map::new();
             data.insert("title".to_string(), Value::String(format!("t{}", i)));
             data.insert("views".to_string(), Value::Number((i as i64).into()));
             let create_req = CreateRecordRequest { data };
-            repo.create_record("blogs".to_string(), create_req)
+            repo.create_record("blogs".to_string(), create_req, SqlContext::default())
                 .await
                 .unwrap();
         }
@@ -700,11 +712,14 @@ mod tests {
         let listed = repo
             .list(
                 "blogs",
-                1,
-                10,
-                crabbase_core::rules::compiler::SqlContext {
-                    auth: None,
-                    query: std::collections::HashMap::new(),
+                SqlContext::default(),
+                PaginationParams {
+                    page: Some(1),
+                    per_page: Some(10),
+                    filter: None,
+                    sort: None,
+                    expand: None,
+                    fields: None,
                 },
             )
             .await
@@ -735,7 +750,7 @@ mod tests {
         data.insert("title".to_string(), Value::String("bye".to_string()));
         let create_req = CreateRecordRequest { data };
         let created = repo
-            .create_record("trash".to_string(), create_req)
+            .create_record("trash".to_string(), create_req, SqlContext::default())
             .await
             .unwrap();
 

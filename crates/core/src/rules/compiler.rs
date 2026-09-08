@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::rules::parser::Expr;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SqlContext {
     pub auth: Option<serde_json::Value>, // Maps "@request.auth.*" dynamically (JSON Object)
     pub query: HashMap<String, String>,  // Maps "@request.query.x" etc

@@ -320,8 +320,6 @@ async fn test_filter_parameter_evaluates_where_clause() {
     let body = expect(res, StatusCode::OK).await;
     let items = body["items"].as_array().expect("items");
 
-    // FAIL REASON IF NOT IMPLEMENTED: `?filter` is currently ignored by PaginationParams and repository,
-    // returning all 2 records instead of only the 1 record where views > 50.
     assert_eq!(
         items.len(),
         1,
@@ -329,6 +327,47 @@ async fn test_filter_parameter_evaluates_where_clause() {
         items.len()
     );
     assert_eq!(items[0]["data"]["title"], "Published");
+}
+
+#[tokio::test]
+async fn test_filter_parameter_string_comparison_and_substring() {
+    let (app, token) = setup().await;
+    setup_posts(&app, &token).await;
+
+    create_record_api(
+        &app,
+        "posts",
+        json!({ "title": "Rust Programming", "views": 100 }),
+    )
+    .await;
+    create_record_api(&app, "posts", json!({ "title": "Go Guide", "views": 200 })).await;
+
+    // String equality filter
+    let res = app
+        .get("/api/collections/posts/records?filter=title = 'Rust Programming'")
+        .await;
+    let body = expect(res, StatusCode::OK).await;
+    let items = body["items"].as_array().expect("items");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["data"]["title"], "Rust Programming");
+
+    // Substring ILIKE search filter
+    let res_like = app
+        .get("/api/collections/posts/records?filter=title ~ 'guide'")
+        .await;
+    let body_like = expect(res_like, StatusCode::OK).await;
+    let items_like = body_like["items"].as_array().expect("items");
+    assert_eq!(items_like.len(), 1);
+    assert_eq!(items_like[0]["data"]["title"], "Go Guide");
+
+    // Superuser filter
+    let res_admin = app
+        .get_auth("/api/collections/posts/records?filter=views >= 200", &token)
+        .await;
+    let body_admin = expect(res_admin, StatusCode::OK).await;
+    let items_admin = body_admin["items"].as_array().expect("items");
+    assert_eq!(items_admin.len(), 1);
+    assert_eq!(items_admin[0]["data"]["title"], "Go Guide");
 }
 
 /// [MVP GAP / Phase 1.2]: `?sort` query parameter.

@@ -192,6 +192,16 @@ pub fn data_table(props: &DataTableProps) -> Html {
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-outline-variant">
+                        if props.data.is_empty() {
+                            <tr>
+                                <td colspan={(props.columns.len() + if props.selectable { 1 } else { 0 }).to_string()} class="text-center py-16 text-on-surface-variant/60 font-body-sm">
+                                    <div class="flex flex-col items-center justify-center gap-2">
+                                        <span class="material-symbols-outlined text-3xl opacity-40">{"search_off"}</span>
+                                        <span>{"No records found"}</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
                         { for props.data.iter().map(|row| {
                             let row_clone = row.clone();
                             let onclick = on_row_click.clone().map(|cb| {
