@@ -370,11 +370,8 @@ async fn test_filter_parameter_string_comparison_and_substring() {
     assert_eq!(items_admin[0]["data"]["title"], "Go Guide");
 }
 
-/// [MVP GAP / Phase 1.2]: `?sort` query parameter.
 /// Records list MUST sort results according to the sort expression.
 /// E.g. `?sort=-views` sorts descending (highest views first).
-///
-/// Ref: MVP_ROADMAP.md §1.2 / §Phase 1.2
 #[tokio::test]
 async fn test_sort_parameter_orders_results() {
     let (app, token) = setup().await;

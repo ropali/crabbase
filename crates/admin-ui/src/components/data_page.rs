@@ -67,6 +67,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
     let err_state = use_state(|| None::<String>);
 
     let filter_query = use_state(String::new);
+    let sort_query = use_state(|| None::<String>);
     let current_page = use_state(|| 1usize);
     let total_items = use_state(|| 0usize);
     let items_per_page = use_state(|| 30usize);
@@ -74,10 +75,11 @@ pub fn data_page(props: &DataPageProps) -> Html {
     let selected_rows_ids = use_state(std::collections::HashSet::<String>::new);
     let refresh_trigger = use_state(|| 0usize);
 
-    // Reset current page, filter query and selected records when the collection changes
+    // Reset current page, filter query, sort query and selected records when the collection changes
     {
         let current_page = current_page.clone();
         let filter_query = filter_query.clone();
+        let sort_query = sort_query.clone();
         let selected_rows_ids = selected_rows_ids.clone();
         let is_edit_drawer_open = is_edit_drawer_open.clone();
         let selected_record = selected_record.clone();
@@ -90,6 +92,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
         use_effect_with(col_name, move |_| {
             current_page.set(1);
             filter_query.set(String::new());
+            sort_query.set(None);
             err_state.set(None);
             selected_rows_ids.set(std::collections::HashSet::new());
             is_edit_drawer_open.set(false);
@@ -99,7 +102,7 @@ pub fn data_page(props: &DataPageProps) -> Html {
         });
     }
 
-    // Fetch records when collection, page, filter, or refresh trigger changes
+    // Fetch records when collection, page, filter, sort, or refresh trigger changes
     {
         let records = records.clone();
         let err = err_state.clone();
@@ -110,10 +113,17 @@ pub fn data_page(props: &DataPageProps) -> Html {
         let page_val = *current_page;
         let refresh_trigger_val = *refresh_trigger;
         let filter_val = (*filter_query).clone();
+        let sort_val = (*sort_query).clone();
 
         use_effect_with(
-            (col_name, page_val, refresh_trigger_val, filter_val),
-            move |(current_col_name, page, _, filter_str)| {
+            (
+                col_name,
+                page_val,
+                refresh_trigger_val,
+                filter_val,
+                sort_val,
+            ),
+            move |(current_col_name, page, _, filter_str, sort_str_opt)| {
                 let records = records.clone();
                 let total_items = total_items.clone();
                 let items_per_page = items_per_page.clone();
@@ -125,13 +135,20 @@ pub fn data_page(props: &DataPageProps) -> Html {
                 } else {
                     Some(filter_str.clone())
                 };
+                let sort_opt = sort_str_opt.clone();
 
                 if let Some(col_name) = current_col_name {
                     let col_name = col_name.clone();
                     wasm_bindgen_futures::spawn_local(async move {
                         let client = ApiClient::default();
                         match client
-                            .get_records(&col_name, Some(page), Some(30), filter_opt.as_deref())
+                            .get_records(
+                                &col_name,
+                                Some(page),
+                                Some(30),
+                                filter_opt.as_deref(),
+                                sort_opt.as_deref(),
+                            )
                             .await
                         {
                             Ok(res) => {
@@ -206,6 +223,26 @@ pub fn data_page(props: &DataPageProps) -> Html {
                 err_state.set(None);
                 filter_query.set(trimmed);
             }
+        })
+    };
+
+    let on_sort = {
+        let sort_query = sort_query.clone();
+        let current_page = current_page.clone();
+        let err_state = err_state.clone();
+        Callback::from(move |key: String| {
+            let asc_key = format!("+{}", key);
+            let desc_key = format!("-{}", key);
+
+            let next_sort = match sort_query.as_deref() {
+                Some(current) if current == asc_key => Some(desc_key),
+                Some(current) if current == desc_key => None,
+                _ => Some(asc_key),
+            };
+
+            current_page.set(1);
+            err_state.set(None);
+            sort_query.set(next_sort);
         })
     };
 
@@ -452,12 +489,51 @@ pub fn data_page(props: &DataPageProps) -> Html {
                                     html! {}
                                 }
                             }
+                            {
+                                if let Some(sort_str) = &*sort_query {
+                                    let is_desc = sort_str.starts_with('-');
+                                    let field_name = sort_str.trim_start_matches(|c| c == '+' || c == '-');
+                                    let order_label = if is_desc { "descending" } else { "ascending" };
+                                    let reset_sort = {
+                                        let sort_query = sort_query.clone();
+                                        let current_page = current_page.clone();
+                                        Callback::from(move |_| {
+                                            current_page.set(1);
+                                            sort_query.set(None);
+                                        })
+                                    };
+                                    html! {
+                                        <div class="mx-6 mb-3 flex items-center justify-between px-3 py-1.5 bg-surface-container-high/60 border border-outline-variant/40 rounded-lg text-label-xs font-label-xs text-on-surface-variant animate-fade-in">
+                                            <div class="flex items-center gap-2">
+                                                <span class="material-symbols-outlined text-sm text-primary">{"swap_vert"}</span>
+                                                <span>
+                                                    {"Sorted by "}
+                                                    <span class="font-bold text-on-surface font-mono">{ field_name }</span>
+                                                    <span class="opacity-75">{ format!(" ({})", order_label) }</span>
+                                                </span>
+                                            </div>
+                                            <button
+                                                onclick={reset_sort}
+                                                title="Reset sorting"
+                                                class="flex items-center gap-1 px-2 py-0.5 rounded hover:bg-surface-container-highest text-on-surface-variant hover:text-on-surface transition-colors cursor-pointer"
+                                            >
+                                                <span class="material-symbols-outlined text-xs">{"close"}</span>
+                                                <span>{"Reset sort"}</span>
+                                            </button>
+                                        </div>
+                                    }
+                                } else {
+                                    html! {}
+                                }
+                            }
                             <div class="flex-1 flex flex-col min-h-0 px-6 pb-6">
                                 <DataTable
                                     columns={columns}
                                     data={(*records).clone()}
                                     selectable={true}
                                     on_row_click={on_row_click}
+                                    current_sort={(*sort_query).clone()}
+                                    on_sort={on_sort}
                                     current_page={*current_page}
                                     total_items={*total_items}
                                     items_per_page={*items_per_page}

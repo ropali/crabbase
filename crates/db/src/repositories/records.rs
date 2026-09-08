@@ -1,5 +1,6 @@
 use serde_json::Value;
 use sqlx::{Pool, Postgres, Row};
+use tracing::info;
 
 use crate::repositories::collections::CollectionRepository;
 use crabbase_core::{
@@ -36,15 +37,23 @@ impl RecordsRepository {
         let page = params.page.unwrap_or(1);
         let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
 
+        let (order, key) = params
+            .sort
+            .as_deref()
+            .filter(|word| !word.is_empty())
+            .map(|word| {
+                let mut chars = word.chars();
+                let first = chars.next().unwrap_or_default().to_string();
+                let rest = chars.as_str().to_string();
+                (first, rest)
+            })
+            .unwrap_or_else(|| ("".to_string(), "".to_string()));
+
         let col = CollectionRepository::new(self.db.clone())
             .get_by_name(collection)
             .await?;
 
-        let client_filter = params
-            .filter
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
+        let client_filter = params.filter.as_deref().filter(|s| !s.is_empty());
 
         let effective_rule: Option<String> = if is_admin {
             client_filter.map(|f| f.to_string())
@@ -89,6 +98,12 @@ impl RecordsRepository {
             base_query.push_str(&format!(" WHERE {}", sql_clause));
             count_base_query.push_str(&format!(" WHERE {}", sql_clause));
             bindings = compiler.bindings;
+        }
+
+        if !order.is_empty() && !key.is_empty() {
+            let order_dir = if order == "-" { "DESC" } else { "ASC" };
+
+            base_query.push_str(&format!(" ORDER BY {} {}", quote_ident(&key), order_dir));
         }
 
         let limit_idx = bindings.len() + 1;

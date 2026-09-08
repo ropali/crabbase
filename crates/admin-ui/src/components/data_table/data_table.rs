@@ -36,6 +36,8 @@ pub struct DataTableProps {
     #[prop_or_default]
     pub on_row_click: Option<Callback<DynamicRow>>,
     #[prop_or_default]
+    pub current_sort: Option<String>,
+    #[prop_or_default]
     pub on_sort: Option<Callback<String>>,
 
     #[prop_or_default]
@@ -170,21 +172,52 @@ pub fn data_table(props: &DataTableProps) -> Html {
                             { for props.columns.iter().map(|col| {
                                 let on_sort = props.on_sort.clone();
                                 let key = col.key.clone();
-                                let onclick = if col.sortable {
+                                let is_sortable = col.sortable;
+                                let onclick = if is_sortable {
                                     on_sort.map(|cb| Callback::from(move |_| cb.emit(key.clone())))
                                 } else {
                                     None
                                 };
+
+                                let asc_key = format!("+{}", col.key);
+                                let desc_key = format!("-{}", col.key);
+
+                                let is_asc = props.current_sort.as_deref() == Some(&asc_key);
+                                let is_desc = props.current_sort.as_deref() == Some(&desc_key);
+                                let is_active = is_asc || is_desc;
+
+                                let th_class = if is_sortable {
+                                    "px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase tracking-wider cursor-pointer select-none group/th hover:bg-surface-container transition-colors"
+                                } else {
+                                    "px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase tracking-wider"
+                                };
+
+                                let text_color_class = if is_active {
+                                    "text-primary font-bold"
+                                } else {
+                                    "text-on-surface-variant"
+                                };
+
                                 html! {
                                     <th
-                                        class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider cursor-pointer"
+                                        class={format!("{} {}", th_class, text_color_class)}
                                         onclick={onclick}
+                                        title={if is_sortable { format!("Sort by {}", col.header) } else { col.header.clone() }}
                                     >
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex items-center gap-1.5">
                                             if let Some(icon) = col.icon {
-                                                <span class="material-symbols-outlined text-sm">{ icon }</span>
+                                                <span class={format!("material-symbols-outlined text-sm {}", if is_active { "text-primary" } else { "opacity-70" })}>{ icon }</span>
                                             }
-                                            { &col.header }
+                                            <span>{ &col.header }</span>
+                                            if is_sortable {
+                                                if is_asc {
+                                                    <span class="material-symbols-outlined text-xs text-primary font-bold animate-fade-in">{"arrow_upward"}</span>
+                                                } else if is_desc {
+                                                    <span class="material-symbols-outlined text-xs text-primary font-bold animate-fade-in">{"arrow_downward"}</span>
+                                                } else {
+                                                    <span class="material-symbols-outlined text-xs text-on-surface-variant/30 opacity-0 group-hover/th:opacity-100 transition-opacity">{"unfold_more"}</span>
+                                                }
+                                            }
                                         </div>
                                     </th>
                                 }

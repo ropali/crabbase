@@ -66,6 +66,7 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
         if let Some(ic) = icon {
             col_def = col_def.icon(ic);
         }
+        col_def = col_def.sortable();
         cols.push(col_def);
     }
 
