@@ -477,6 +477,24 @@
               "minimum": 1,
               "maximum": 100
             }
+          },
+          {
+            "name": "filter",
+            "in": "query",
+            "description": "Filter expression (e.g. status='active' && price < 100)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "description": "Comma-separated relation field names to expand inline (e.g. author,category)",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -818,6 +836,15 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expand",
+            "in": "query",
+            "description": "Comma-separated relation field names to expand inline (e.g. author,category)",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -1474,6 +1501,11 @@
           "updated": {
             "type": "string",
             "description": "Record last update timestamp"
+          },
+          "expand": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Expanded relation records keyed by relation field name"
           }
         }
       },

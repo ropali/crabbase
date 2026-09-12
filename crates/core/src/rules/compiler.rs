@@ -22,6 +22,7 @@ impl SqlContext {
 pub struct RulesSqlCompiler {
     context: SqlContext,
     pub bindings: Vec<String>,
+    pub binding_offset: usize,
 }
 
 impl RulesSqlCompiler {
@@ -29,6 +30,15 @@ impl RulesSqlCompiler {
         Self {
             context,
             bindings: Vec::new(),
+            binding_offset: 0,
+        }
+    }
+
+    pub fn with_offset(context: SqlContext, binding_offset: usize) -> Self {
+        Self {
+            context,
+            bindings: Vec::new(),
+            binding_offset,
         }
     }
 

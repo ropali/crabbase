@@ -40,9 +40,15 @@ async fn list_records(
 
 async fn get_record(
     Path((name, id)): Path<(String, String)>,
+    Query(params): Query<PaginationParams>,
     state: axum::extract::State<AppState>,
+    RequestContext(sql_context): RequestContext,
 ) -> Result<Json<Record>, APIError> {
-    match state.records_repo().get_record(&name, &id).await {
+    match state
+        .records_repo()
+        .get_record(&name, &id, params.expand.as_deref(), &sql_context)
+        .await
+    {
         Ok(res) => Ok(Json(res)),
         Err(err) => Err(err.into()),
     }
@@ -67,9 +73,14 @@ async fn create_record(
 async fn update_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
+    RequestContext(sql_context): RequestContext,
     Json(body): Json<UpdateRecordRequest>,
 ) -> Result<Json<Record>, APIError> {
-    match state.records_repo().update_record(&name, &id, body).await {
+    match state
+        .records_repo()
+        .update_record(&name, &id, body, &sql_context)
+        .await
+    {
         Ok(r) => Ok(Json(r)),
         Err(err) => Err(err.into()),
     }

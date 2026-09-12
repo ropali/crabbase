@@ -12,6 +12,9 @@ pub type OptionalData = serde_json::Map<String, Value>;
 pub struct Record {
     pub id: String,
     pub data: RecordData,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expand: Option<serde_json::Map<String, Value>>,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
 }
@@ -44,6 +47,7 @@ impl Record {
             data,
             created: row.try_get("created")?,
             updated: row.try_get("updated")?,
+            expand: None,
         })
     }
 

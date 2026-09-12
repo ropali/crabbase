@@ -1,6 +1,6 @@
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/crabbase
 
-.PHONY: validate run release build test test-unit test-db test-integration test-matrix watch serve admin
+.PHONY: validate run release build test test-unit test-db test-integration test-matrix test-raw test-raw-unit test-raw-integration cargo-test watch serve admin
 
 validate:
 	cargo check
@@ -24,6 +24,10 @@ release:
 
 build:
 	cargo build
+
+# ==============================================================================
+# 🦀 FORMATTED TEST RUNNER & FEATURE MATRIX (Human-Readable Output)
+# ==============================================================================
 
 # Run unit tests (instant, in-memory, no database required)
 test-unit:
@@ -59,7 +63,11 @@ test-matrix:
 		DATABASE_URL="$(DATABASE_URL)" ./scripts/run_tests.sh matrix; \
 	fi
 
-# General test runner (all tests formatted beautifully)
+# General formatted test runner
+# Usage:
+#   make test
+#   make test suite=records
+#   make test suite=rules
 test:
 	@if [ -n "$(crate)" ] || [ -n "$(suite)" ]; then \
 		TARGET="$(crate)$(suite)"; \
@@ -67,6 +75,54 @@ test:
 	else \
 		DATABASE_URL="$(DATABASE_URL)" ./scripts/run_tests.sh all; \
 	fi
+
+# ==============================================================================
+# 🔍 RAW CARGO TEST RUNNERS (Full Rust assertion failures, left/right diffs & backtraces)
+# ==============================================================================
+
+# Run raw unit tests directly via cargo test
+# Usage:
+#   make test-raw-unit
+#   make test-raw-unit test=test_compile_logical_expressions
+test-raw-unit:
+	RUST_BACKTRACE=1 cargo test -p crabbase_core $(if $(test),-- $(test),-- --nocapture)
+
+# Run raw HTTP API integration tests directly via cargo test
+# Usage:
+#   make test-raw-integration
+#   make test-raw-integration suite=access_rules_test
+#   make test-raw-integration suite=records_api_test test=test_update_record_returns_full_record_json
+#   make test-raw-integration test=test_list_rule_null_requires_admin
+test-raw-integration:
+	@if [ -n "$(suite)" ]; then \
+		RUST_BACKTRACE=1 TEST_DATABASE_URL="$(TEST_DATABASE_URL)" cargo test -p crabbase_api --test $(suite) $(if $(test),-- $(test),-- --nocapture); \
+	elif [ -n "$(test)" ]; then \
+		RUST_BACKTRACE=1 TEST_DATABASE_URL="$(TEST_DATABASE_URL)" cargo test -p crabbase_api --tests --no-fail-fast -- $(test) --nocapture; \
+	else \
+		RUST_BACKTRACE=1 TEST_DATABASE_URL="$(TEST_DATABASE_URL)" cargo test -p crabbase_api --tests --no-fail-fast -- --nocapture; \
+	fi
+
+# Run raw workspace tests with full Rust panic messages & backtraces
+# Usage:
+#   make test-raw
+#   make test-raw test=test_name
+#   make test-raw crate=crabbase_core
+#   make test-raw crate=crabbase_db
+#   make test-raw crate=crabbase_auth
+#   make test-raw suite=access_rules_test
+test-raw:
+	@if [ -n "$(crate)" ]; then \
+		RUST_BACKTRACE=1 DATABASE_URL="$(DATABASE_URL)" cargo test -p $(crate) $(if $(test),-- $(test),-- --nocapture); \
+	elif [ -n "$(suite)" ]; then \
+		RUST_BACKTRACE=1 DATABASE_URL="$(DATABASE_URL)" cargo test -p crabbase_api --test $(suite) $(if $(test),-- $(test),-- --nocapture); \
+	elif [ -n "$(test)" ]; then \
+		RUST_BACKTRACE=1 DATABASE_URL="$(DATABASE_URL)" cargo test --workspace --no-fail-fast -- $(test) --nocapture; \
+	else \
+		RUST_BACKTRACE=1 DATABASE_URL="$(DATABASE_URL)" cargo test --workspace --no-fail-fast -- --nocapture; \
+	fi
+
+# Alias for test-raw
+cargo-test: test-raw
 
 watch:
 	RUST_BACKTRACE=1 RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- serve --config crabbase.toml

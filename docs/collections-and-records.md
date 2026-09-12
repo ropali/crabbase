@@ -29,13 +29,13 @@ Collection management requires a **superuser** login (dashboard) or superuser JW
 | `PATCH` | `/api/collections/{name}` | superuser | Update schema / rename / set rules |
 | `DELETE` | `/api/collections/{name}` | superuser | Delete collection **and drop its table** |
 | `POST` | `/api/collections/{name}/truncate` | superuser | Delete all records |
-| `GET` | `/api/collections/{name}/records?page=1&per_page=20&filter=` | rules apply | List records (with pagination & dynamic filtering) |
+| `GET` | `/api/collections/{name}/records?page=1&per_page=20&filter=&expand=` | rules apply | List records (with pagination, dynamic filtering, & relation expansion) |
 | `POST` | `/api/collections/{name}/records` | open* | Create record |
-| `GET` | `/api/collections/{name}/records/{id}` | open* | Get record |
+| `GET` | `/api/collections/{name}/records/{id}?expand=` | rules apply* | Get record (with optional relation expansion; `view_rule` enforced) |
 | `PATCH` | `/api/collections/{name}/records/{id}` | open* | Update record |
 | `DELETE` | `/api/collections/{name}/records/{id}` | open* | Delete record |
 
-\* Record endpoints currently have no built-in permission check other than the collection's `list_rule`, which is enforced on list. See [API rules](#api-rules).
+\* Record endpoints enforce collection rules where implemented: `list_rule` is enforced on list, and `view_rule` is enforced on single-record fetch and relation expansion queries. See [API rules](#api-rules).
 
 ## Creating a collection
 
@@ -148,8 +148,14 @@ curl 'http://localhost:8989/api/collections/products/records?page=1&per_page=20'
 curl -G 'http://localhost:8989/api/collections/products/records' \
   --data-urlencode "filter=active=true && price < 1500"
 
+# List with expanded relations (no N+1 queries)
+curl 'http://localhost:8989/api/collections/books/records?expand=author'
+
 # Get one
 curl http://localhost:8989/api/collections/products/records/<id>
+
+# Get one with expanded relations
+curl 'http://localhost:8989/api/collections/books/records/<id>?expand=author'
 
 # Update
 curl -X PATCH http://localhost:8989/api/collections/products/records/<id> \
@@ -280,6 +286,166 @@ Define them at creation time; Crabbase creates a real foreign key:
 
 Store the related record's UUID in the field value. The referenced collection must exist before you can relate to it.
 
+To fetch related records inline in the same API request instead of making separate queries, use the `?expand` query parameter (see [Expanding relations (`?expand`)](#expanding-relations-expand) below).
+
+## Expanding relations (`?expand`)
+
+Crabbase supports expanding relation fields inline on both list (`GET /api/collections/{name}/records`) and single-record (`GET /api/collections/{name}/records/{id}`) endpoints, matching PocketBase's `?expand` API contract.
+
+Normally, relation fields store only the foreign-key UUID of the related record in `record.data.<field_name>`. Passing `?expand` resolves those foreign keys and embeds the full referenced record(s) inside a top-level `expand` map on each record in a single HTTP request.
+
+### Quick Examples
+
+```sh
+# Single relation expansion on list endpoint
+curl 'http://localhost:8989/api/collections/books/records?expand=author'
+
+# Multiple relation expansions (comma-separated)
+curl 'http://localhost:8989/api/collections/articles/records?expand=author,category'
+
+# Expanding a single record by ID
+curl 'http://localhost:8989/api/collections/books/records/a988d3e2-8d7b-410a-b32d-209a896d8e21?expand=author'
+
+# Combining ?filter, pagination, and ?expand
+curl -G 'http://localhost:8989/api/collections/books/records' \
+  --data-urlencode "filter=published_year >= 1950" \
+  --data-urlencode "expand=author,category" \
+  -d "page=1" -d "per_page=20"
+```
+
+### Response Payload Structure
+
+When `?expand` is specified, each expanded relation is embedded into a top-level `expand` object on the record, keyed by the relation field name:
+
+```json
+{
+  "id": "a988d3e2-8d7b-410a-b32d-209a896d8e21",
+  "data": {
+    "title": "1984",
+    "author": "7d91d79a-1153-4cf0-9ec8-6cf455bb3f91",
+    "isbn": "9780451524935"
+  },
+  "expand": {
+    "author": {
+      "id": "7d91d79a-1153-4cf0-9ec8-6cf455bb3f91",
+      "data": {
+        "name": "George Orwell",
+        "bio": "English novelist, essayist, journalist, and critic."
+      },
+      "created": "2026-09-09T14:30:00Z",
+      "updated": "2026-09-09T14:30:00Z"
+    }
+  },
+  "created": "2026-09-09T14:30:00Z",
+  "updated": "2026-09-09T14:30:00Z"
+}
+```
+
+> **Zero Payload Bloat:** When `?expand` is omitted or no relations are resolved, the `"expand"` field is completely omitted from the JSON payload (`Option::None`), keeping standard query responses lightweight.
+
+### Security, Authorization & Privacy Invariants
+
+Expanding relations across collection boundaries can easily introduce Insecure Direct Object References (IDOR) or leak hidden columns if not strictly authorized. Crabbase enforces the following security invariants at the database query level:
+
+1. **Target View Rule Enforcement**:
+   Every expand query compiles and executes the target collection's `view_rule` using the requester's authentication context (`SqlContext`):
+   - **Admin / Superuser**: Bypasses `view_rule`.
+   - **Non-Admin / Public**:
+     - If the target collection has `view_rule = null` (admin-only), non-admins cannot expand this collection. The relation is silently omitted from `record.expand`.
+     - If the target collection has a `view_rule` expression (e.g. `public = true || owner = @request.auth.id`), the rule is compiled to SQL and appended:
+       ```sql
+       SELECT * FROM "authors" WHERE id = ANY($1) AND (<target_view_rule>)
+       ```
+   - **Silent Degradation**: If an unauthenticated or non-admin user is not authorized to view a specific target record, PostgreSQL filters that record out. It is omitted from `record.expand` without failing the parent request, matching PocketBase's security model.
+
+2. **Automatic Redaction of `hidden` Fields**:
+   Before attaching target records into `record.expand`, all fields in the target collection defined with `"hidden": true` are stripped from `record.data`. Internal fields (such as email visibility flags, verification tokens, or private notes) are never leaked via relation expansion.
+
+### Performance & Database Architecture
+
+Crabbase implements relation expansion with connection-pool friendliness and zero $N+1$ query overhead:
+
+| Feature | Implementation | Benefit |
+|---|---|---|
+| **$N+1$ Query Elimination** | Uses PostgreSQL `WHERE id = ANY($1::uuid[])` batch queries | Executes **$1 + M$ queries** for $M$ relations instead of $1 + (N \times M)$ queries. |
+| **Foreign Key Deduplication** | Collects unique foreign keys across the page using `HashSet<Uuid>` | Eliminates redundant database lookups when multiple parent records share the same target (e.g. 50 articles by 2 authors queries only 2 UUIDs). |
+| **Connection Pool Safety** | Executes relation batch queries sequentially | Holds at most 1 connection at a time, avoiding pool exhaustion on servers with small pools (`max_connections = 10`). |
+| **Zero-Cost Short-Circuit** | Checks `unique_uuids.is_empty()` before dispatch | If all records have `null` or empty foreign keys for a relation, 0 database queries are executed. |
+| **Prepared Statement Plan Caching** | Uses static `WHERE id = ANY($1)` syntax | Allows PostgreSQL to reuse prepared execution plans and index scans, unlike dynamic `IN ($1, $2, ...)`. |
+| **In-Place Mutation** | Modifies records in-place (`&mut [Record]`) | Zero memory re-allocation or record cloning overhead. |
+
+### Client Integration Examples
+
+#### TypeScript / JavaScript Fetch
+
+```typescript
+interface Author {
+  id: string;
+  data: {
+    name: string;
+    bio?: string;
+  };
+  created: string;
+  updated: string;
+}
+
+interface Book {
+  id: string;
+  data: {
+    title: string;
+    author: string; // Foreign key UUID
+    isbn?: string;
+  };
+  expand?: {
+    author?: Author;
+  };
+  created: string;
+  updated: string;
+}
+
+// Fetch books with expanded author relation
+async function fetchBooks(): Promise<Book[]> {
+  const params = new URLSearchParams({
+    page: '1',
+    per_page: '20',
+    expand: 'author',
+  });
+
+  const res = await fetch(`http://localhost:8989/api/collections/books/records?${params}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch books: ${res.statusText}`);
+  }
+
+  const json = await res.json();
+  return json.items;
+}
+
+// Example usage:
+const books = await fetchBooks();
+for (const book of books) {
+  const authorName = book.expand?.author?.data.name ?? 'Unknown Author';
+  console.log(`"${book.data.title}" by ${authorName}`);
+}
+```
+
+#### Python (Requests / HTTPX)
+
+```python
+import requests
+
+# Fetch single book with author expanded
+response = requests.get(
+    "http://localhost:8989/api/collections/books/records/a988d3e2-8d7b-410a-b32d-209a896d8e21",
+    params={"expand": "author"}
+)
+response.raise_for_status()
+book = response.json()
+
+title = book["data"]["title"]
+author_name = book.get("expand", {}).get("author", {}).get("data", {}).get("name", "Unknown")
+print(f"Book: {title}, Author: {author_name}")
+```
+
 ## API rules
 
 Each collection stores rule strings — `list_rule`, `view_rule`, `create_rule`, `update_rule`, `delete_rule` — written in a PocketBase-style filter language, compiled to parameterized SQL (no string injection of user values).
@@ -310,4 +476,4 @@ curl -X PATCH http://localhost:8989/api/collections/tasks \
   -d '{ "list_rule": "owner = @request.auth.id && done = false" }'
 ```
 
-> **Current limitation:** only `list_rule` is enforced today. The other rules are stored but not yet evaluated — treat record read/create/update/delete on non-superuser collections as open until this lands.
+> **Rule Enforcement Status:** `list_rule` (enforced on `GET /records`) and `view_rule` (enforced on `GET /records/{id}` and on target collections during `?expand` relation queries) are actively evaluated. `create_rule`, `update_rule`, and `delete_rule` are stored in the schema and will be enforced in upcoming releases.

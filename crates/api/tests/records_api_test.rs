@@ -401,7 +401,6 @@ async fn test_sort_parameter_orders_results() {
 /// When a record contains a relation column pointing to another collection,
 /// `?expand=author` must populate the target record in `record.expand.author`.
 ///
-/// Ref: MVP_ROADMAP.md §1.3 / §Phase 3.2
 #[tokio::test]
 async fn test_expand_parameter_populates_related_record() {
     let (app, token) = setup().await;

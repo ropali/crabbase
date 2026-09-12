@@ -1,15 +1,19 @@
+use std::collections::{HashMap, HashSet};
+
 use serde_json::Value;
 use sqlx::{Pool, Postgres, Row};
-use tracing::info;
+use tracing::Level;
+use uuid::Uuid;
 
 use crate::repositories::collections::CollectionRepository;
 use crabbase_core::{
     errors::RepositoryError,
     models::{
-        CreateRecordRequest, PaginationParams, Record, RecordListResponse, UpdateRecordRequest,
+        Collection, Column, CreateRecordRequest, DataTypes, PaginationParams, Record,
+        RecordListResponse, UpdateRecordRequest,
     },
     rules::{
-        compiler::{self, RulesSqlCompiler, SqlContext},
+        compiler::{RulesSqlCompiler, SqlContext},
         parser::{RuleParser, tokenize},
     },
     utils::string_utils::{quote_ident, random_str},
@@ -22,9 +26,194 @@ pub struct RecordsRepository {
     db: Pool<Postgres>,
 }
 
+pub struct CompiledRule {
+    pub sql_clause: String,
+    pub bindings: Vec<String>,
+}
+
 impl RecordsRepository {
     pub fn new(db: Pool<Postgres>) -> Self {
         Self { db }
+    }
+
+    // Compiles a collection rule expression into a parameterized SQL WHERE clause.
+    /// Returns:
+    /// - `Ok(Some(clause))` if a rule expression is present and compiled.
+    /// - `Ok(None)` if the rule is empty/public or the user is an admin.
+    /// - `Err(RepositoryError::Forbidden)` if rule is None and caller is not an admin.
+    pub fn compile_rule(
+        rule: &Option<String>,
+        sql_context: &SqlContext,
+        param_offset: usize,
+    ) -> Result<Option<CompiledRule>, RepositoryError> {
+        if sql_context.is_admin() {
+            return Ok(None);
+        }
+
+        match rule {
+            None => Err(RepositoryError::Forbidden(
+                "Only admin can perform this action".to_string(),
+            )),
+            Some(r) if r.trim().is_empty() => Ok(None),
+            Some(expr) => {
+                let tokens = tokenize(expr);
+                let mut parser = RuleParser::new(tokens);
+
+                let ast = parser.parse().map_err(|e| RepositoryError::Validation {
+                    message: format!("Invalid rule expression: {}", e),
+                    field: None,
+                })?;
+
+                let mut compiler = RulesSqlCompiler::new(sql_context.clone());
+                compiler.binding_offset = param_offset;
+
+                let sql_clause =
+                    compiler
+                        .compile(&ast)
+                        .map_err(|e| RepositoryError::Validation {
+                            message: format!("Failed to compile rule: {}", e),
+                            field: None,
+                        })?;
+
+                Ok(Some(CompiledRule {
+                    sql_clause,
+                    bindings: compiler.bindings,
+                }))
+            }
+        }
+    }
+    /// Batch-expands relation columns in-place across a slice of records,
+    /// strictly enforcing target collection view rules and redacting hidden fields.
+    pub async fn expand_records(
+        &self,
+        records: &mut [Record],
+        collection: &Collection,
+        expand_param: Option<&str>,
+        sql_context: &SqlContext,
+    ) -> Result<(), RepositoryError> {
+        let Some(expand_str) = expand_param.map(str::trim).filter(|s| !s.is_empty()) else {
+            return Ok(());
+        };
+
+        if records.is_empty() {
+            return Ok(());
+        }
+
+        let is_admin = sql_context.is_admin();
+        let col_repo = CollectionRepository::new(self.db.clone());
+
+        //1. parse and deduplicate request field names (?expand=author,category)
+        let requested_fields: HashSet<&str> = expand_str
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        // 2. Identify relation columns in parent collection
+        let relation_columns: Vec<&Column> = requested_fields
+            .into_iter()
+            .filter_map(|field_name| {
+                collection
+                    .fields
+                    .iter()
+                    .find(|col| col.name == field_name && col.data_type == DataTypes::Relation)
+            })
+            .collect();
+
+        // 3. identify each relation sequanetially
+        for col in relation_columns {
+            let Some(target_table) = col.related_to.as_deref().filter(|s| !s.is_empty()) else {
+                continue;
+            };
+
+            // Fetch target collection schema to verify existence & read view_rule / hidden flags
+            let target_col = match col_repo.get_by_name(target_table).await {
+                Ok(c) => c,
+                Err(e) => return Err(e),
+            };
+
+            // Collect unique foreign key UUIDs across all records on this page
+            let mut unique_uuids: HashSet<Uuid> = HashSet::new();
+
+            for record in records.iter() {
+                if let Some(val) = record.data.get(&col.name) {
+                    if let Some(id_str) = val.as_str() {
+                        if let Ok(parsed_uuid) = Uuid::parse_str(id_str) {
+                            unique_uuids.insert(parsed_uuid);
+                        }
+                    }
+                }
+            }
+
+            // Short-circuit: if no records have foreign keys, skip DB round-trip
+            if unique_uuids.is_empty() {
+                continue;
+            }
+
+            let uuid_list: Vec<Uuid> = unique_uuids.into_iter().collect();
+
+            // Build base query: WHERE id = ANY($1)
+            let mut sql = format!(
+                "SELECT * FROM {} WHERE id = ANY($1)",
+                quote_ident(target_table)
+            );
+
+            // Compile target view_rule if not admin
+            let mut bindings: Vec<String> = Vec::new();
+            if !is_admin {
+                if let Some(rule_expr) = &target_col.view_rule {
+                    if !rule_expr.trim().is_empty() {
+                        if let Ok(Some(compiled)) =
+                            Self::compile_rule(&target_col.view_rule, sql_context, 1)
+                        {
+                            sql.push_str(&format!(" AND ({})", compiled.sql_clause));
+                            bindings = compiled.bindings;
+                        }
+                    }
+                }
+            }
+
+            let mut query = sqlx::query(&sql).bind(&uuid_list);
+            for b in &bindings {
+                query = query.bind(b);
+            }
+
+            let rows = query.fetch_all(&self.db).await?;
+
+            // Determine hidden columns on target collection
+            let hidden_fields: HashSet<&str> = target_col
+                .fields
+                .iter()
+                .filter(|f| f.hidden)
+                .map(|f| f.name.as_str())
+                .collect();
+
+            // Build lookup map and redact hidden fields
+            let mut lookup: HashMap<String, Record> = HashMap::with_capacity(rows.len());
+            for row in rows {
+                let mut rec = Record::from_row(&row)?;
+                if !hidden_fields.is_empty() {
+                    rec.data.retain(|k, _| !hidden_fields.contains(k.as_str()));
+                }
+                lookup.insert(rec.id.clone(), rec);
+            }
+
+            // Attach expanded record into record.expand["<col_name>"]
+            for record in records.iter_mut() {
+                if let Some(val) = record.data.get(&col.name) {
+                    if let Some(fk_str) = val.as_str() {
+                        if let Some(related_record) = lookup.get(fk_str) {
+                            let expand_obj = record.expand.get_or_insert_with(serde_json::Map::new);
+                            let serialized =
+                                serde_json::to_value(related_record).unwrap_or(Value::Null);
+                            expand_obj.insert(col.name.clone(), serialized);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn list(
@@ -86,7 +275,7 @@ impl RecordsRepository {
                 field: None,
             })?;
 
-            let mut compiler = RulesSqlCompiler::new(sql_context);
+            let mut compiler = RulesSqlCompiler::new(sql_context.clone());
 
             let sql_clause = compiler
                 .compile(&ast)
@@ -125,10 +314,14 @@ impl RecordsRepository {
         let result = query.fetch_all(&self.db).await?;
 
         let total_count: i64 = count_query.fetch_one(&self.db).await?;
-        let items = result
+        let mut items = result
             .iter()
             .filter_map(|r| Record::from_row(r).ok())
             .collect::<Vec<Record>>();
+
+        // In-place expand
+        self.expand_records(&mut items, &col, params.expand.as_deref(), &sql_context)
+            .await?;
 
         Ok(RecordListResponse {
             items,
@@ -138,28 +331,66 @@ impl RecordsRepository {
         })
     }
 
-    pub async fn get_record(&self, collection: &str, id: &str) -> Result<Record, RepositoryError> {
+    pub async fn get_record(
+        &self,
+        collection: &str,
+        id: &str,
+        expand: Option<&str>,
+        sql_context: &SqlContext,
+    ) -> Result<Record, RepositoryError> {
         let col_repo = CollectionRepository::new(self.db.clone());
 
-        let exist = col_repo.exists(collection).await;
-
-        if !exist {
-            return Err(RepositoryError::NotFound(collection.to_string()));
-        }
+        let col = col_repo.get_by_name(collection).await?;
 
         let id_uuid = uuid::Uuid::parse_str(id).ok();
 
-        let sql = format!("SELECT * FROM {collection} WHERE id = $1");
-        let query = sqlx::query(&sql);
-        let query = if let Some(uuid) = id_uuid {
-            query.bind(uuid)
+        let mut sql = format!("SELECT * FROM {} WHERE id = $1", quote_ident(collection));
+        let mut bindings: Vec<String> = Vec::new();
+
+        if !sql_context.is_admin() {
+            if let Some(ref rule_expr) = col.view_rule {
+                if !rule_expr.trim().is_empty() {
+                    if let Ok(Some(compiled)) = Self::compile_rule(&col.view_rule, sql_context, 1) {
+                        sql.push_str(&format!(" AND ({})", compiled.sql_clause));
+                        bindings = compiled.bindings;
+                    }
+                }
+            }
+        }
+
+        let mut query = sqlx::query(&sql);
+        if let Some(uuid) = id_uuid {
+            query = query.bind(uuid);
         } else {
-            query.bind(id.to_string())
+            query = query.bind(id.to_string());
         };
 
-        let row = query.fetch_one(&self.db).await?;
+        for b in &bindings {
+            query = query.bind(b)
+        }
 
-        Ok(Record::from_row(&row)?)
+        let row = query.fetch_one(&self.db).await?;
+        let mut record = Record::from_row(&row)?;
+
+        // Redact hidden fields on primary record
+        let hidden_fields: HashSet<&str> = col
+            .fields
+            .iter()
+            .filter(|f| f.hidden)
+            .map(|f| f.name.as_str())
+            .collect();
+
+        if !hidden_fields.is_empty() {
+            record
+                .data
+                .retain(|k, _| !hidden_fields.contains(k.as_str()));
+        }
+
+        // In place expand single record
+        self.expand_records(std::slice::from_mut(&mut record), &col, expand, sql_context)
+            .await?;
+
+        Ok(record)
     }
 
     pub async fn create_record(
@@ -168,7 +399,7 @@ impl RecordsRepository {
         mut body: CreateRecordRequest,
         sql_context: SqlContext,
     ) -> Result<Record, RepositoryError> {
-        let is_admin = sql_context.is_admin();
+        let _is_admin = sql_context.is_admin();
 
         let obj = &mut body.data;
 
@@ -212,9 +443,15 @@ impl RecordsRepository {
             }
         }
 
-        let columns: Vec<&String> = obj.keys().collect();
+        let is_uuid_col = |col_name: &str| -> bool {
+            col_name == "id"
+                || col
+                    .fields
+                    .iter()
+                    .any(|c| c.name == col_name && c.data_type == DataTypes::Relation)
+        };
 
-        let values: Vec<&Value> = obj.values().collect();
+        let entries: Vec<(&String, &Value)> = obj.iter().collect();
 
         let quoted_table = quote_ident(&collection);
         let mut query_builder =
@@ -223,36 +460,61 @@ impl RecordsRepository {
         // Add columns with proper sepration
         let mut separated = query_builder.separated(",");
 
-        for col in &columns {
+        for (col, _) in &entries {
             separated.push(quote_ident(col));
         }
 
         separated.push_unseparated(") VALUES (");
 
-        // Add values as bound parameters; QueryBuilder writes `?` placeholders for SQLite.
+        // Add values as bound parameters
         let mut separated_values = query_builder.separated(",");
-        for v in values {
-            match v {
-                Value::String(s) => {
-                    separated_values.push_bind(s.clone());
-                }
-                Value::Number(n) => {
-                    if let Some(i) = n.as_i64() {
-                        separated_values.push_bind(i);
-                    } else if let Some(f) = n.as_f64() {
-                        separated_values.push_bind(f);
-                    } else {
-                        separated_values.push_bind(n.to_string());
+        for (col, v) in &entries {
+            if is_uuid_col(col) {
+                match v {
+                    Value::String(s) => {
+                        let parsed =
+                            Uuid::parse_str(s).map_err(|e| RepositoryError::Validation {
+                                message: format!("invalid UUID for column '{}': {}", col, e),
+                                field: Some(col.to_string()),
+                            })?;
+                        separated_values.push_bind(parsed);
+                    }
+                    Value::Null => {
+                        separated_values.push_bind(Option::<Uuid>::None);
+                    }
+                    other => {
+                        let parsed = Uuid::parse_str(&other.to_string()).map_err(|e| {
+                            RepositoryError::Validation {
+                                message: format!("invalid UUID for column '{}': {}", col, e),
+                                field: Some(col.to_string()),
+                            }
+                        })?;
+                        separated_values.push_bind(parsed);
                     }
                 }
-                Value::Bool(b) => {
-                    separated_values.push_bind(*b);
-                }
-                Value::Null => {
-                    separated_values.push_bind(Option::<String>::None);
-                }
-                other => {
-                    separated_values.push_bind(other.to_string());
+            } else {
+                match v {
+                    Value::String(s) => {
+                        separated_values.push_bind(s.clone());
+                    }
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            separated_values.push_bind(i);
+                        } else if let Some(f) = n.as_f64() {
+                            separated_values.push_bind(f);
+                        } else {
+                            separated_values.push_bind(n.to_string());
+                        }
+                    }
+                    Value::Bool(b) => {
+                        separated_values.push_bind(*b);
+                    }
+                    Value::Null => {
+                        separated_values.push_bind(Option::<String>::None);
+                    }
+                    other => {
+                        separated_values.push_bind(other.to_string());
+                    }
                 }
             }
         }
@@ -271,6 +533,7 @@ impl RecordsRepository {
                 Ok(Record {
                     id,
                     data: body.data,
+                    expand: None,
                     created: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created")?,
                     updated: row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated")?,
                 })
@@ -287,6 +550,7 @@ impl RecordsRepository {
         collection: &str,
         id: &str,
         mut payload: UpdateRecordRequest,
+        sql_context: &SqlContext,
     ) -> Result<Record, RepositoryError> {
         let col_repo = CollectionRepository::new(self.db.clone());
 
@@ -305,7 +569,7 @@ impl RecordsRepository {
         let col = col_repo.get_by_name(&collection).await?;
 
         // Validate record existence and return NotFound before attempting update.
-        let existing_record = self.get_record(collection, id).await?;
+        let existing_record = self.get_record(collection, id, None, &sql_context).await?;
 
         if col.collection_type.eq_ignore_ascii_case("auth") {
             if let Some(serde_json::Value::String(plain_pw)) = payload.data.get("password") {
@@ -330,6 +594,14 @@ impl RecordsRepository {
         let mut query_builder =
             sqlx::QueryBuilder::<Postgres>::new(format!("UPDATE {} SET ", quoted_table));
 
+        let is_uuid_col = |col_name: &str| -> bool {
+            col_name == "id"
+                || col
+                    .fields
+                    .iter()
+                    .any(|c| c.name == col_name && c.data_type == DataTypes::Relation)
+        };
+
         let mut first = true;
         for (k, v) in &payload.data {
             if !first {
@@ -338,27 +610,52 @@ impl RecordsRepository {
             first = false;
 
             query_builder.push(quote_ident(k)).push(" = ");
-            match v {
-                Value::String(s) => {
-                    query_builder.push_bind(s.clone());
-                }
-                Value::Number(n) => {
-                    if let Some(i) = n.as_i64() {
-                        query_builder.push_bind(i);
-                    } else if let Some(f) = n.as_f64() {
-                        query_builder.push_bind(f);
-                    } else {
-                        query_builder.push_bind(n.to_string());
+            if is_uuid_col(k) {
+                match v {
+                    Value::String(s) => {
+                        let parsed =
+                            Uuid::parse_str(s).map_err(|e| RepositoryError::Validation {
+                                message: format!("invalid UUID for column '{}': {}", k, e),
+                                field: Some(k.to_string()),
+                            })?;
+                        query_builder.push_bind(parsed);
+                    }
+                    Value::Null => {
+                        query_builder.push_bind(Option::<Uuid>::None);
+                    }
+                    other => {
+                        let parsed = Uuid::parse_str(&other.to_string()).map_err(|e| {
+                            RepositoryError::Validation {
+                                message: format!("invalid UUID for column '{}': {}", k, e),
+                                field: Some(k.to_string()),
+                            }
+                        })?;
+                        query_builder.push_bind(parsed);
                     }
                 }
-                Value::Bool(b) => {
-                    query_builder.push_bind(*b);
-                }
-                Value::Null => {
-                    query_builder.push_bind(Option::<String>::None);
-                }
-                other => {
-                    query_builder.push_bind(other.to_string());
+            } else {
+                match v {
+                    Value::String(s) => {
+                        query_builder.push_bind(s.clone());
+                    }
+                    Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            query_builder.push_bind(i);
+                        } else if let Some(f) = n.as_f64() {
+                            query_builder.push_bind(f);
+                        } else {
+                            query_builder.push_bind(n.to_string());
+                        }
+                    }
+                    Value::Bool(b) => {
+                        query_builder.push_bind(*b);
+                    }
+                    Value::Null => {
+                        query_builder.push_bind(Option::<String>::None);
+                    }
+                    other => {
+                        query_builder.push_bind(other.to_string());
+                    }
                 }
             }
         }
@@ -380,7 +677,7 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(format!("record {id}")));
         }
 
-        self.get_record(collection, id).await
+        self.get_record(collection, id, None, &sql_context).await
     }
 
     pub async fn delete_record(&self, collection: &str, id: &str) -> Result<bool, RepositoryError> {

@@ -23,12 +23,14 @@ You create "collections" (real Postgres tables) through the admin dashboard or t
 - **Bring your own PostgreSQL** — the only infrastructure dependency. Works with any Postgres 14+, local or managed. All state (data, auth sessions, settings, logs) lives in your database.
 - **Dynamic collections** — create Postgres tables at runtime via admin UI or API. Schema changes (add/drop/rename/retype columns, indexes) are applied live.
 - **Instant CRUD REST API** — every collection automatically gets list/create/read/update/delete endpoints at `/api/collections/{name}/records`.
+- **Dynamic record filtering (`?filter`)** — PocketBase-compatible client filtering syntax (`status='active' && price < 100`, `title ~ 'pocket'`, etc.) compiled to parameterized SQL.
+- **Relation expansion (`?expand`)** — batch-expand foreign-key relations inline across list and single-record endpoints (e.g. `?expand=author,category`) in 1 query per relation without N+1 queries.
 - **Rich field types** — text, rich text, number, bool, email, URL, datetime, auto-datetime, JSON, select, file (path), geo point, and relations between collections.
 - **Per-collection auth** — mark a collection as an `auth` collection and its records can log in. Passwords are bcrypt-hashed and JWT secrets are generated automatically.
 - **JWT sessions with rotation** — access + refresh tokens, refresh-token rotation with reuse detection and family revocation.
 - **Password reset via email OTP** — templated emails rendered from configurable templates (`{{otp}}`, `{{link}}`, `{{app_name}}`, ...).
 - **API rules** — PocketBase-style filter rules (`owner = @request.auth.id && status = 'active'`) compiled into safe parameterized SQL.
-- **Admin dashboard** — embedded Yew/WASM SPA for managing collections, records (including user creation), schemas, API rules, settings, email templates, and logs. Runs bundled with the API or as its own process.
+- **Admin dashboard** — embedded Yew/WASM SPA for managing collections, records (including search/filtering and user creation), schemas, API rules, settings, email templates, and logs. Runs bundled with the API or as its own process.
 - **OpenAPI + Swagger UI** — machine-readable spec at `/api/openapi.json`, browsable docs at `/api/docs`.
 
 ## Architecture
@@ -178,8 +180,13 @@ curl -X POST http://localhost:8989/api/collections/products/records \
   -H 'Content-Type: application/json' \
   -d '{"data":{"title":"Widget","price":999,"active":true}}'
 
-# List records
+# List records (with pagination & filtering)
 curl 'http://localhost:8989/api/collections/products/records?page=1&per_page=20'
+curl -G 'http://localhost:8989/api/collections/products/records' \
+  --data-urlencode "filter=price < 1000 && active = true"
+
+# List records with expanded relations (no N+1 queries)
+curl 'http://localhost:8989/api/collections/books/records?expand=author'
 ```
 
 ## Documentation
@@ -187,7 +194,7 @@ curl 'http://localhost:8989/api/collections/products/records?page=1&per_page=20'
 | Doc | Contents |
 |---|---|
 | [Getting started](docs/getting-started.md) | Installation, configuration, env vars, running, Makefile targets |
-| [Collections & records](docs/collections-and-records.md) | Field types, creating/updating schemas, CRUD endpoints, API rules |
+| [Collections & records](docs/collections-and-records.md) | Field types, creating/updating schemas, CRUD endpoints, dynamic `?filter`, relation `?expand`, API rules |
 | [Authentication](docs/authentication.md) | Auth collections, login/refresh/logout, password reset, superusers |
 | [Settings & email](docs/settings-email.md) | App/mail settings, SMTP setup, email templates |
 | **Interactive API docs** | Run the server → `GET /api/docs` (Swagger UI), spec at `/api/openapi.json` |
@@ -199,7 +206,7 @@ The intended workflow requires **no custom REST code** — and for most of it, n
 1. **Model your data as collections** — in the dashboard's Create Collection drawer (or `POST /api/collections`). Relations are first-class.
 2. **Create users and seed data** — open an auth collection in the dashboard and add user records directly; passwords are hashed for you. Same for any other collection's initial data.
 3. **Consume the generated endpoints** from your frontend/mobile app:
-   - `GET/POST /api/collections/{name}/records`, `GET/PATCH/DELETE .../records/{id}`
+   - `GET/POST /api/collections/{name}/records`, `GET/PATCH/DELETE .../records/{id}` (with `?filter=...` and `?expand=...` support)
    - For auth collections: `POST /api/auth/{collection}/login`, `/auth-refresh`, `/logout`
 4. **Protect data with API rules** — set `list_rule`, etc. in the collection's edit drawer, e.g. `owner = @request.auth.id` so users only see their own rows.
 5. **Configure email** once in Settings → Mail, and password resets just work out of the box.
@@ -233,9 +240,9 @@ scripts/pg_seed.sh --table _logs --rows 500                # seed any table
 Implemented and working:
 
 - Collections (create/update/delete/truncate, live schema migration, indexes)
-- Records CRUD with pagination and `list_rule` enforcement
+- Records CRUD with pagination, client `?filter` dynamic query evaluation, batch relation expansion (`?expand`), and `list_rule` / `view_rule` enforcement
 - Auth collections, JWT login/refresh/logout, password reset with emailed OTP
-- Superusers, settings APIs, email templates, admin dashboard
+- Superusers, settings APIs, email templates, admin dashboard (with real-time records filter search)
 - Swagger UI / OpenAPI
 
 Not yet (placeholders exist in the codebase):
@@ -244,7 +251,7 @@ Not yet (placeholders exist in the codebase):
 - **Realtime** — no websockets/SSE subscriptions.
 - **Hooks** — no background triggers.
 - **Public registration / email verification endpoints** — create users by POSTing records to an auth collection; the `allowPublicUserRegistration` setting exists but is not enforced yet.
-- Only the `list_rule` is currently enforced; view/create/update/delete rules are stored but not evaluated.
+- `create_rule`, `update_rule`, and `delete_rule` are stored but not evaluated yet (`list_rule` and `view_rule` are enforced).
 
 Security notes while the project evolves:
 
