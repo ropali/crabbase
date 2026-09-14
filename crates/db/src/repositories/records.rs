@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use sqlx::{Pool, Postgres, Row};
-use tracing::Level;
+use tracing::{Level, field};
 use uuid::Uuid;
 
 use crate::repositories::collections::CollectionRepository;
@@ -226,6 +226,19 @@ impl RecordsRepository {
         let page = params.page.unwrap_or(1);
         let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
 
+        let fields: HashSet<&str> = params
+            .fields
+            .as_deref()
+            .map(|f| {
+                f.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .collect::<HashSet<&str>>()
+            })
+            .unwrap_or_default();
+
+        let mut sql_columns: Vec<&str> = fields.into_iter().collect();
+
         let (order, key) = params
             .sort
             .as_deref()
@@ -261,7 +274,22 @@ impl RecordsRepository {
             }
         };
 
-        let mut base_query = format!("SELECT * FROM {}", quote_ident(collection));
+        let select_sql_fields = if !sql_columns.is_empty() {
+            sql_columns.sort();
+            sql_columns
+                .iter()
+                .map(|f| quote_ident(f))
+                .collect::<Vec<String>>()
+                .join(",")
+        } else {
+            "*".to_string()
+        };
+
+        let mut base_query = format!(
+            "SELECT {} FROM {}",
+            select_sql_fields,
+            quote_ident(collection)
+        );
         let mut count_base_query = format!("SELECT COUNT(id) FROM {}", quote_ident(collection));
         let mut bindings: Vec<String> = vec![];
 

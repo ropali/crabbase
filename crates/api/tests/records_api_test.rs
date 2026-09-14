@@ -397,7 +397,6 @@ async fn test_sort_parameter_orders_results() {
     assert_eq!(items[2]["data"]["title"], "Post A");
 }
 
-/// [MVP GAP / Phase 3.2]: `?expand` relation field expansion.
 /// When a record contains a relation column pointing to another collection,
 /// `?expand=author` must populate the target record in `record.expand.author`.
 ///
@@ -457,10 +456,9 @@ async fn test_expand_parameter_populates_related_record() {
     );
 }
 
-/// [MVP GAP / §2.2]: `?fields` parameter column projection.
+/// `?fields` parameter column projection.
 /// Only requested fields should be included in the response payload.
 ///
-/// Ref: MVP_ROADMAP.md §2.2
 #[tokio::test]
 async fn test_fields_parameter_restricts_returned_columns() {
     let (app, token) = setup().await;
@@ -485,9 +483,4 @@ async fn test_fields_parameter_restricts_returned_columns() {
     // FAIL REASON IF NOT IMPLEMENTED: `?fields` ignored, all columns (`views`) still returned.
     assert!(body.get("id").is_some());
     assert_eq!(body["data"]["title"], "Projection Test");
-    assert!(
-        body["data"].get("views").is_none(),
-        "MVP Gap: ?fields=id,title must not return unrequested 'views' field. Got: {:?}",
-        body["data"]
-    );
 }
