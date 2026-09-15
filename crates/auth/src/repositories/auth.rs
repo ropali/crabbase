@@ -137,8 +137,8 @@ impl AuthRepository {
     // Log security breach into _logs table
     pub async fn log_security_event(
         &self,
-        message: &str,
-        data: serde_json::Value,
+        _message: &str,
+        _data: serde_json::Value,
     ) -> Result<(), RepositoryError> {
         // let id = format!("log_{}", uuid::Uuid::new_v4().simple());
         // let sql = "INSERT INTO _logs (id, level, message, data) VALUES ($1, 2, $2, $3)";

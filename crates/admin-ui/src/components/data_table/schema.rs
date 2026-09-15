@@ -29,10 +29,14 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
         // Choose icon depending on data type
         let icon = match data_type.to_lowercase().as_str() {
             "email" => Some("mail"),
+            "url" => Some("link"),
             "bool" => Some("check_box"),
-            "number" => Some("tag"),
+            "number" => Some("123"),
             "relation" => Some("link"),
-            "datetime" | "autodatetime" => Some("schedule"),
+            "datetime" | "autodatetime" | "autodate" => Some("schedule"),
+            "file" => Some("attach_file"),
+            "select" => Some("list"),
+            "geopoint" => Some("location_on"),
             "json" => Some("data_object"),
             "richtext" | "editor" => Some("article"),
             _ => Some("text_fields"),
@@ -49,7 +53,7 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
                         "bool" => bool_render(cell_val, on_view),
                         "number" => default_render(cell_val, on_view),
                         "relation" => code_render(cell_val, on_view),
-                        "datetime" | "autodatetime" => date_render(cell_val, on_view),
+                        "datetime" | "autodatetime" | "autodate" => date_render(cell_val, on_view),
                         "json" => json_render(key_clone.clone(), cell_val, on_view),
                         "richtext" | "editor" => {
                             richtext_render(key_clone.clone(), cell_val, on_view)

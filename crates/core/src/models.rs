@@ -55,31 +55,24 @@ impl Record {
         if let Ok(v) = row.try_get::<i64, _>(col_name) {
             return Value::Number(Number::from(v));
         }
-
         if let Ok(v) = row.try_get::<f64, _>(col_name) {
             return serde_json::json!(v);
         }
-
         if let Ok(v) = row.try_get::<bool, _>(col_name) {
             return Value::Bool(v);
         }
-
-        if let Ok(v) = row.try_get::<String, _>(col_name) {
-            return Value::String(v);
-        }
-
         if let Ok(v) = row.try_get::<Uuid, _>(col_name) {
             return Value::String(v.to_string());
         }
-
         if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(col_name) {
             return Value::String(v.to_rfc3339());
         }
-
+        if let Ok(v) = row.try_get::<String, _>(col_name) {
+            return Value::String(v);
+        }
         if let Ok(v) = row.try_get::<serde_json::Value, _>(col_name) {
             return v;
         }
-
         Value::Null
     }
 }
@@ -90,6 +83,8 @@ pub struct RecordListResponse {
     pub total: u64,
     pub page: u64,
     pub per_page: u64,
+    #[serde(rename = "perPage")]
+    pub per_page_camel: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -289,6 +284,215 @@ where
     Err(D::Error::custom("invalid data_type format"))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateCollectionRequest {
+    pub name: String,
+    #[serde(default)]
+    pub collection_type: Option<String>,
+    pub columns: Vec<Column>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateCollectionRequest {
+    pub name: Option<String>,
+    pub columns: Option<Vec<Column>>,
+    #[serde(default)]
+    pub list_rule: Option<String>,
+    #[serde(default)]
+    pub view_rule: Option<String>,
+    #[serde(default)]
+    pub create_rule: Option<String>,
+    #[serde(default)]
+    pub update_rule: Option<String>,
+    #[serde(default)]
+    pub delete_rule: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TypedValue {
+    Text(String),
+    NumberInt(i64),
+    NumberFloat(f64),
+    Bool(bool),
+    Datetime(DateTime<Utc>),
+    Uuid(Uuid),
+    Json(serde_json::Value),
+    Null(DataTypes),
+}
+
+impl Column {
+    /// Coerces an incoming client JSON Value into a validated, typed domain value
+    /// according to this column's data type definition and constraints.
+    pub fn coerce_value(&self, val: &serde_json::Value) -> Result<TypedValue, String> {
+        if val.is_null() {
+            if self.required {
+                return Err(format!("field '{}' is required", self.name));
+            }
+            return Ok(TypedValue::Null(self.data_type.clone()));
+        }
+
+        match &self.data_type {
+            DataTypes::PlainText | DataTypes::RichText | DataTypes::File | DataTypes::Select => {
+                let s = match val {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                if let Some(min) = self.min {
+                    if s.chars().count() < min {
+                        return Err(format!(
+                            "field '{}' must be at least {} characters",
+                            self.name, min
+                        ));
+                    }
+                }
+                if let Some(max) = self.max {
+                    if s.chars().count() > max {
+                        return Err(format!(
+                            "field '{}' must not exceed {} characters",
+                            self.name, max
+                        ));
+                    }
+                }
+                if let Some(ref pat) = self.pattern {
+                    if let Ok(re) = regex::Regex::new(pat) {
+                        if !re.is_match(&s) {
+                            return Err(format!(
+                                "field '{}' does not match pattern {}",
+                                self.name, pat
+                            ));
+                        }
+                    }
+                }
+                Ok(TypedValue::Text(s))
+            }
+
+            DataTypes::Email => {
+                let s = val
+                    .as_str()
+                    .ok_or_else(|| format!("field '{}' must be a string", self.name))?;
+                if !s.contains('@') || !s.contains('.') {
+                    return Err(format!(
+                        "field '{}' must be a valid email address",
+                        self.name
+                    ));
+                }
+                Ok(TypedValue::Text(s.to_string()))
+            }
+
+            DataTypes::Url => {
+                let s = val
+                    .as_str()
+                    .ok_or_else(|| format!("field '{}' must be a string", self.name))?;
+                if !s.starts_with("http://") && !s.starts_with("https://") {
+                    return Err(format!(
+                        "field '{}' must be a valid URL starting with http:// or https://",
+                        self.name
+                    ));
+                }
+                Ok(TypedValue::Text(s.to_string()))
+            }
+
+            DataTypes::Number => {
+                let (typed, num_val) = match val {
+                    serde_json::Value::Number(n) => {
+                        if let Some(i) = n.as_i64() {
+                            (TypedValue::NumberInt(i), i as f64)
+                        } else if let Some(f) = n.as_f64() {
+                            (TypedValue::NumberFloat(f), f)
+                        } else {
+                            return Err(format!(
+                                "field '{}' contains an invalid number",
+                                self.name
+                            ));
+                        }
+                    }
+                    serde_json::Value::String(s) => {
+                        if let Ok(i) = s.parse::<i64>() {
+                            (TypedValue::NumberInt(i), i as f64)
+                        } else if let Ok(f) = s.parse::<f64>() {
+                            (TypedValue::NumberFloat(f), f)
+                        } else {
+                            return Err(format!(
+                                "field '{}' cannot be parsed as a number",
+                                self.name
+                            ));
+                        }
+                    }
+                    _ => return Err(format!("field '{}' must be a numeric value", self.name)),
+                };
+
+                if let Some(min) = self.min {
+                    if num_val < min as f64 {
+                        return Err(format!("field '{}' must be at least {}", self.name, min));
+                    }
+                }
+                if let Some(max) = self.max {
+                    if num_val > max as f64 {
+                        return Err(format!("field '{}' must not exceed {}", self.name, max));
+                    }
+                }
+
+                Ok(typed)
+            }
+
+            DataTypes::Bool => match val {
+                serde_json::Value::Bool(b) => Ok(TypedValue::Bool(*b)),
+                serde_json::Value::String(s) => match s.to_lowercase().as_str() {
+                    "true" | "1" => Ok(TypedValue::Bool(true)),
+                    "false" | "0" => Ok(TypedValue::Bool(false)),
+                    _ => Err(format!("field '{}' must be a boolean", self.name)),
+                },
+                serde_json::Value::Number(n) => Ok(TypedValue::Bool(n.as_i64().unwrap_or(0) != 0)),
+                _ => Err(format!("field '{}' must be a boolean", self.name)),
+            },
+
+            DataTypes::Datetime | DataTypes::AutoDatetime(_) => match val {
+                serde_json::Value::String(s) => DateTime::parse_from_rfc3339(s)
+                    .map(|dt| TypedValue::Datetime(dt.with_timezone(&Utc)))
+                    .or_else(|_| {
+                        chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+                            .map(|naive| TypedValue::Datetime(naive.and_utc()))
+                    })
+                    .map_err(|_| {
+                        format!("field '{}' must be a valid RFC 3339 datetime", self.name)
+                    }),
+                _ => Err(format!("field '{}' must be a datetime string", self.name)),
+            },
+
+            DataTypes::Relation => match val {
+                serde_json::Value::String(s) => Uuid::parse_str(s)
+                    .map(TypedValue::Uuid)
+                    .map_err(|_| format!("field '{}' must be a valid UUID", self.name)),
+                _ => Err(format!(
+                    "field '{}' must be a valid relation UUID",
+                    self.name
+                )),
+            },
+
+            DataTypes::Json => Ok(TypedValue::Json(val.clone())),
+
+            DataTypes::GeoPoint => match val {
+                serde_json::Value::String(s) => {
+                    // Validates format "lat,lng"
+                    let parts: Vec<&str> = s.split(',').map(str::trim).collect();
+                    if parts.len() == 2
+                        && parts[0].parse::<f64>().is_ok()
+                        && parts[1].parse::<f64>().is_ok()
+                    {
+                        Ok(TypedValue::Text(s.clone()))
+                    } else {
+                        Err(format!(
+                            "field '{}' must be formatted as 'latitude,longitude'",
+                            self.name
+                        ))
+                    }
+                }
+                _ => Err(format!("field '{}' must be a geopoint string", self.name)),
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,28 +672,268 @@ mod tests {
         let result: Result<Column, _> = serde_json::from_str(json);
         assert!(result.is_err());
     }
-}
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CreateCollectionRequest {
-    pub name: String,
-    #[serde(default)]
-    pub collection_type: Option<String>,
-    pub columns: Vec<Column>,
-}
+    // ── Column::coerce_value tests for all 13 field types ───────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct UpdateCollectionRequest {
-    pub name: Option<String>,
-    pub columns: Option<Vec<Column>>,
-    #[serde(default)]
-    pub list_rule: Option<String>,
-    #[serde(default)]
-    pub view_rule: Option<String>,
-    #[serde(default)]
-    pub create_rule: Option<String>,
-    #[serde(default)]
-    pub update_rule: Option<String>,
-    #[serde(default)]
-    pub delete_rule: Option<String>,
+    #[test]
+    fn test_coerce_value_all_13_field_types() {
+        // 1. PlainText
+        let col_text = Column {
+            name: "t".into(),
+            data_type: DataTypes::PlainText,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_text.coerce_value(&serde_json::json!("hello")).unwrap(),
+            TypedValue::Text("hello".into())
+        );
+
+        // 2. RichText
+        let col_rich = Column {
+            name: "r".into(),
+            data_type: DataTypes::RichText,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_rich
+                .coerce_value(&serde_json::json!("<p>hi</p>"))
+                .unwrap(),
+            TypedValue::Text("<p>hi</p>".into())
+        );
+
+        // 3. Number (int and float)
+        let col_num = Column {
+            name: "n".into(),
+            data_type: DataTypes::Number,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_num.coerce_value(&serde_json::json!(42)).unwrap(),
+            TypedValue::NumberInt(42)
+        );
+        assert_eq!(
+            col_num.coerce_value(&serde_json::json!(42.5)).unwrap(),
+            TypedValue::NumberFloat(42.5)
+        );
+        assert_eq!(
+            col_num.coerce_value(&serde_json::json!("100")).unwrap(),
+            TypedValue::NumberInt(100)
+        );
+
+        // 4. Bool
+        let col_bool = Column {
+            name: "b".into(),
+            data_type: DataTypes::Bool,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_bool.coerce_value(&serde_json::json!(true)).unwrap(),
+            TypedValue::Bool(true)
+        );
+        assert_eq!(
+            col_bool.coerce_value(&serde_json::json!("true")).unwrap(),
+            TypedValue::Bool(true)
+        );
+        assert_eq!(
+            col_bool.coerce_value(&serde_json::json!(0)).unwrap(),
+            TypedValue::Bool(false)
+        );
+
+        // 5. Email
+        let col_email = Column {
+            name: "e".into(),
+            data_type: DataTypes::Email,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_email
+                .coerce_value(&serde_json::json!("user@example.com"))
+                .unwrap(),
+            TypedValue::Text("user@example.com".into())
+        );
+        assert!(
+            col_email
+                .coerce_value(&serde_json::json!("invalid_email"))
+                .is_err()
+        );
+
+        // 6. Url
+        let col_url = Column {
+            name: "u".into(),
+            data_type: DataTypes::Url,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_url
+                .coerce_value(&serde_json::json!("https://example.com"))
+                .unwrap(),
+            TypedValue::Text("https://example.com".into())
+        );
+        assert!(
+            col_url
+                .coerce_value(&serde_json::json!("not_a_url"))
+                .is_err()
+        );
+
+        // 7. Datetime
+        let col_dt = Column {
+            name: "dt".into(),
+            data_type: DataTypes::Datetime,
+            ..Default::default()
+        };
+        assert!(matches!(
+            col_dt
+                .coerce_value(&serde_json::json!("2026-09-01T12:00:00Z"))
+                .unwrap(),
+            TypedValue::Datetime(_)
+        ));
+        assert!(
+            col_dt
+                .coerce_value(&serde_json::json!("invalid_date"))
+                .is_err()
+        );
+
+        // 8. AutoDatetime
+        let col_adt = Column {
+            name: "adt".into(),
+            data_type: DataTypes::AutoDatetime("now".into()),
+            ..Default::default()
+        };
+        assert!(matches!(
+            col_adt
+                .coerce_value(&serde_json::json!("2026-09-01T12:00:00Z"))
+                .unwrap(),
+            TypedValue::Datetime(_)
+        ));
+
+        // 9. File
+        let col_file = Column {
+            name: "f".into(),
+            data_type: DataTypes::File,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_file
+                .coerce_value(&serde_json::json!("photo.jpg"))
+                .unwrap(),
+            TypedValue::Text("photo.jpg".into())
+        );
+
+        // 10. Relation
+        let col_rel = Column {
+            name: "rel".into(),
+            data_type: DataTypes::Relation,
+            ..Default::default()
+        };
+        let uuid_str = "a1a2a3a4-b1b2-c1c2-d1d2-d3d4d5d6d7d8";
+        assert_eq!(
+            col_rel.coerce_value(&serde_json::json!(uuid_str)).unwrap(),
+            TypedValue::Uuid(Uuid::parse_str(uuid_str).unwrap())
+        );
+        assert!(
+            col_rel
+                .coerce_value(&serde_json::json!("not-a-uuid"))
+                .is_err()
+        );
+
+        // 11. Select
+        let col_sel = Column {
+            name: "s".into(),
+            data_type: DataTypes::Select,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_sel
+                .coerce_value(&serde_json::json!("option_a"))
+                .unwrap(),
+            TypedValue::Text("option_a".into())
+        );
+
+        // 12. Json
+        let col_json = Column {
+            name: "j".into(),
+            data_type: DataTypes::Json,
+            ..Default::default()
+        };
+        let json_val = serde_json::json!({"key": "value"});
+        assert_eq!(
+            col_json.coerce_value(&json_val).unwrap(),
+            TypedValue::Json(json_val)
+        );
+
+        // 13. GeoPoint
+        let col_geo = Column {
+            name: "g".into(),
+            data_type: DataTypes::GeoPoint,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_geo
+                .coerce_value(&serde_json::json!("37.7749,-122.4194"))
+                .unwrap(),
+            TypedValue::Text("37.7749,-122.4194".into())
+        );
+        assert!(
+            col_geo
+                .coerce_value(&serde_json::json!("invalid_geo"))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_coerce_value_null_and_required() {
+        let col_optional = Column {
+            name: "opt".into(),
+            data_type: DataTypes::Relation,
+            required: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_optional.coerce_value(&serde_json::Value::Null).unwrap(),
+            TypedValue::Null(DataTypes::Relation)
+        );
+
+        let col_required = Column {
+            name: "req".into(),
+            data_type: DataTypes::PlainText,
+            required: true,
+            ..Default::default()
+        };
+        assert!(col_required.coerce_value(&serde_json::Value::Null).is_err());
+    }
+
+    #[test]
+    fn test_coerce_value_constraints() {
+        let col_str = Column {
+            name: "s".into(),
+            data_type: DataTypes::PlainText,
+            min: Some(3),
+            max: Some(5),
+            ..Default::default()
+        };
+        assert!(col_str.coerce_value(&serde_json::json!("ab")).is_err());
+        assert!(col_str.coerce_value(&serde_json::json!("abcdef")).is_err());
+        assert!(col_str.coerce_value(&serde_json::json!("abcd")).is_ok());
+
+        let col_num = Column {
+            name: "n".into(),
+            data_type: DataTypes::Number,
+            min: Some(1),
+            max: Some(10),
+            ..Default::default()
+        };
+        assert!(col_num.coerce_value(&serde_json::json!(0)).is_err());
+        assert!(col_num.coerce_value(&serde_json::json!(11)).is_err());
+        assert!(col_num.coerce_value(&serde_json::json!(5)).is_ok());
+
+        let col_pat = Column {
+            name: "p".into(),
+            data_type: DataTypes::PlainText,
+            pattern: Some(r"^\d{5}$".into()),
+            ..Default::default()
+        };
+        assert!(col_pat.coerce_value(&serde_json::json!("1234")).is_err());
+        assert!(col_pat.coerce_value(&serde_json::json!("abcde")).is_err());
+        assert!(col_pat.coerce_value(&serde_json::json!("12345")).is_ok());
+    }
 }

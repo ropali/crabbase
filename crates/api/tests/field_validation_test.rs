@@ -185,7 +185,6 @@ async fn test_validation_number_min_max_range_enforced() {
     );
 }
 
-/// [MVP GAP / Phase 3.1]: Regex `pattern` validation.
 #[tokio::test]
 async fn test_validation_pattern_regex_enforced() {
     let (app, token) = setup().await;

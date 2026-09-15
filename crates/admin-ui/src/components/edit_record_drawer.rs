@@ -238,8 +238,9 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                 data_map.insert("verified".to_string(), serde_json::Value::Bool(*verified));
             } else {
                 for f in &collection_fields {
+                    let dt = f.data_type.to_lowercase();
                     if let Some(val) = fields.get(&f.name) {
-                        let json_val = match f.data_type.to_lowercase().as_str() {
+                        let json_val = match dt.as_str() {
                             "bool" => {
                                 let b = val == "true";
                                 serde_json::Value::Bool(b)
@@ -255,7 +256,30 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                     serde_json::Value::Null
                                 }
                             }
-                            _ => serde_json::Value::String(val.clone()),
+                            "json" => {
+                                if let Ok(parsed) = serde_json::from_str(val) {
+                                    parsed
+                                } else {
+                                    serde_json::Value::String(val.clone())
+                                }
+                            }
+                            _ => {
+                                if val.trim().is_empty()
+                                    && !f.required
+                                    && matches!(
+                                        dt.as_str(),
+                                        "relation"
+                                            | "datetime"
+                                            | "autodatetime"
+                                            | "autodate"
+                                            | "geopoint"
+                                    )
+                                {
+                                    serde_json::Value::Null
+                                } else {
+                                    serde_json::Value::String(val.clone())
+                                }
+                            }
                         };
                         data_map.insert(f.name.clone(), json_val);
                     }
@@ -434,8 +458,12 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                         "relation" => "link",
                                                         "email" => "mail",
                                                         "url" => "link",
-                                                        "file" => "photo_camera",
-                                                        _ => "text_fields"
+                                                        "file" => "attach_file",
+                                                        "select" => "list",
+                                                        "geopoint" => "location_on",
+                                                        "datetime" | "autodatetime" | "autodate" => "schedule",
+                                                        "richtext" | "editor" => "article",
+                                                        _ => "text_fields",
                                                     };
 
                                                     let on_change = {
@@ -483,6 +511,33 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                                 </label>
                                                             </div>
                                                         }
+                                                    } else if dt == "autodatetime" || dt == "autodate" {
+                                                        html! {
+                                                            <div class="group" key={key.clone()}>
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
+                                                                </label>
+                                                                <input class="w-full bg-surface-container-low border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface-variant/70 cursor-not-allowed outline-none" type="text" value={field_val} disabled=true />
+                                                            </div>
+                                                        }
+                                                    } else if dt == "geopoint" {
+                                                        html! {
+                                                            <div class="group" key={key.clone()}>
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
+                                                                </label>
+                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface font-code-md text-code-md focus:border-primary outline-none" placeholder="37.7749,-122.4194" type="text" value={field_val} oninput={on_input} />
+                                                            </div>
+                                                        }
+                                                    } else if dt == "file" {
+                                                        html! {
+                                                            <div class="group" key={key.clone()}>
+                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
+                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
+                                                                </label>
+                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none focus:border-primary" placeholder="Enter file name or URL..." type="text" value={field_val} oninput={on_input} />
+                                                            </div>
+                                                        }
                                                     } else if dt == "json" {
                                                         let on_json_change = {
                                                             let on_dynamic_field_change = on_dynamic_field_change.clone();
@@ -524,12 +579,24 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                             </div>
                                                         }
                                                     } else {
+                                                        let input_type = match dt.as_str() {
+                                                            "number" => "number",
+                                                            "email" => "email",
+                                                            "url" => "url",
+                                                            _ => "text"
+                                                        };
+                                                        let placeholder = match dt.as_str() {
+                                                            "select" => "Select or enter value...".to_string(),
+                                                            "datetime" => "YYYY-MM-DDTHH:MM:SSZ".to_string(),
+                                                            "relation" => "Relation record UUID...".to_string(),
+                                                            _ => format!("Enter {}...", f.name),
+                                                        };
                                                         html! {
                                                             <div class="group" key={key.clone()}>
                                                                 <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
                                                                     <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
                                                                 </label>
-                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none focus:border-primary" type="text" value={field_val} oninput={on_input} />
+                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none focus:border-primary" placeholder={placeholder} type={input_type} value={field_val} oninput={on_input} />
                                                             </div>
                                                         }
                                                     }

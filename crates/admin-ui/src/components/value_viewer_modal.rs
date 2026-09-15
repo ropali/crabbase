@@ -93,6 +93,13 @@ pub fn value_viewer_modal(props: &ValueViewerModalProps) -> Html {
         "richtext" | "editor" => "article",
         "email" => "mail",
         "url" => "link",
+        "bool" => "check_box",
+        "number" => "123",
+        "relation" => "link",
+        "datetime" | "autodatetime" | "autodate" => "schedule",
+        "file" => "attach_file",
+        "select" => "list",
+        "geopoint" => "location_on",
         _ => "subject",
     };
 

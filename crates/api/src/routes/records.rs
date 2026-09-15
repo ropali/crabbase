@@ -29,9 +29,6 @@ async fn list_records(
     state: axum::extract::State<AppState>,
     RequestContext(sql_context): RequestContext,
 ) -> Result<Json<RecordListResponse>, APIError> {
-    let page = params.page.unwrap_or(1).max(1);
-    let per_page = params.per_page.unwrap_or(20).clamp(1, 100);
-
     match state.records_repo().list(&name, sql_context, params).await {
         Ok(values) => Ok(Json(values)),
         Err(err) => Err(err.into()),

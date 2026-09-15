@@ -2,15 +2,17 @@ use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use sqlx::{Pool, Postgres, Row};
-use tracing::{Level, field};
 use uuid::Uuid;
 
-use crate::repositories::collections::CollectionRepository;
+use crate::{
+    binder::{bind_typed_value, bind_typed_value_to_builder},
+    repositories::collections::CollectionRepository,
+};
 use crabbase_core::{
     errors::RepositoryError,
     models::{
         Collection, Column, CreateRecordRequest, DataTypes, PaginationParams, Record,
-        RecordListResponse, UpdateRecordRequest,
+        RecordListResponse, TypedValue, UpdateRecordRequest,
     },
     rules::{
         compiler::{RulesSqlCompiler, SqlContext},
@@ -20,6 +22,40 @@ use crabbase_core::{
 };
 
 use bcrypt;
+
+pub fn coerce_field_value(
+    fields: &[Column],
+    col_name: &str,
+    val: &Value,
+) -> Result<TypedValue, RepositoryError> {
+    let col_def = fields.iter().find(|c| c.name == col_name);
+    match col_def {
+        Some(definition) => definition
+            .coerce_value(val)
+            .map_err(|e| RepositoryError::Validation {
+                message: e,
+                field: Some(col_name.to_string()),
+            }),
+        None => {
+            if col_name == "id" {
+                match val {
+                    Value::String(s) => {
+                        let u = Uuid::parse_str(s).map_err(|e| RepositoryError::Validation {
+                            message: format!("invalid UUID for id: {e}"),
+                            field: Some("id".to_string()),
+                        })?;
+                        Ok(TypedValue::Uuid(u))
+                    }
+                    _ => Ok(TypedValue::Null(DataTypes::Relation)),
+                }
+            } else {
+                Ok(TypedValue::Text(
+                    val.as_str().unwrap_or(&val.to_string()).to_string(),
+                ))
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct RecordsRepository {
@@ -82,6 +118,7 @@ impl RecordsRepository {
             }
         }
     }
+
     /// Batch-expands relation columns in-place across a slice of records,
     /// strictly enforcing target collection view rules and redacting hidden fields.
     pub async fn expand_records(
@@ -356,6 +393,7 @@ impl RecordsRepository {
             total: total_count as u64,
             page,
             per_page,
+            per_page_camel: per_page,
         })
     }
 
@@ -469,15 +507,33 @@ impl RecordsRepository {
                     serde_json::Value::String(random_str(None)),
                 );
             }
+
+            if !obj.contains_key("emailVisibility") {
+                obj.insert(
+                    "emailVisibility".to_string(),
+                    serde_json::Value::Bool(false),
+                );
+            }
+
+            if !obj.contains_key("verified") {
+                obj.insert("verified".to_string(), serde_json::Value::Bool(false));
+            }
         }
 
-        let is_uuid_col = |col_name: &str| -> bool {
-            col_name == "id"
-                || col
-                    .fields
-                    .iter()
-                    .any(|c| c.name == col_name && c.data_type == DataTypes::Relation)
-        };
+        // Verify all required fields defined on the collection are present in the payload
+        for field in &col.fields {
+            if field.required && !matches!(field.name.as_str(), "id" | "created" | "updated") {
+                match obj.get(&field.name) {
+                    None | Some(Value::Null) => {
+                        return Err(RepositoryError::Validation {
+                            message: format!("field '{}' is required", field.name),
+                            field: Some(field.name.clone()),
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         let entries: Vec<(&String, &Value)> = obj.iter().collect();
 
@@ -485,66 +541,19 @@ impl RecordsRepository {
         let mut query_builder =
             sqlx::QueryBuilder::<Postgres>::new(format!("INSERT INTO {} (", quoted_table));
 
-        // Add columns with proper sepration
-        let mut separated = query_builder.separated(",");
-
-        for (col, _) in &entries {
-            separated.push(quote_ident(col));
+        // Add columns with proper separation
+        let mut separated_cols = query_builder.separated(",");
+        for (col_name, _) in &entries {
+            separated_cols.push(quote_ident(col_name));
         }
 
-        separated.push_unseparated(") VALUES (");
+        separated_cols.push_unseparated(") VALUES (");
 
         // Add values as bound parameters
         let mut separated_values = query_builder.separated(",");
-        for (col, v) in &entries {
-            if is_uuid_col(col) {
-                match v {
-                    Value::String(s) => {
-                        let parsed =
-                            Uuid::parse_str(s).map_err(|e| RepositoryError::Validation {
-                                message: format!("invalid UUID for column '{}': {}", col, e),
-                                field: Some(col.to_string()),
-                            })?;
-                        separated_values.push_bind(parsed);
-                    }
-                    Value::Null => {
-                        separated_values.push_bind(Option::<Uuid>::None);
-                    }
-                    other => {
-                        let parsed = Uuid::parse_str(&other.to_string()).map_err(|e| {
-                            RepositoryError::Validation {
-                                message: format!("invalid UUID for column '{}': {}", col, e),
-                                field: Some(col.to_string()),
-                            }
-                        })?;
-                        separated_values.push_bind(parsed);
-                    }
-                }
-            } else {
-                match v {
-                    Value::String(s) => {
-                        separated_values.push_bind(s.clone());
-                    }
-                    Value::Number(n) => {
-                        if let Some(i) = n.as_i64() {
-                            separated_values.push_bind(i);
-                        } else if let Some(f) = n.as_f64() {
-                            separated_values.push_bind(f);
-                        } else {
-                            separated_values.push_bind(n.to_string());
-                        }
-                    }
-                    Value::Bool(b) => {
-                        separated_values.push_bind(*b);
-                    }
-                    Value::Null => {
-                        separated_values.push_bind(Option::<String>::None);
-                    }
-                    other => {
-                        separated_values.push_bind(other.to_string());
-                    }
-                }
-            }
+        for (col_name, val) in &entries {
+            let typed = coerce_field_value(&col.fields, col_name, val)?;
+            bind_typed_value(&mut separated_values, &typed);
         }
         separated_values.push_unseparated(")");
 
@@ -558,6 +567,7 @@ impl RecordsRepository {
                 } else {
                     row.try_get::<uuid::Uuid, _>("id")?.to_string()
                 };
+
                 Ok(Record {
                     id,
                     data: body.data,
@@ -622,70 +632,16 @@ impl RecordsRepository {
         let mut query_builder =
             sqlx::QueryBuilder::<Postgres>::new(format!("UPDATE {} SET ", quoted_table));
 
-        let is_uuid_col = |col_name: &str| -> bool {
-            col_name == "id"
-                || col
-                    .fields
-                    .iter()
-                    .any(|c| c.name == col_name && c.data_type == DataTypes::Relation)
-        };
-
         let mut first = true;
-        for (k, v) in &payload.data {
+        for (col_name, val) in &payload.data {
             if !first {
                 query_builder.push(", ");
             }
             first = false;
 
-            query_builder.push(quote_ident(k)).push(" = ");
-            if is_uuid_col(k) {
-                match v {
-                    Value::String(s) => {
-                        let parsed =
-                            Uuid::parse_str(s).map_err(|e| RepositoryError::Validation {
-                                message: format!("invalid UUID for column '{}': {}", k, e),
-                                field: Some(k.to_string()),
-                            })?;
-                        query_builder.push_bind(parsed);
-                    }
-                    Value::Null => {
-                        query_builder.push_bind(Option::<Uuid>::None);
-                    }
-                    other => {
-                        let parsed = Uuid::parse_str(&other.to_string()).map_err(|e| {
-                            RepositoryError::Validation {
-                                message: format!("invalid UUID for column '{}': {}", k, e),
-                                field: Some(k.to_string()),
-                            }
-                        })?;
-                        query_builder.push_bind(parsed);
-                    }
-                }
-            } else {
-                match v {
-                    Value::String(s) => {
-                        query_builder.push_bind(s.clone());
-                    }
-                    Value::Number(n) => {
-                        if let Some(i) = n.as_i64() {
-                            query_builder.push_bind(i);
-                        } else if let Some(f) = n.as_f64() {
-                            query_builder.push_bind(f);
-                        } else {
-                            query_builder.push_bind(n.to_string());
-                        }
-                    }
-                    Value::Bool(b) => {
-                        query_builder.push_bind(*b);
-                    }
-                    Value::Null => {
-                        query_builder.push_bind(Option::<String>::None);
-                    }
-                    other => {
-                        query_builder.push_bind(other.to_string());
-                    }
-                }
-            }
+            query_builder.push(quote_ident(col_name)).push(" = ");
+            let typed = coerce_field_value(&col.fields, col_name, val)?;
+            bind_typed_value_to_builder(&mut query_builder, &typed);
         }
 
         query_builder.push(", updated = now()");
@@ -853,7 +809,12 @@ mod tests {
             .unwrap();
 
         let got = repo
-            .get_record("items", &created.id.to_string())
+            .get_record(
+                "items",
+                &created.id.to_string(),
+                None,
+                &SqlContext::default(),
+            )
             .await
             .unwrap();
         assert_eq!(got.id, created.id);
@@ -890,7 +851,12 @@ mod tests {
         upd_map.insert("title".to_string(), Value::String("updated".to_string()));
         let upd = UpdateRecordRequest { data: upd_map };
         let updated = repo
-            .update_record("items", &created.id.to_string(), upd)
+            .update_record(
+                "items",
+                &created.id.to_string(),
+                upd,
+                &SqlContext::default(),
+            )
             .await
             .unwrap();
         assert_eq!(
@@ -962,7 +928,12 @@ mod tests {
         );
         let upd = UpdateRecordRequest { data: upd_map };
         let updated = repo
-            .update_record("users", &created.id.to_string(), upd)
+            .update_record(
+                "users",
+                &created.id.to_string(),
+                upd,
+                &SqlContext::default(),
+            )
             .await
             .unwrap();
 
@@ -985,7 +956,12 @@ mod tests {
         );
         let upd_same = UpdateRecordRequest { data: upd_same_map };
         let updated_same = repo
-            .update_record("users", &created.id.to_string(), upd_same)
+            .update_record(
+                "users",
+                &created.id.to_string(),
+                upd_same,
+                &SqlContext::default(),
+            )
             .await
             .unwrap();
 
@@ -1100,7 +1076,14 @@ mod tests {
             .unwrap();
         assert!(deleted);
 
-        let res = repo.get_record("trash", &created.id.to_string()).await;
+        let res = repo
+            .get_record(
+                "trash",
+                &created.id.to_string(),
+                None,
+                &SqlContext::default(),
+            )
+            .await;
         assert!(matches!(
             res,
             Err(crabbase_core::errors::RepositoryError::NotFound(_))

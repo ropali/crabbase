@@ -1,5 +1,3 @@
-use std::fmt::write;
-
 use axum::{
     Json,
     http::StatusCode,
@@ -169,7 +167,7 @@ impl From<RepositoryError> for APIError {
                 message: "Database connection failure".to_string(),
                 details: serde_json::json!({"source": message}),
             },
-            RepositoryError::Forbidden(mesaage) => APIError::Forbidden,
+            RepositoryError::Forbidden(_message) => APIError::Forbidden,
         }
     }
 }

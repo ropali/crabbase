@@ -127,7 +127,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
             current.push(CustomField {
                 id: *next_field_id,
                 name: "".to_string(),
-                data_type: "Text".to_string(),
+                data_type: "PlainText".to_string(),
                 required: false,
                 expanded: false,
                 min_len: None,
@@ -550,7 +550,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                     .map(|f| {
                         let is_indexed = index_field_names.contains(&f.name);
                         let (min, max) = match f.data_type.as_str() {
-                            "Text" => (f.min_len, f.max_len),
+                            "Text" | "PlainText" => (f.min_len, f.max_len),
                             "Number" => {
                                 (f.min_val.map(|v| v as usize), f.max_val.map(|v| v as usize))
                             }
@@ -987,11 +987,18 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                         "bool" => "check_box",
                                                         "json" => "data_object",
                                                         "relation" => "link",
-                                                        _ => "text_fields"
+                                                        "email" => "mail",
+                                                        "url" => "link",
+                                                        "file" => "attach_file",
+                                                        "select" => "list",
+                                                        "geopoint" => "location_on",
+                                                        "datetime" | "autodatetime" | "autodate" => "schedule",
+                                                        "richtext" | "editor" => "article",
+                                                        _ => "text_fields",
                                                     };
 
                                                     let config_grid = match f_type.as_str() {
-                                                        "Text" => html! {
+                                                        "Text" | "PlainText" => html! {
                                                             <div class="grid grid-cols-2 gap-4">
                                                                 <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
                                                                     <div class="flex items-center gap-1 mb-1">
@@ -1121,11 +1128,15 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                             <option value="RichText" selected={f_type == "RichText" || f_type == "Richtext" || f_type == "Editor"}>{"RichText"}</option>
                                                                             <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
                                                                             <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
-                                                                            <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
                                                                             <option value="Email" selected={f_type == "Email"}>{"Email"}</option>
                                                                             <option value="Url" selected={f_type == "Url"}>{"Url"}</option>
                                                                             <option value="Datetime" selected={f_type == "Datetime"}>{"Datetime"}</option>
+                                                                            <option value="AutoDatetime" selected={f_type == "AutoDatetime" || f_type == "Autodate"}>{"AutoDatetime"}</option>
+                                                                            <option value="File" selected={f_type == "File"}>{"File"}</option>
                                                                             <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
+                                                                            <option value="Select" selected={f_type == "Select"}>{"Select"}</option>
+                                                                            <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                            <option value="GeoPoint" selected={f_type == "GeoPoint"}>{"GeoPoint"}</option>
                                                                         </select>
 
                                                                         <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>
@@ -1156,11 +1167,15 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                             <option value="RichText" selected={f_type == "RichText" || f_type == "Richtext" || f_type == "Editor"}>{"RichText"}</option>
                                                                             <option value="Number" selected={f_type == "Number"}>{"Number"}</option>
                                                                             <option value="Bool" selected={f_type == "Bool"}>{"Bool"}</option>
-                                                                            <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
                                                                             <option value="Email" selected={f_type == "Email"}>{"Email"}</option>
                                                                             <option value="Url" selected={f_type == "Url"}>{"Url"}</option>
                                                                             <option value="Datetime" selected={f_type == "Datetime"}>{"Datetime"}</option>
+                                                                            <option value="AutoDatetime" selected={f_type == "AutoDatetime" || f_type == "Autodate"}>{"AutoDatetime"}</option>
+                                                                            <option value="File" selected={f_type == "File"}>{"File"}</option>
                                                                             <option value="Relation" selected={f_type == "Relation"}>{"Relation"}</option>
+                                                                            <option value="Select" selected={f_type == "Select"}>{"Select"}</option>
+                                                                            <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
+                                                                            <option value="GeoPoint" selected={f_type == "GeoPoint"}>{"GeoPoint"}</option>
                                                                         </select>
 
                                                                     <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>

@@ -379,7 +379,7 @@ impl CollectionRepository {
     }
 
     pub async fn truncate(&self, name: String) -> Result<bool, RepositoryError> {
-        validate_identifier(&name);
+        validate_identifier(&name)?;
 
         if !self.exists(&name).await {
             return Err(RepositoryError::NotFound(name));
