@@ -25,6 +25,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
     let verified = use_state(|| false);
 
     let error_msg = use_state(|| None::<String>);
+    let active_relation_modal = use_state(|| None::<(String, Option<String>)>);
 
     let on_close_click = {
         let on_close = props.on_close.clone();
@@ -234,7 +235,39 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
     let is_superusers = props.collection_name == "_superusers";
     let is_auth = is_users || is_superusers;
 
+    let relation_modal_html =
+        if let Some((field_name, target_col)) = (*active_relation_modal).clone() {
+            let current_field_val = fields.get(&field_name).cloned().unwrap_or_default();
+            let on_select = {
+                let on_dynamic_field_change = on_dynamic_field_change.clone();
+                let active_relation_modal = active_relation_modal.clone();
+                let field_name = field_name.clone();
+                Callback::from(move |chosen_id: String| {
+                    on_dynamic_field_change.emit((field_name.clone(), chosen_id));
+                    active_relation_modal.set(None);
+                })
+            };
+            let on_close = {
+                let active_relation_modal = active_relation_modal.clone();
+                Callback::from(move |_| {
+                    active_relation_modal.set(None);
+                })
+            };
+            html! {
+                <crate::components::RelationPickerModal
+                    field_name={field_name}
+                    target_collection={target_col}
+                    current_value={current_field_val}
+                    on_select={on_select}
+                    on_close={on_close}
+                />
+            }
+        } else {
+            html! {}
+        };
+
     html! {
+        <>
         <div onclick={on_close_click.clone()} class="absolute inset-0 bg-inverse-surface/10 bg-blur z-40 flex justify-end">
             <div onclick={on_drawer_click} class="w-[680px] max-w-[90vw] h-full bg-surface shadow-2xl z-50 flex flex-col border-l border-outline-variant animate-slide-in-right duration-300 relative">
                 <div class="p-6 border-b border-outline-variant flex justify-between items-center">
@@ -489,7 +522,83 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                                 />
                                                             </div>
                                                         }
-                                                     } else {
+                                                     } else if dt == "relation" {
+                                                        let on_open_modal = {
+                                                            let active_relation_modal = active_relation_modal.clone();
+                                                            let key = key.clone();
+                                                            let rel_to = f.related_to.clone();
+                                                            Callback::from(move |_| {
+                                                                active_relation_modal.set(Some((key.clone(), rel_to.clone())));
+                                                            })
+                                                        };
+                                                        let on_clear = {
+                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                            let key = key.clone();
+                                                            Callback::from(move |_| {
+                                                                on_dynamic_field_change.emit((key.clone(), "".to_string()));
+                                                            })
+                                                        };
+                                                        let rel_target = f.related_to.as_deref().unwrap_or("related");
+                                                        html! {
+                                                            <div class="group" key={f.name.clone()}>
+                                                                <div class="flex items-center justify-between mb-1">
+                                                                    <label class="font-label-xs text-label-xs text-on-surface-variant flex items-center gap-1">
+                                                                        <span class="material-symbols-outlined text-[14px]">{"link"}</span>
+                                                                        {label_text}
+                                                                        {if f.required {
+                                                                            html! { <span class="text-error font-bold ml-0.5">{"*"}</span> }
+                                                                        } else {
+                                                                            html! {}
+                                                                        }}
+                                                                    </label>
+                                                                    {if let Some(target) = &f.related_to {
+                                                                        html! {
+                                                                            <span class="text-[11px] text-on-surface-variant/80 flex items-center gap-1">
+                                                                                <span>{"Relates to:"}</span>
+                                                                                <span class="font-mono px-1.5 py-0.5 bg-surface-container rounded text-primary text-[11px] border border-outline-variant/40 font-semibold">{target}</span>
+                                                                            </span>
+                                                                        }
+                                                                    } else {
+                                                                        html! {}
+                                                                    }}
+                                                                </div>
+                                                                <div class="flex gap-2">
+                                                                    <div class="relative flex-1">
+                                                                        <input
+                                                                            class="w-full bg-white border border-outline-variant rounded p-3 pr-9 font-mono text-body-sm text-on-surface focus:ring-secondary focus:border-transparent outline-none transition-all"
+                                                                            placeholder={format!("Select {} record UUID...", rel_target)}
+                                                                            type="text"
+                                                                            value={current_val.clone()}
+                                                                            oninput={on_input}
+                                                                        />
+                                                                        {if !current_val.is_empty() {
+                                                                            html! {
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onclick={on_clear}
+                                                                                    title="Clear selection"
+                                                                                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-error hover:bg-surface-container-high rounded p-1 transition-colors"
+                                                                                >
+                                                                                    <span class="material-symbols-outlined text-sm">{"close"}</span>
+                                                                                </button>
+                                                                            }
+                                                                        } else {
+                                                                            html! {}
+                                                                        }}
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onclick={on_open_modal}
+                                                                        class="px-3.5 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shrink-0 active:scale-95 shadow-sm"
+                                                                        title={format!("Browse and choose record from {}", rel_target)}
+                                                                    >
+                                                                        <span class="material-symbols-outlined text-sm">{"search"}</span>
+                                                                        <span>{"Choose Record"}</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        }
+                                                    } else {
                                                         let input_type = match dt.as_str() {
                                                             "number" => "number",
                                                             "email" => "email",
@@ -499,7 +608,6 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                         let placeholder = match dt.as_str() {
                                                             "select" => "Select or enter value...".to_string(),
                                                             "datetime" => "YYYY-MM-DDTHH:MM:SSZ".to_string(),
-                                                            "relation" => "Relation record UUID...".to_string(),
                                                             _ => format!("Enter {}...", f.name),
                                                         };
                                                         html! {
@@ -534,5 +642,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                 </form>
             </div>
         </div>
+        { relation_modal_html }
+        </>
     }
 }
