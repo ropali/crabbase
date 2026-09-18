@@ -16,8 +16,8 @@ mod common;
 
 use axum::http::StatusCode;
 use common::{
-    TestApp, create_collection, create_record_api, create_record_auth, expect, insert_superuser,
-    login, number_col, text_col,
+    TestApp, body_json, create_collection, create_record_api, create_record_auth, expect,
+    insert_superuser, login, number_col, text_col,
 };
 use serde_json::json;
 
@@ -453,6 +453,117 @@ async fn test_expand_parameter_populates_related_record() {
     assert_eq!(
         body["expand"]["author"]["data"]["name"], "George Orwell",
         "MVP Gap: expanded author must contain author's record data"
+    );
+}
+
+/// When a record contains a one-to-many relation column pointing to another collection (`multiple: true`),
+/// it can store multiple foreign key IDs, and `?expand=tags` must populate all target records
+/// as an array in `record.expand.tags`.
+///
+/// Ref: MVP_ROADMAP.md §1.3 / §Phase 3.2
+#[tokio::test]
+async fn test_one_to_many_relation_expand() {
+    let (app, token) = setup().await;
+
+    // 1. Create tags collection (target of relation)
+    create_collection(&app, "tags", vec![text_col("name")], &token).await;
+
+    // 2. Create posts collection with one-to-many relation to tags
+    let posts_res = app
+        .post_json(
+            "/api/collections",
+            json!({
+                "name": "posts_multi_rel",
+                "columns": [
+                    { "name": "title", "type": "text", "index": false },
+                    { "name": "tags", "type": "relation", "related_to": "tags", "multiple": true, "index": false }
+                ]
+            }),
+            Some(&token),
+        )
+        .await;
+    expect(posts_res, StatusCode::OK).await;
+
+    // 3. Create two tag records
+    let tag1 = create_record_api(&app, "tags", json!({ "name": "Rust" })).await;
+    let tag1_id = tag1["id"].as_str().expect("tag1 id");
+
+    let tag2 = create_record_api(&app, "tags", json!({ "name": "Web" })).await;
+    let tag2_id = tag2["id"].as_str().expect("tag2 id");
+
+    // 4. Create a post record linking to both tags (one-to-many relation)
+    let post_res = app
+        .post_json(
+            "/api/collections/posts_multi_rel/records",
+            json!({
+                "data": {
+                    "title": "Building Web Services in Rust",
+                    "tags": [tag1_id, tag2_id]
+                }
+            }),
+            None,
+        )
+        .await;
+
+    // FAIL REASON IF NOT IMPLEMENTED: Currently relation fields only accept a single UUID string,
+    // rejecting JSON arrays of UUIDs for one-to-many relationships.
+    assert_eq!(
+        post_res.status(),
+        StatusCode::OK,
+        "MVP Gap: creating record with one-to-many relation array of UUIDs must return 200 OK. Got: {}",
+        post_res.status()
+    );
+    let post = body_json(post_res).await;
+    let post_id = post["id"].as_str().expect("post id");
+
+    // 5. Fetch single record with ?expand=tags
+    let res = app
+        .get(&format!(
+            "/api/collections/posts_multi_rel/records/{post_id}?expand=tags"
+        ))
+        .await;
+    let body = expect(res, StatusCode::OK).await;
+
+    // FAIL REASON IF NOT IMPLEMENTED: `expand` object missing or `expand.tags` is not an array.
+    assert!(
+        body["expand"].is_object(),
+        "MVP Gap: 'expand' object missing in record response when ?expand=tags is requested. Got: {:?}",
+        body
+    );
+    assert!(
+        body["expand"]["tags"].is_array(),
+        "MVP Gap: expanded one-to-many relation 'tags' must be a JSON array of records. Got: {:?}",
+        body["expand"]["tags"]
+    );
+
+    let expanded_tags = body["expand"]["tags"].as_array().expect("tags array");
+    assert_eq!(
+        expanded_tags.len(),
+        2,
+        "MVP Gap: expanded tags must contain 2 records"
+    );
+
+    let tag_names: Vec<&str> = expanded_tags
+        .iter()
+        .filter_map(|t| t["data"]["name"].as_str())
+        .collect();
+    assert!(
+        tag_names.contains(&"Rust") && tag_names.contains(&"Web"),
+        "MVP Gap: expanded tags array must contain 'Rust' and 'Web', got: {:?}",
+        tag_names
+    );
+
+    // 6. List records with ?expand=tags
+    let list_res = app
+        .get("/api/collections/posts_multi_rel/records?expand=tags")
+        .await;
+    let list_body = expect(list_res, StatusCode::OK).await;
+    let items = list_body["items"].as_array().expect("items array");
+    assert!(!items.is_empty(), "expected items in list response");
+    assert!(
+        items[0]["expand"]["tags"].is_array(),
+        "MVP Gap: list items must have expanded tags array. Got: {:?}",
+        items[0]["expand"]
     );
 }
 

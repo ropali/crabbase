@@ -391,3 +391,49 @@ async fn test_truncate_collection_removes_all_records() {
     let empty_body = expect(empty_res, StatusCode::OK).await;
     assert_eq!(empty_body["items"].as_array().unwrap().len(), 0);
 }
+
+// ─── One-to-many relation definition ──────────────────────────────────────────
+
+/// Create a collection defining a one-to-many relation column (`multiple: true`).
+/// Verifies that collections schema DDL accepts and preserves one-to-many relation definitions.
+///
+/// Ref: MVP_ROADMAP.md §Phase 3.2
+#[tokio::test]
+async fn test_create_collection_with_one_to_many_relation() {
+    let (app, token) = setup().await;
+
+    // 1. Create target collection
+    create_collection(&app, "categories_o2m", vec![text_col("name")], &token).await;
+
+    // 2. Create parent collection with one-to-many relation
+    let res = app
+        .post_json(
+            "/api/collections",
+            json!({
+                "name": "articles_o2m",
+                "columns": [
+                    { "name": "title", "type": "text" },
+                    { "name": "categories", "type": "relation", "related_to": "categories_o2m", "multiple": true }
+                ]
+            }),
+            Some(&token),
+        )
+        .await;
+
+    let body = expect(res, StatusCode::OK).await;
+    let fields = body["fields"].as_array().expect("fields array");
+    let cat_col = fields
+        .iter()
+        .find(|f| f["name"] == "categories")
+        .expect("categories column missing from fields");
+
+    assert_eq!(
+        cat_col["related_to"], "categories_o2m",
+        "MVP Gap: relation column must record target collection"
+    );
+    assert_eq!(
+        cat_col["multiple"], true,
+        "MVP Gap: one-to-many relation definition must preserve multiple: true flag. Got: {:?}",
+        cat_col
+    );
+}

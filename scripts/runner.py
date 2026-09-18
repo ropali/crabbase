@@ -183,6 +183,12 @@ FEATURE_CHECKLIST = [
     ),
     (
         "🗄️ Collections & DDL",
+        "test_create_collection_with_one_to_many_relation",
+        "Define one-to-many relation column (multiple: true)",
+        "feature",
+    ),
+    (
+        "🗄️ Collections & DDL",
         "test_create_auth_collection_auto_injects_system_columns",
         "Auto-inject auth columns on type = 'auth'",
         "feature",
@@ -222,6 +228,12 @@ FEATURE_CHECKLIST = [
         "📝 Records CRUD & Queries",
         "test_expand_parameter_populates_related_record",
         "Relation expansion query parameter (?expand=...)",
+        "feature",
+    ),
+    (
+        "📝 Records CRUD & Queries",
+        "test_one_to_many_relation_expand",
+        "One-to-many relation CRUD & array expansion (?expand=...)",
         "feature",
     ),
     (

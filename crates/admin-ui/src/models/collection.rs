@@ -11,6 +11,8 @@ pub struct Field {
     pub required: bool,
     #[serde(default)]
     pub hidden: bool,
+    #[serde(default)]
+    pub presentable: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

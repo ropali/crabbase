@@ -2,7 +2,10 @@ use serde_json::Value;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
-use crate::{api::client::ApiClient, models::collection::Record};
+use crate::{
+    api::client::ApiClient,
+    models::collection::{Collection, Record},
+};
 
 #[derive(Properties, PartialEq, Clone)]
 pub struct RelationPickerModalProps {
@@ -15,13 +18,239 @@ pub struct RelationPickerModalProps {
     pub on_close: Callback<()>,
 }
 
-fn extract_record_summary(record: &Record) -> (Option<String>, Vec<(String, String)>) {
-    let mut primary_title = None;
-    let mut previews = Vec::new();
+fn strip_html_tags(html: &str) -> String {
+    let mut result = String::with_capacity(html.len());
+    let mut inside_tag = false;
+    for c in html.chars() {
+        if c == '<' {
+            inside_tag = true;
+        } else if c == '>' {
+            inside_tag = false;
+        } else if !inside_tag {
+            result.push(c);
+        }
+    }
+    let unescaped = result
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
 
+    let mut words = unescaped.split_whitespace().peekable();
+    let mut cleaned = String::new();
+    while let Some(w) = words.next() {
+        cleaned.push_str(w);
+        if words.peek().is_some() {
+            cleaned.push(' ');
+        }
+    }
+    cleaned
+}
+
+fn truncate_text(text: &str, max_len: usize) -> String {
+    let trimmed = text.trim();
+    if trimmed.chars().count() > max_len {
+        let truncated: String = trimmed.chars().take(max_len).collect();
+        format!("{}...", truncated.trim_end())
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn format_field_value_for_title(val: &Value, data_type: &str) -> Option<String> {
+    match val {
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            if data_type.eq_ignore_ascii_case("richtext")
+                || data_type.eq_ignore_ascii_case("editor")
+            {
+                let stripped = strip_html_tags(trimmed);
+                if stripped.is_empty() {
+                    None
+                } else {
+                    Some(truncate_text(&stripped, 60))
+                }
+            } else {
+                Some(truncate_text(trimmed, 100))
+            }
+        }
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+fn extract_by_type_priority(
+    col: &Collection,
+    map: &serde_json::Map<String, Value>,
+) -> Option<String> {
+    let is_sensitive =
+        |name: &str| matches!(name, "password" | "token_key" | "token" | "password_hash");
+
+    // 1. PlainText / Text
+    for f in &col.fields {
+        if is_sensitive(&f.name) {
+            continue;
+        }
+        let dt = f.data_type.to_lowercase();
+        if dt == "plaintext" || dt == "text" {
+            if let Some(val) = map.get(&f.name) {
+                if let Some(s) = val.as_str() {
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        return Some(truncate_text(trimmed, 100));
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. RichText / Editor (truncated to show)
+    for f in &col.fields {
+        if is_sensitive(&f.name) {
+            continue;
+        }
+        let dt = f.data_type.to_lowercase();
+        if dt == "richtext" || dt == "editor" {
+            if let Some(val) = map.get(&f.name) {
+                if let Some(s) = val.as_str() {
+                    let stripped = strip_html_tags(s);
+                    if !stripped.is_empty() {
+                        return Some(truncate_text(&stripped, 60));
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Email
+    for f in &col.fields {
+        if is_sensitive(&f.name) {
+            continue;
+        }
+        if f.data_type.eq_ignore_ascii_case("email") {
+            if let Some(val) = map.get(&f.name) {
+                if let Some(s) = val.as_str() {
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Url
+    for f in &col.fields {
+        if is_sensitive(&f.name) {
+            continue;
+        }
+        if f.data_type.eq_ignore_ascii_case("url") {
+            if let Some(val) = map.get(&f.name) {
+                if let Some(s) = val.as_str() {
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        return Some(truncate_text(trimmed, 80));
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Select
+    for f in &col.fields {
+        if is_sensitive(&f.name) {
+            continue;
+        }
+        if f.data_type.eq_ignore_ascii_case("select") {
+            if let Some(val) = map.get(&f.name) {
+                match val {
+                    Value::String(s) if !s.trim().is_empty() => {
+                        return Some(s.trim().to_string());
+                    }
+                    Value::Array(arr) => {
+                        let items: Vec<String> = arr
+                            .iter()
+                            .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if !items.is_empty() {
+                            return Some(items.join(", "));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // 6. Number
+    for f in &col.fields {
+        if is_sensitive(&f.name) {
+            continue;
+        }
+        if f.data_type.eq_ignore_ascii_case("number") {
+            if let Some(val) = map.get(&f.name) {
+                if let Value::Number(n) = val {
+                    return Some(n.to_string());
+                }
+            }
+        }
+    }
+
+    // 7. Datetime / AutoDatetime
+    for f in &col.fields {
+        if is_sensitive(&f.name) {
+            continue;
+        }
+        let dt = f.data_type.to_lowercase();
+        if dt.contains("date") || dt.contains("time") {
+            if let Some(val) = map.get(&f.name) {
+                if let Some(s) = val.as_str() {
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn extract_record_title(record: &Record, schema: Option<&Collection>) -> Option<String> {
     if let Value::Object(map) = &record.data {
-        // Look for common identifying keys
-        let title_keys = [
+        if let Some(col) = schema {
+            // 1. Check fields marked as presentable in the target collection schema
+            let presentable_values: Vec<String> = col
+                .fields
+                .iter()
+                .filter(|f| f.presentable)
+                .filter_map(|f| {
+                    map.get(&f.name)
+                        .and_then(|val| format_field_value_for_title(val, &f.data_type))
+                })
+                .collect();
+
+            if !presentable_values.is_empty() {
+                return Some(presentable_values.join(" "));
+            }
+
+            // 2. If no presentable field is present / has data, check by data type priority:
+            // PlainText -> RichText (truncated to show) -> Email -> Url -> Select -> Number -> Datetime
+            if let Some(title) = extract_by_type_priority(col, map) {
+                return Some(title);
+            }
+        }
+
+        // 3. Fallback when schema is not available or produced no title:
+        let common_keys = [
             "title",
             "name",
             "email",
@@ -32,50 +261,34 @@ fn extract_record_summary(record: &Record) -> (Option<String>, Vec<(String, Stri
             "heading",
             "description",
         ];
-        for key in title_keys {
+        for key in common_keys {
             if let Some(val) = map.get(key) {
                 if let Some(s) = val.as_str() {
-                    if !s.trim().is_empty() {
-                        primary_title = Some(s.to_string());
-                        break;
+                    let trimmed = s.trim();
+                    if !trimmed.is_empty() {
+                        return Some(truncate_text(trimmed, 100));
                     }
                 }
             }
         }
 
-        // Collect other field previews (up to 4)
         for (k, v) in map.iter() {
-            if matches!(k.as_str(), "password" | "token_key" | "token") {
+            if matches!(
+                k.as_str(),
+                "password" | "token_key" | "token" | "password_hash"
+            ) {
                 continue;
             }
-            if let Some(ref t) = primary_title {
-                if let Some(s) = v.as_str() {
-                    if s == t {
-                        continue;
-                    }
+            if let Value::String(s) = v {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    return Some(truncate_text(trimmed, 100));
                 }
-            }
-            let display_val = match v {
-                Value::String(s) => {
-                    if s.len() > 35 {
-                        format!("{}...", &s[..32])
-                    } else {
-                        s.clone()
-                    }
-                }
-                Value::Number(n) => n.to_string(),
-                Value::Bool(b) => b.to_string(),
-                Value::Null => "null".to_string(),
-                Value::Array(a) => format!("[{} items]", a.len()),
-                Value::Object(_) => "{...}".to_string(),
-            };
-            if !display_val.is_empty() && previews.len() < 4 {
-                previews.push((k.clone(), display_val));
             }
         }
     }
 
-    (primary_title, previews)
+    None
 }
 
 #[function_component(RelationPickerModal)]
@@ -83,6 +296,7 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
     let collection_name = props.target_collection.clone().unwrap_or_default();
 
     let records = use_state(Vec::<Record>::new);
+    let target_schema = use_state(|| None::<Collection>);
     let total_records = use_state(|| 0usize);
     let page = use_state(|| 1usize);
     let per_page = 50usize;
@@ -90,6 +304,30 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
     let error_msg = use_state(|| None::<String>);
     let search_query = use_state(String::new);
     let refresh_trigger = use_state(|| 0u32);
+
+    // Fetch target collection schema to inspect presentable fields
+    {
+        let target_schema = target_schema.clone();
+        let col_name = collection_name.clone();
+
+        use_effect_with(col_name, move |col| {
+            if col.is_empty() {
+                target_schema.set(None);
+            } else {
+                let col = col.clone();
+                let target_schema = target_schema.clone();
+
+                wasm_bindgen_futures::spawn_local(async move {
+                    let client = ApiClient::default();
+                    if let Ok(c) = client.get_collection_by_name(&col).await {
+                        target_schema.set(Some(c));
+                    }
+                });
+            }
+
+            || ()
+        });
+    }
 
     // Fetch records when page or refresh_trigger changes
     {
@@ -438,7 +676,7 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
                                     {
                                         filtered_records.iter().map(|record| {
                                             let is_selected = !props.current_value.is_empty() && record.id == props.current_value;
-                                            let (primary_title, previews) = extract_record_summary(record);
+                                            let primary_title = extract_record_title(record, (*target_schema).as_ref());
 
                                             let on_select_record = {
                                                 let on_select = props.on_select.clone();
@@ -471,53 +709,54 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
                                                     )}
                                                 >
                                                     <div class="flex-1 min-w-0">
-                                                        <div class="flex items-center gap-2 flex-wrap mb-1">
-                                                            {
-                                                                if let Some(ref title) = primary_title {
-                                                                    html! {
-                                                                        <span class="font-bold text-on-surface text-sm group-hover:text-primary transition-colors">
-                                                                            {title}
-                                                                        </span>
-                                                                    }
-                                                                } else {
-                                                                    html! {}
-                                                                }
-                                                            }
-                                                            <span class="font-mono text-xs bg-surface-container px-2 py-0.5 rounded text-primary font-medium border border-outline-variant/40">
-                                                                {record.id.clone()}
-                                                            </span>
-                                                            {
-                                                                if is_selected {
-                                                                    html! {
-                                                                        <span class="bg-primary/15 text-primary text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5">
-                                                                            <span class="material-symbols-outlined text-[13px]">{"check"}</span>
-                                                                            {"Selected"}
-                                                                        </span>
-                                                                    }
-                                                                } else {
-                                                                    html! {}
-                                                                }
-                                                            }
-                                                        </div>
-
                                                         {
-                                                            if !previews.is_empty() {
+                                                            if let Some(ref title) = primary_title {
                                                                 html! {
-                                                                    <div class="flex items-center gap-2 flex-wrap text-xs text-on-surface-variant mt-1">
+                                                                    <>
+                                                                        <div class="flex items-center gap-2 min-w-0">
+                                                                            <span class="font-bold text-on-surface text-sm group-hover:text-primary transition-colors truncate">
+                                                                                {title}
+                                                                            </span>
+                                                                            {
+                                                                                if is_selected {
+                                                                                    html! {
+                                                                                        <span class="bg-primary/15 text-primary text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 shrink-0">
+                                                                                            <span class="material-symbols-outlined text-[13px]">{"check"}</span>
+                                                                                            {"Selected"}
+                                                                                        </span>
+                                                                                    }
+                                                                                } else {
+                                                                                    html! {}
+                                                                                }
+                                                                            }
+                                                                        </div>
+                                                                        <div class="mt-0.5 flex items-center gap-1.5">
+                                                                            <span class="font-mono text-xs text-on-surface-variant/70">
+                                                                                {record.id.clone()}
+                                                                            </span>
+                                                                        </div>
+                                                                    </>
+                                                                }
+                                                            } else {
+                                                                html! {
+                                                                    <div class="flex items-center gap-2 min-w-0">
+                                                                        <span class="font-mono font-bold text-on-surface text-sm group-hover:text-primary transition-colors truncate">
+                                                                            {record.id.clone()}
+                                                                        </span>
                                                                         {
-                                                                            previews.iter().map(|(k, v)| {
+                                                                            if is_selected {
                                                                                 html! {
-                                                                                    <span class="inline-flex items-center gap-1 bg-surface-container-low px-2 py-0.5 rounded text-[11px] border border-outline-variant/30">
-                                                                                        <span class="font-medium text-on-surface-variant/80">{format!("{}:", k)}</span>
-                                                                                        <span class="text-on-surface truncate max-w-[180px]">{v}</span>
+                                                                                    <span class="bg-primary/15 text-primary text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 shrink-0">
+                                                                                        <span class="material-symbols-outlined text-[13px]">{"check"}</span>
+                                                                                        {"Selected"}
                                                                                     </span>
                                                                                 }
-                                                                            }).collect::<Html>()
+                                                                            } else {
+                                                                                html! {}
+                                                                            }
                                                                         }
                                                                     </div>
                                                                 }
-                                                            } else {
-                                                                html! {}
                                                             }
                                                         }
                                                     </div>

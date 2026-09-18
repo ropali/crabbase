@@ -568,6 +568,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                             related_to: f.related_to,
                             required: f.required,
                             hidden: f.hidden,
+                            presentable: f.presentable,
                             min,
                             max,
                             pattern,
@@ -592,6 +593,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                 related_to: None,
                                 required: false,
                                 hidden: false,
+                                presentable: af_name == "email",
                                 min: None,
                                 max: None,
                                 pattern: None,
@@ -1003,14 +1005,14 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                 <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
                                                                     <div class="flex items-center gap-1 mb-1">
                                                                         <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Min length"}</span>
-                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Minimum character length allowed">{"info"}</span>
                                                                     </div>
                                                                     <input type="number" min="0" value={f.min_len.map(|v| v.to_string()).unwrap_or_default()} oninput={on_min_len_change} placeholder="No min limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
                                                                 </div>
                                                                 <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
                                                                     <div class="flex items-center gap-1 mb-1">
                                                                         <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Max length"}</span>
-                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Maximum character length allowed">{"info"}</span>
                                                                     </div>
                                                                     <input type="number" min="0" value={f.max_len.map(|v| v.to_string()).unwrap_or_default()} oninput={on_max_len_change} placeholder="Default to max 5000 characters" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
                                                                 </div>
@@ -1023,7 +1025,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                 <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
                                                                     <div class="flex items-center gap-1 mb-1">
                                                                         <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Autogenerate pattern"}</span>
-                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Pattern for generating random default values, e.g. [a-z0-9]{30}">{"info"}</span>
                                                                     </div>
                                                                     <input type="text" value={f.autogenerate_pattern.clone()} oninput={on_autogenerate_change} placeholder="Ex. [a-z0-9]{30}" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none font-code-md text-code-md" />
                                                                 </div>
@@ -1034,14 +1036,14 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                 <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
                                                                     <div class="flex items-center gap-1 mb-1">
                                                                         <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Min value"}</span>
-                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Minimum numerical value allowed">{"info"}</span>
                                                                     </div>
                                                                     <input type="number" step="any" value={f.min_val.map(|v| v.to_string()).unwrap_or_default()} oninput={on_min_val_change} placeholder="No min limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
                                                                 </div>
                                                                 <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
                                                                     <div class="flex items-center gap-1 mb-1">
                                                                         <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Max value"}</span>
-                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                        <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Maximum numerical value allowed">{"info"}</span>
                                                                     </div>
                                                                     <input type="number" step="any" value={f.max_val.map(|v| v.to_string()).unwrap_or_default()} oninput={on_max_val_change} placeholder="No max limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
                                                                 </div>
@@ -1095,17 +1097,35 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                         <label class="flex items-center gap-2 cursor-pointer">
                                                                             <input type="checkbox" checked={f_req} onchange={on_req_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary" />
                                                                             <span class="text-body-sm text-on-surface">{"Required (!='')"}</span>
-                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                            <span class="relative group/tooltip inline-flex items-center" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                                                                                <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Requires field to have a non-empty value">{"info"}</span>
+                                                                                <span class="opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity duration-150 absolute bottom-full mb-1.5 left-0 w-44 bg-inverse-surface text-inverse-on-surface text-[11px] leading-snug font-normal px-2.5 py-1.5 rounded shadow-xl z-50 border border-outline/20 whitespace-normal text-left">
+                                                                                    {"Requires field to have a non-empty value"}
+                                                                                    <span class="absolute top-full left-2 border-4 border-transparent border-t-inverse-surface"></span>
+                                                                                </span>
+                                                                            </span>
                                                                         </label>
                                                                         <label class="flex items-center gap-2 cursor-pointer relative">
                                                                             <input type="checkbox" checked={f_presentable} onchange={on_presentable_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary" />
                                                                             <span class="text-body-sm text-on-surface">{"Presentable"}</span>
-                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                            <span class="relative group/tooltip inline-flex items-center" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                                                                                <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Used as display label in relation pickers">{"info"}</span>
+                                                                                <span class="opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity duration-150 absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 w-48 bg-inverse-surface text-inverse-on-surface text-[11px] leading-snug font-normal px-2.5 py-1.5 rounded shadow-xl z-50 border border-outline/20 whitespace-normal text-center">
+                                                                                    {"Used as display label in relation pickers"}
+                                                                                    <span class="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-inverse-surface"></span>
+                                                                                </span>
+                                                                            </span>
                                                                         </label>
                                                                         <label class="flex items-center gap-2 cursor-pointer">
                                                                             <input type="checkbox" checked={f_hidden} onchange={on_hidden_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary" />
                                                                             <span class="text-body-sm text-on-surface">{"Hidden"}</span>
-                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"info"}</span>
+                                                                            <span class="relative group/tooltip inline-flex items-center" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                                                                                <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Hides field from public API responses">{"info"}</span>
+                                                                                <span class="opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity duration-150 absolute bottom-full mb-1.5 right-0 w-44 bg-inverse-surface text-inverse-on-surface text-[11px] leading-snug font-normal px-2.5 py-1.5 rounded shadow-xl z-50 border border-outline/20 whitespace-normal text-left">
+                                                                                    {"Hides field from public API responses"}
+                                                                                    <span class="absolute top-full right-2 border-4 border-transparent border-t-inverse-surface"></span>
+                                                                                </span>
+                                                                            </span>
                                                                         </label>
                                                                     </div>
                                                                 </div>

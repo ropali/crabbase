@@ -221,6 +221,9 @@ pub struct Column {
     pub required: bool,
 
     #[serde(default)]
+    pub presentable: bool,
+
+    #[serde(default)]
     pub min: Option<usize>,
 
     #[serde(default)]

@@ -50,6 +50,7 @@ impl CollectionRepository {
                 min: Some(8),
                 max: Some(255),
                 pattern: None,
+                presentable: false,
             },
             Column {
                 name: "email".to_string(),
@@ -61,6 +62,7 @@ impl CollectionRepository {
                 min: Some(3),
                 max: Some(150),
                 pattern: None,
+                presentable: true,
             },
             Column {
                 name: "token_key".to_string(),
@@ -72,6 +74,7 @@ impl CollectionRepository {
                 min: None,
                 max: None,
                 pattern: None,
+                presentable: false,
             },
             Column {
                 name: "emailVisibility".to_string(),
@@ -83,6 +86,7 @@ impl CollectionRepository {
                 min: None,
                 max: None,
                 pattern: None,
+                presentable: false,
             },
             Column {
                 name: "verified".to_string(),
@@ -94,6 +98,7 @@ impl CollectionRepository {
                 min: None,
                 max: None,
                 pattern: None,
+                presentable: false,
             },
         ];
 
