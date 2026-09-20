@@ -459,8 +459,6 @@ async fn test_expand_parameter_populates_related_record() {
 /// When a record contains a one-to-many relation column pointing to another collection (`multiple: true`),
 /// it can store multiple foreign key IDs, and `?expand=tags` must populate all target records
 /// as an array in `record.expand.tags`.
-///
-/// Ref: MVP_ROADMAP.md §1.3 / §Phase 3.2
 #[tokio::test]
 async fn test_one_to_many_relation_expand() {
     let (app, token) = setup().await;
@@ -483,6 +481,14 @@ async fn test_one_to_many_relation_expand() {
         )
         .await;
     expect(posts_res, StatusCode::OK).await;
+
+    // Allow public listing of records on the `posts_multi_rel` collection
+    app.patch_json(
+        "/api/collections/posts_multi_rel",
+        json!({ "list_rule": "" }),
+        &token,
+    )
+    .await;
 
     // 3. Create two tag records
     let tag1 = create_record_api(&app, "tags", json!({ "name": "Rust" })).await;

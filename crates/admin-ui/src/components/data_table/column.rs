@@ -219,3 +219,76 @@ pub fn richtext_render(
         </div>
     }
 }
+
+pub fn relation_render(
+    v: &CellValue,
+    is_multiple: bool,
+    _on_view: Option<&Callback<ViewCellPayload>>,
+) -> Html {
+    if v.is_null() {
+        return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
+    }
+
+    if is_multiple {
+        let items: Vec<String> = match v {
+            CellValue::Json(serde_json::Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|x| match x {
+                    serde_json::Value::String(s) => Some(s.clone()),
+                    other => Some(other.to_string()),
+                })
+                .collect(),
+            CellValue::Text(s) => {
+                if let Ok(arr) = serde_json::from_str::<Vec<String>>(s) {
+                    arr
+                } else if s.trim().is_empty() || s == "[]" {
+                    vec![]
+                } else {
+                    s.split(',')
+                        .map(|item| item.trim().to_string())
+                        .filter(|item| !item.is_empty())
+                        .collect()
+                }
+            }
+            _ => vec![],
+        };
+
+        if items.is_empty() {
+            html! {
+                <span class="inline-flex items-center gap-1 text-on-surface-variant/50 text-xs italic">
+                    <span class="material-symbols-outlined text-[14px]">{"link_off"}</span>
+                    <span>{ "0 relations" }</span>
+                </span>
+            }
+        } else if items.len() == 1 {
+            html! {
+                <div class="inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 rounded font-mono text-xs">
+                    <span class="material-symbols-outlined text-[13px]">{"link"}</span>
+                    <span class="truncate max-w-[130px]" title={items[0].clone()}>{ &items[0] }</span>
+                </div>
+            }
+        } else {
+            let tooltip = items.join(", ");
+            html! {
+                <div
+                    title={tooltip}
+                    class="inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2.5 py-0.5 rounded-full font-mono text-xs font-semibold"
+                >
+                    <span class="material-symbols-outlined text-[13px]">{"library_add"}</span>
+                    <span>{ format!("{} relations", items.len()) }</span>
+                </div>
+            }
+        }
+    } else {
+        let text = v.display();
+        if text.is_empty() || text == "null" {
+            return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
+        }
+        html! {
+            <div class="inline-flex items-center gap-1 bg-surface-container-high/60 px-2 py-0.5 rounded border border-outline-variant/40 font-code-md text-code-md text-on-surface max-w-[180px]">
+                <span class="material-symbols-outlined text-[13px] text-primary shrink-0">{"link"}</span>
+                <span class="truncate font-mono text-xs" title={text.clone()}>{ text }</span>
+            </div>
+        }
+    }
+}

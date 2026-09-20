@@ -67,11 +67,11 @@ impl Record {
         if let Ok(v) = row.try_get::<chrono::DateTime<chrono::Utc>, _>(col_name) {
             return Value::String(v.to_rfc3339());
         }
-        if let Ok(v) = row.try_get::<String, _>(col_name) {
-            return Value::String(v);
-        }
         if let Ok(v) = row.try_get::<serde_json::Value, _>(col_name) {
             return v;
+        }
+        if let Ok(v) = row.try_get::<String, _>(col_name) {
+            return Value::String(v);
         }
         Value::Null
     }
@@ -206,6 +206,12 @@ impl DataTypes {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RelationType {
+    OneToOne,
+    OneToMany,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, Default, PartialEq)]
 pub struct Column {
     pub name: String,
@@ -234,19 +240,38 @@ pub struct Column {
 
     #[serde(default)]
     pub related_to: Option<String>,
+
+    #[serde(default)]
+    pub multiple: bool,
 }
 
 impl Column {
     pub fn to_sql_definition(&self) -> String {
         match &self.data_type {
             DataTypes::Relation => {
-                let target = self.related_to.as_deref().unwrap_or("unknown");
-                format!("\"{}\" UUID REFERENCES \"{}\"(\"id\")", self.name, target)
+                if self.multiple {
+                    format!("\"{}\" JSONB DEFAULT '[]'::jsonb", self.name)
+                } else {
+                    let target = self.related_to.as_deref().unwrap_or("unknown");
+                    format!("\"{}\" UUID REFERENCES \"{}\"(\"id\")", self.name, target)
+                }
             }
             DataTypes::AutoDatetime(action) if action == "now" => {
                 format!("\"{}\" TIMESTAMPTZ DEFAULT now()", self.name)
             }
             _ => format!("\"{}\" {}", self.name, self.data_type.to_db_type()),
+        }
+    }
+
+    pub fn relation_type(&self) -> Option<RelationType> {
+        if self.data_type == DataTypes::Relation {
+            Some(if self.multiple {
+                RelationType::OneToMany
+            } else {
+                RelationType::OneToOne
+            })
+        } else {
+            None
         }
     }
 }
@@ -462,15 +487,41 @@ impl Column {
                 _ => Err(format!("field '{}' must be a datetime string", self.name)),
             },
 
-            DataTypes::Relation => match val {
-                serde_json::Value::String(s) => Uuid::parse_str(s)
-                    .map(TypedValue::Uuid)
-                    .map_err(|_| format!("field '{}' must be a valid UUID", self.name)),
-                _ => Err(format!(
-                    "field '{}' must be a valid relation UUID",
-                    self.name
-                )),
-            },
+            DataTypes::Relation => {
+                if self.multiple {
+                    match val {
+                        serde_json::Value::Array(arr) => {
+                            for item in arr {
+                                let s = item.as_str().ok_or_else(|| {
+                                    format!(
+                                        "field '{}' array elements must be UUID strings",
+                                        self.name
+                                    )
+                                })?;
+
+                                Uuid::parse_str(s).map_err(|_| {
+                                    format!("field '{}' contains invalid UUID: {}", self.name, s)
+                                })?;
+                            }
+                            Ok(TypedValue::Json(val.clone()))
+                        }
+                        _ => Err(format!(
+                            "field '{}' must be array of relation UUIDs",
+                            self.name
+                        )),
+                    }
+                } else {
+                    match val {
+                        serde_json::Value::String(s) => Uuid::parse_str(s)
+                            .map(TypedValue::Uuid)
+                            .map_err(|_| format!("field '{}' must be a valid UUID", self.name)),
+                        _ => Err(format!(
+                            "field '{}' must be a valid relation UUID",
+                            self.name
+                        )),
+                    }
+                }
+            }
 
             DataTypes::Json => Ok(TypedValue::Json(val.clone())),
 
@@ -593,6 +644,44 @@ mod tests {
         };
         let sql = col.to_sql_definition();
         assert!(sql.contains("unknown"));
+    }
+
+    #[test]
+    fn test_column_sql_definition_relation_multiple() {
+        let col = Column {
+            name: "tags".to_string(),
+            data_type: DataTypes::Relation,
+            multiple: true,
+            ..Default::default()
+        };
+        let sql = col.to_sql_definition();
+        assert_eq!(sql, "\"tags\" JSONB DEFAULT '[]'::jsonb");
+    }
+
+    #[test]
+    fn test_column_relation_type() {
+        let col_single = Column {
+            name: "author_id".to_string(),
+            data_type: DataTypes::Relation,
+            multiple: false,
+            ..Default::default()
+        };
+        assert_eq!(col_single.relation_type(), Some(RelationType::OneToOne));
+
+        let col_multi = Column {
+            name: "tag_ids".to_string(),
+            data_type: DataTypes::Relation,
+            multiple: true,
+            ..Default::default()
+        };
+        assert_eq!(col_multi.relation_type(), Some(RelationType::OneToMany));
+
+        let col_other = Column {
+            name: "title".to_string(),
+            data_type: DataTypes::PlainText,
+            ..Default::default()
+        };
+        assert_eq!(col_other.relation_type(), None);
     }
 
     #[test]
@@ -836,6 +925,29 @@ mod tests {
         assert!(
             col_rel
                 .coerce_value(&serde_json::json!("not-a-uuid"))
+                .is_err()
+        );
+
+        let col_rel_multi = Column {
+            name: "rel_multi".into(),
+            data_type: DataTypes::Relation,
+            multiple: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            col_rel_multi
+                .coerce_value(&serde_json::json!([uuid_str]))
+                .unwrap(),
+            TypedValue::Json(serde_json::json!([uuid_str]))
+        );
+        assert!(
+            col_rel_multi
+                .coerce_value(&serde_json::json!(["not-a-uuid"]))
+                .is_err()
+        );
+        assert!(
+            col_rel_multi
+                .coerce_value(&serde_json::json!("not-an-array"))
                 .is_err()
         );
 

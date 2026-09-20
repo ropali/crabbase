@@ -157,13 +157,13 @@ impl RecordsRepository {
             })
             .collect();
 
-        // 3. identify each relation sequanetially
+        // 3. Process each relation sequentially
         for col in relation_columns {
             let Some(target_table) = col.related_to.as_deref().filter(|s| !s.is_empty()) else {
                 continue;
             };
 
-            // Fetch target collection schema to verify existence & read view_rule / hidden flags
+            // Fetch target collection schema
             let target_col = match col_repo.get_by_name(target_table).await {
                 Ok(c) => c,
                 Err(e) => return Err(e),
@@ -174,7 +174,17 @@ impl RecordsRepository {
 
             for record in records.iter() {
                 if let Some(val) = record.data.get(&col.name) {
-                    if let Some(id_str) = val.as_str() {
+                    if col.multiple {
+                        if let Some(arr) = val.as_array() {
+                            for item in arr {
+                                if let Some(id_str) = item.as_str() {
+                                    if let Ok(parsed_uuid) = Uuid::parse_str(id_str) {
+                                        unique_uuids.insert(parsed_uuid);
+                                    }
+                                }
+                            }
+                        }
+                    } else if let Some(id_str) = val.as_str() {
                         if let Ok(parsed_uuid) = Uuid::parse_str(id_str) {
                             unique_uuids.insert(parsed_uuid);
                         }
@@ -189,7 +199,7 @@ impl RecordsRepository {
 
             let uuid_list: Vec<Uuid> = unique_uuids.into_iter().collect();
 
-            // Build base query: WHERE id = ANY($1)
+            // Build query: WHERE id = ANY($1)
             let mut sql = format!(
                 "SELECT * FROM {} WHERE id = ANY($1)",
                 quote_ident(target_table)
@@ -235,10 +245,22 @@ impl RecordsRepository {
                 lookup.insert(rec.id.clone(), rec);
             }
 
-            // Attach expanded record into record.expand["<col_name>"]
+            // Attach expanded records into record.expand["<col_name>"]
             for record in records.iter_mut() {
                 if let Some(val) = record.data.get(&col.name) {
-                    if let Some(fk_str) = val.as_str() {
+                    if col.multiple {
+                        if let Some(arr) = val.as_array() {
+                            let related_records: Vec<Value> = arr
+                                .iter()
+                                .filter_map(|item| item.as_str())
+                                .filter_map(|fk_str| lookup.get(fk_str))
+                                .map(|rec| serde_json::to_value(rec).unwrap_or(Value::Null))
+                                .collect();
+
+                            let expand_obj = record.expand.get_or_insert_with(serde_json::Map::new);
+                            expand_obj.insert(col.name.clone(), Value::Array(related_records));
+                        }
+                    } else if let Some(fk_str) = val.as_str() {
                         if let Some(related_record) = lookup.get(fk_str) {
                             let expand_obj = record.expand.get_or_insert_with(serde_json::Map::new);
                             let serialized =

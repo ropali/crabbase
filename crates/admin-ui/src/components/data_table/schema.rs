@@ -1,6 +1,6 @@
 use crate::components::data_table::column::{
-    ColumnDef, bool_render, clipped_text_render, code_render, date_render, default_render,
-    id_render, json_render, richtext_render,
+    ColumnDef, bool_render, clipped_text_render, date_render, default_render, id_render,
+    json_render, relation_render, richtext_render,
 };
 use crate::models::collection::Collection;
 
@@ -25,6 +25,7 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
         let key = field.name.clone();
         let header = field.name.clone();
         let data_type = field.data_type.clone();
+        let is_multiple = field.multiple;
 
         // Choose icon depending on data type
         let icon = match data_type.to_lowercase().as_str() {
@@ -32,7 +33,13 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
             "url" => Some("link"),
             "bool" => Some("check_box"),
             "number" => Some("123"),
-            "relation" => Some("link"),
+            "relation" => {
+                if is_multiple {
+                    Some("library_add")
+                } else {
+                    Some("link")
+                }
+            }
             "datetime" | "autodatetime" | "autodate" => Some("schedule"),
             "file" => Some("attach_file"),
             "select" => Some("list"),
@@ -52,7 +59,7 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
                     move |cell_val, on_view| match dt_clone.to_lowercase().as_str() {
                         "bool" => bool_render(cell_val, on_view),
                         "number" => default_render(cell_val, on_view),
-                        "relation" => code_render(cell_val, on_view),
+                        "relation" => relation_render(cell_val, is_multiple, on_view),
                         "datetime" | "autodatetime" | "autodate" => date_render(cell_val, on_view),
                         "json" => json_render(key_clone.clone(), cell_val, on_view),
                         "richtext" | "editor" => {

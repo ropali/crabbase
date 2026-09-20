@@ -51,6 +51,7 @@ impl CollectionRepository {
                 max: Some(255),
                 pattern: None,
                 presentable: false,
+                multiple: false,
             },
             Column {
                 name: "email".to_string(),
@@ -63,6 +64,7 @@ impl CollectionRepository {
                 max: Some(150),
                 pattern: None,
                 presentable: true,
+                multiple: false,
             },
             Column {
                 name: "token_key".to_string(),
@@ -75,6 +77,7 @@ impl CollectionRepository {
                 max: None,
                 pattern: None,
                 presentable: false,
+                multiple: false,
             },
             Column {
                 name: "emailVisibility".to_string(),
@@ -87,6 +90,7 @@ impl CollectionRepository {
                 max: None,
                 pattern: None,
                 presentable: false,
+                multiple: false,
             },
             Column {
                 name: "verified".to_string(),
@@ -99,6 +103,7 @@ impl CollectionRepository {
                 max: None,
                 pattern: None,
                 presentable: false,
+                multiple: false,
             },
         ];
 
@@ -545,7 +550,8 @@ async fn migrate_collection_table(
             Some(current_col) => {
                 // Check if data type or relation constraint changed
                 let type_changed = current_col.data_type != next_col.data_type
-                    || current_col.related_to != next_col.related_to;
+                    || current_col.related_to != next_col.related_to
+                    || current_col.multiple != next_col.multiple;
 
                 if type_changed {
                     // Drop old index

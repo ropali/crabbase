@@ -8,6 +8,8 @@ pub struct Field {
     pub index: bool,
     pub related_to: Option<String>,
     #[serde(default)]
+    pub multiple: bool,
+    #[serde(default)]
     pub required: bool,
     #[serde(default)]
     pub hidden: bool,

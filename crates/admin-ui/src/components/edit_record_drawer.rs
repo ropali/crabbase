@@ -97,7 +97,7 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
     };
 
     let error_msg = use_state(|| None::<String>);
-    let active_relation_modal = use_state(|| None::<(String, Option<String>)>);
+    let active_relation_modal = use_state(|| None::<(String, Option<String>, bool)>);
 
     let on_close_click = {
         let on_close = props.on_close.clone();
@@ -264,16 +264,40 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                     serde_json::Value::String(val.clone())
                                 }
                             }
+                            "relation" => {
+                                if f.multiple {
+                                    if val.trim().is_empty() || val == "[]" {
+                                        serde_json::Value::Array(vec![])
+                                    } else if let Ok(arr) = serde_json::from_str::<Vec<String>>(val)
+                                    {
+                                        let json_arr: Vec<serde_json::Value> = arr
+                                            .into_iter()
+                                            .map(serde_json::Value::String)
+                                            .collect();
+                                        serde_json::Value::Array(json_arr)
+                                    } else {
+                                        let list: Vec<serde_json::Value> = val
+                                            .split(',')
+                                            .map(|s| s.trim())
+                                            .filter(|s| !s.is_empty())
+                                            .map(|s| serde_json::Value::String(s.to_string()))
+                                            .collect();
+                                        serde_json::Value::Array(list)
+                                    }
+                                } else {
+                                    if val.trim().is_empty() && !f.required {
+                                        serde_json::Value::Null
+                                    } else {
+                                        serde_json::Value::String(val.clone())
+                                    }
+                                }
+                            }
                             _ => {
                                 if val.trim().is_empty()
                                     && !f.required
                                     && matches!(
                                         dt.as_str(),
-                                        "relation"
-                                            | "datetime"
-                                            | "autodatetime"
-                                            | "autodate"
-                                            | "geopoint"
+                                        "datetime" | "autodatetime" | "autodate" | "geopoint"
                                     )
                                 {
                                     serde_json::Value::Null
@@ -307,14 +331,33 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
     let is_auth = is_users || is_superusers;
 
     let relation_modal_html =
-        if let Some((field_name, target_col)) = (*active_relation_modal).clone() {
+        if let Some((field_name, target_col, is_multi)) = (*active_relation_modal).clone() {
             let current_field_val = fields.get(&field_name).cloned().unwrap_or_default();
+            let current_ids: Vec<String> = serde_json::from_str::<Vec<String>>(&current_field_val)
+                .unwrap_or_else(|_| {
+                    current_field_val
+                        .split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                });
             let on_select = {
                 let on_dynamic_field_change = on_dynamic_field_change.clone();
                 let active_relation_modal = active_relation_modal.clone();
                 let field_name = field_name.clone();
                 Callback::from(move |chosen_id: String| {
                     on_dynamic_field_change.emit((field_name.clone(), chosen_id));
+                    active_relation_modal.set(None);
+                })
+            };
+            let on_select_multiple = {
+                let on_dynamic_field_change = on_dynamic_field_change.clone();
+                let active_relation_modal = active_relation_modal.clone();
+                let field_name = field_name.clone();
+                Callback::from(move |chosen_ids: Vec<String>| {
+                    let json_str =
+                        serde_json::to_string(&chosen_ids).unwrap_or_else(|_| "[]".to_string());
+                    on_dynamic_field_change.emit((field_name.clone(), json_str));
                     active_relation_modal.set(None);
                 })
             };
@@ -329,7 +372,10 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                     field_name={field_name}
                     target_collection={target_col}
                     current_value={current_field_val}
+                    multiple={is_multi}
+                    current_values={current_ids}
                     on_select={on_select}
+                    on_select_multiple={Some(on_select_multiple)}
                     on_close={on_close}
                 />
             }
@@ -611,81 +657,221 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                                 />
                                                             </div>
                                                         }
-                                                     } else if dt == "relation" {
+                                                    } else if dt == "relation" {
+                                                        let rel_target = f.related_to.as_deref().unwrap_or("related");
+                                                        let is_multi = f.multiple;
                                                         let on_open_modal = {
                                                             let active_relation_modal = active_relation_modal.clone();
                                                             let key = key.clone();
                                                             let rel_to = f.related_to.clone();
                                                             Callback::from(move |_| {
-                                                                active_relation_modal.set(Some((key.clone(), rel_to.clone())));
+                                                                active_relation_modal.set(Some((key.clone(), rel_to.clone(), is_multi)));
                                                             })
                                                         };
-                                                        let on_clear = {
-                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
-                                                            let key = key.clone();
-                                                            Callback::from(move |_| {
-                                                                on_dynamic_field_change.emit((key.clone(), "".to_string()));
-                                                            })
-                                                        };
-                                                        let rel_target = f.related_to.as_deref().unwrap_or("related");
-                                                        html! {
-                                                            <div class="group" key={key.clone()}>
-                                                                <div class="flex items-center justify-between mb-1">
-                                                                    <label class="font-label-xs text-label-xs text-on-surface-variant flex items-center gap-1">
-                                                                        <span class="material-symbols-outlined text-[14px]">{"link"}</span>
-                                                                        {label_text}
-                                                                        {if f.required {
-                                                                            html! { <span class="text-error font-bold ml-0.5">{"*"}</span> }
-                                                                        } else {
-                                                                            html! {}
-                                                                        }}
-                                                                    </label>
-                                                                    {if let Some(target) = &f.related_to {
-                                                                        html! {
-                                                                            <span class="text-[11px] text-on-surface-variant/80 flex items-center gap-1">
-                                                                                <span>{"Relates to:"}</span>
-                                                                                <span class="font-mono px-1.5 py-0.5 bg-surface-container rounded text-primary text-[11px] border border-outline-variant/40 font-semibold">{target}</span>
-                                                                            </span>
-                                                                        }
-                                                                    } else {
-                                                                        html! {}
-                                                                    }}
-                                                                </div>
-                                                                <div class="flex gap-2">
-                                                                    <div class="relative flex-1">
-                                                                        <input
-                                                                            class="w-full bg-white border border-outline-variant rounded p-3 pr-9 font-mono text-body-sm text-on-surface outline-none focus:border-primary transition-all"
-                                                                            placeholder={format!("Select {} record UUID...", rel_target)}
-                                                                            type="text"
-                                                                            value={field_val.clone()}
-                                                                            oninput={on_input}
-                                                                        />
-                                                                        {if !field_val.is_empty() {
+
+                                                        if is_multi {
+                                                            let selected_ids: Vec<String> = serde_json::from_str::<Vec<String>>(&field_val)
+                                                                .unwrap_or_else(|_| {
+                                                                    field_val
+                                                                        .split(',')
+                                                                        .map(|s| s.trim().to_string())
+                                                                        .filter(|s| !s.is_empty())
+                                                                        .collect()
+                                                                });
+
+                                                            let on_remove_id = {
+                                                                let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                                let key = key.clone();
+                                                                let selected_ids = selected_ids.clone();
+                                                                Callback::from(move |id_to_remove: String| {
+                                                                    let updated: Vec<String> = selected_ids
+                                                                        .iter()
+                                                                        .filter(|id| id != &&id_to_remove)
+                                                                        .cloned()
+                                                                        .collect();
+                                                                    let json_str = serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
+                                                                    on_dynamic_field_change.emit((key.clone(), json_str));
+                                                                })
+                                                            };
+
+                                                            let on_clear_all = {
+                                                                let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                                let key = key.clone();
+                                                                Callback::from(move |_| {
+                                                                    on_dynamic_field_change.emit((key.clone(), "[]".to_string()));
+                                                                })
+                                                            };
+
+                                                            html! {
+                                                                <div class="group" key={f.name.clone()}>
+                                                                    <div class="flex items-center justify-between mb-1">
+                                                                        <label class="font-label-xs text-label-xs text-on-surface-variant flex items-center gap-1.5">
+                                                                            <span class="material-symbols-outlined text-[14px]">{"library_add"}</span>
+                                                                            {label_text}
+                                                                            <span class="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[10px] font-bold">{"1:N"}</span>
+                                                                            {if f.required {
+                                                                                html! { <span class="text-error font-bold ml-0.5">{"*"}</span> }
+                                                                            } else {
+                                                                                html! {}
+                                                                            }}
+                                                                        </label>
+                                                                        {if let Some(target) = &f.related_to {
                                                                             html! {
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onclick={on_clear}
-                                                                                    title="Clear selection"
-                                                                                    class="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-error hover:bg-surface-container-high rounded p-1 transition-colors"
-                                                                                >
-                                                                                    <span class="material-symbols-outlined text-sm">{"close"}</span>
-                                                                                </button>
+                                                                                <span class="text-[11px] text-on-surface-variant/80 flex items-center gap-1">
+                                                                                    <span>{"Relates to:"}</span>
+                                                                                    <span class="font-mono px-1.5 py-0.5 bg-surface-container rounded text-primary text-[11px] border border-outline-variant/40 font-semibold">{target}</span>
+                                                                                </span>
                                                                             }
                                                                         } else {
                                                                             html! {}
                                                                         }}
                                                                     </div>
-                                                                    <button
-                                                                        type="button"
-                                                                        onclick={on_open_modal}
-                                                                        class="px-3.5 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shrink-0 active:scale-95 shadow-sm"
-                                                                        title={format!("Browse and choose record from {}", rel_target)}
-                                                                    >
-                                                                        <span class="material-symbols-outlined text-sm">{"search"}</span>
-                                                                        <span>{"Choose Record"}</span>
-                                                                    </button>
+
+                                                                    <div class="border border-outline-variant rounded-lg p-3 bg-surface-container-lowest flex flex-col gap-2.5">
+                                                                        {
+                                                                            if selected_ids.is_empty() {
+                                                                                html! {
+                                                                                    <div class="py-3 px-3 text-center text-xs text-on-surface-variant/70 italic flex items-center justify-center gap-1.5">
+                                                                                        <span class="material-symbols-outlined text-sm opacity-60">{"link_off"}</span>
+                                                                                        <span>{format!("No records from '{}' selected yet", rel_target)}</span>
+                                                                                    </div>
+                                                                                }
+                                                                            } else {
+                                                                                html! {
+                                                                                    <div class="flex flex-wrap gap-2">
+                                                                                        {
+                                                                                            selected_ids.iter().map(|item_id| {
+                                                                                                let item_id_clone = item_id.clone();
+                                                                                                let on_remove = {
+                                                                                                    let on_remove_id = on_remove_id.clone();
+                                                                                                    let item_id_clone = item_id_clone.clone();
+                                                                                                    Callback::from(move |_| {
+                                                                                                        on_remove_id.emit(item_id_clone.clone());
+                                                                                                    })
+                                                                                                };
+                                                                                                html! {
+                                                                                                    <div
+                                                                                                        key={item_id.clone()}
+                                                                                                        class="inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/20 px-2.5 py-1 rounded-lg text-xs font-mono group/chip"
+                                                                                                    >
+                                                                                                        <span class="font-semibold">{item_id.clone()}</span>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onclick={on_remove}
+                                                                                                            class="text-primary/60 hover:text-error rounded-full p-0.5 transition-colors"
+                                                                                                            title="Remove this relation"
+                                                                                                        >
+                                                                                                            <span class="material-symbols-outlined text-[13px] block">{"close"}</span>
+                                                                                                        </button>
+                                                                                                    </div>
+                                                                                                }
+                                                                                            }).collect::<Html>()
+                                                                                        }
+                                                                                    </div>
+                                                                                }
+                                                                            }
+                                                                        }
+
+                                                                        <div class="flex items-center justify-between pt-1 border-t border-outline-variant/40">
+                                                                            <span class="text-[11px] text-on-surface-variant/70 font-medium">
+                                                                                {format!("{} items selected", selected_ids.len())}
+                                                                            </span>
+                                                                            <div class="flex items-center gap-2">
+                                                                                {
+                                                                                    if !selected_ids.is_empty() {
+                                                                                        html! {
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onclick={on_clear_all}
+                                                                                                class="px-2.5 py-1 text-xs text-on-surface-variant hover:text-error transition-colors rounded hover:bg-surface-container"
+                                                                                            >
+                                                                                                {"Clear all"}
+                                                                                            </button>
+                                                                                        }
+                                                                                    } else {
+                                                                                        html! {}
+                                                                                    }
+                                                                                }
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onclick={on_open_modal}
+                                                                                    class="px-3 py-1.5 bg-primary text-on-primary hover:bg-primary-container hover:text-on-primary-container rounded-lg font-bold text-xs flex items-center gap-1 transition-all shadow-sm active:scale-95"
+                                                                                >
+                                                                                    <span class="material-symbols-outlined text-sm">{"add_link"}</span>
+                                                                                    <span>{if selected_ids.is_empty() { "Choose Records" } else { "Edit Selection" }}</span>
+                                                                                </button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
                                                                 </div>
-                                                            </div>
+                                                            }
+                                                        } else {
+                                                            let on_clear = {
+                                                                let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                                let key = key.clone();
+                                                                Callback::from(move |_| {
+                                                                    on_dynamic_field_change.emit((key.clone(), "".to_string()));
+                                                                })
+                                                            };
+                                                            html! {
+                                                                <div class="group" key={f.name.clone()}>
+                                                                    <div class="flex items-center justify-between mb-1">
+                                                                        <label class="font-label-xs text-label-xs text-on-surface-variant flex items-center gap-1">
+                                                                            <span class="material-symbols-outlined text-[14px]">{"link"}</span>
+                                                                            {label_text}
+                                                                            {if f.required {
+                                                                                html! { <span class="text-error font-bold ml-0.5">{"*"}</span> }
+                                                                            } else {
+                                                                                html! {}
+                                                                            }}
+                                                                        </label>
+                                                                        {if let Some(target) = &f.related_to {
+                                                                            html! {
+                                                                                <span class="text-[11px] text-on-surface-variant/80 flex items-center gap-1">
+                                                                                    <span>{"Relates to:"}</span>
+                                                                                    <span class="font-mono px-1.5 py-0.5 bg-surface-container rounded text-primary text-[11px] border border-outline-variant/40 font-semibold">{target}</span>
+                                                                                </span>
+                                                                            }
+                                                                        } else {
+                                                                            html! {}
+                                                                        }}
+                                                                    </div>
+                                                                    <div class="flex gap-2">
+                                                                        <div class="relative flex-1">
+                                                                            <input
+                                                                                class="w-full bg-white border border-outline-variant rounded p-3 pr-9 font-mono text-body-sm text-on-surface outline-none focus:border-primary transition-all"
+                                                                                placeholder={format!("Select {} record UUID...", rel_target)}
+                                                                                type="text"
+                                                                                value={field_val.clone()}
+                                                                                oninput={on_input}
+                                                                            />
+                                                                            {if !field_val.is_empty() {
+                                                                                html! {
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onclick={on_clear}
+                                                                                        title="Clear selection"
+                                                                                        class="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant/60 hover:text-error hover:bg-surface-container-high rounded p-1 transition-colors"
+                                                                                    >
+                                                                                        <span class="material-symbols-outlined text-sm">{"close"}</span>
+                                                                                    </button>
+                                                                                }
+                                                                            } else {
+                                                                                html! {}
+                                                                            }}
+                                                                        </div>
+                                                                        <button
+                                                                            type="button"
+                                                                            onclick={on_open_modal}
+                                                                            class="px-3.5 py-2.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 hover:border-primary/40 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all shrink-0 active:scale-95 shadow-sm"
+                                                                            title={format!("Browse and choose record from {}", rel_target)}
+                                                                        >
+                                                                            <span class="material-symbols-outlined text-sm">{"search"}</span>
+                                                                            <span>{"Choose Record"}</span>
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            }
                                                         }
                                                     } else {
                                                         let input_type = match dt.as_str() {

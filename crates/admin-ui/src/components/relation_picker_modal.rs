@@ -14,7 +14,13 @@ pub struct RelationPickerModalProps {
     pub target_collection: Option<String>,
     #[prop_or_default]
     pub current_value: String,
+    #[prop_or_default]
+    pub multiple: bool,
+    #[prop_or_default]
+    pub current_values: Vec<String>,
     pub on_select: Callback<String>,
+    #[prop_or_default]
+    pub on_select_multiple: Option<Callback<Vec<String>>>,
     pub on_close: Callback<()>,
 }
 
@@ -305,6 +311,57 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
     let search_query = use_state(String::new);
     let refresh_trigger = use_state(|| 0u32);
 
+    let is_multiple = props.multiple;
+    let selected_ids = {
+        let initial_values = if !props.current_values.is_empty() {
+            props.current_values.clone()
+        } else if let Ok(arr) = serde_json::from_str::<Vec<String>>(&props.current_value) {
+            arr
+        } else if !props.current_value.is_empty() && props.current_value.contains(',') {
+            props
+                .current_value
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        } else if !props.current_value.is_empty() && props.multiple {
+            vec![props.current_value.clone()]
+        } else {
+            Vec::new()
+        };
+        use_state(move || initial_values)
+    };
+
+    let toggle_record_id = {
+        let selected_ids = selected_ids.clone();
+        Callback::from(move |id: String| {
+            let mut list = (*selected_ids).clone();
+            if let Some(pos) = list.iter().position(|x| x == &id) {
+                list.remove(pos);
+            } else {
+                list.push(id);
+            }
+            selected_ids.set(list);
+        })
+    };
+
+    let on_confirm_multiple = {
+        let on_select_multiple = props.on_select_multiple.clone();
+        let on_select = props.on_select.clone();
+        let on_close = props.on_close.clone();
+        let selected_ids = selected_ids.clone();
+        Callback::from(move |_| {
+            let list = (*selected_ids).clone();
+            if let Some(cb) = &on_select_multiple {
+                cb.emit(list.clone());
+            } else {
+                let json_str = serde_json::to_string(&list).unwrap_or_else(|_| "[]".to_string());
+                on_select.emit(json_str);
+            }
+            on_close.emit(());
+        })
+    };
+
     // Fetch target collection schema to inspect presentable fields
     {
         let target_schema = target_schema.clone();
@@ -512,13 +569,28 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
                         </div>
                         <div>
                             <div class="flex items-center gap-2">
-                                <h3 class="font-bold text-on-surface text-lg">{"Select Related Record"}</h3>
+                                <h3 class="font-bold text-on-surface text-lg">
+                                    {if is_multiple { "Select Related Records" } else { "Select Related Record" }}
+                                </h3>
                                 <span class="bg-primary/10 text-primary px-2 py-0.5 rounded-full font-label-xs text-[10px] uppercase font-bold tracking-wider">
                                     {&props.field_name}
                                 </span>
+                                {if is_multiple {
+                                    html! {
+                                        <span class="bg-primary/20 text-primary px-2 py-0.5 rounded-full font-label-xs text-[10px] font-bold">
+                                            {"One-to-Many"}
+                                        </span>
+                                    }
+                                } else {
+                                    html! {}
+                                }}
                             </div>
                             <p class="font-label-xs text-label-xs text-on-surface-variant">
-                                {format!("Choose a record from '{}' to link to field '{}'", collection_name, props.field_name)}
+                                {if is_multiple {
+                                    format!("Select records from '{}' to link to field '{}'", collection_name, props.field_name)
+                                } else {
+                                    format!("Choose a record from '{}' to link to field '{}'", collection_name, props.field_name)
+                                }}
                             </p>
                         </div>
                     </div>
@@ -606,7 +678,16 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
                             }
                         </div>
                         {
-                            if !props.current_value.is_empty() {
+                            if is_multiple {
+                                html! {
+                                    <div class="flex items-center gap-1.5">
+                                        <span>{"Selected:"}</span>
+                                        <span class="font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                                            {format!("{} records", selected_ids.len())}
+                                        </span>
+                                    </div>
+                                }
+                            } else if !props.current_value.is_empty() {
                                 html! {
                                     <div class="flex items-center gap-1">
                                         <span>{"Current selection:"}</span>
@@ -675,14 +756,23 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
                                 <>
                                     {
                                         filtered_records.iter().map(|record| {
-                                            let is_selected = !props.current_value.is_empty() && record.id == props.current_value;
+                                            let is_selected = if is_multiple {
+                                                selected_ids.contains(&record.id)
+                                            } else {
+                                                !props.current_value.is_empty() && record.id == props.current_value
+                                            };
                                             let primary_title = extract_record_title(record, (*target_schema).as_ref());
 
                                             let on_select_record = {
                                                 let on_select = props.on_select.clone();
+                                                let toggle_record_id = toggle_record_id.clone();
                                                 let record_id = record.id.clone();
                                                 Callback::from(move |_| {
-                                                    on_select.emit(record_id.clone());
+                                                    if is_multiple {
+                                                        toggle_record_id.emit(record_id.clone());
+                                                    } else {
+                                                        on_select.emit(record_id.clone());
+                                                    }
                                                 })
                                             };
 
@@ -763,7 +853,29 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
 
                                                     <div class="shrink-0">
                                                         {
-                                                            if is_selected {
+                                                            if is_multiple {
+                                                                if is_selected {
+                                                                    html! {
+                                                                        <button
+                                                                            type="button"
+                                                                            class="px-3.5 py-1.5 bg-primary/15 text-primary border border-primary/30 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                                                                        >
+                                                                            <span class="material-symbols-outlined text-sm">{"check_box"}</span>
+                                                                            {"Selected"}
+                                                                        </button>
+                                                                    }
+                                                                } else {
+                                                                    html! {
+                                                                        <button
+                                                                            type="button"
+                                                                            class="px-3.5 py-1.5 bg-surface-container hover:bg-primary/10 hover:text-primary text-on-surface-variant rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
+                                                                        >
+                                                                            <span class="material-symbols-outlined text-sm">{"check_box_outline_blank"}</span>
+                                                                            {"Select"}
+                                                                        </button>
+                                                                    }
+                                                                }
+                                                            } else if is_selected {
                                                                 html! {
                                                                     <button
                                                                         type="button"
@@ -845,6 +957,22 @@ pub fn relation_picker_modal(props: &RelationPickerModalProps) -> Html {
                         >
                             {"Cancel"}
                         </button>
+                        {
+                            if is_multiple {
+                                html! {
+                                    <button
+                                        type="button"
+                                        onclick={on_confirm_multiple}
+                                        class="px-5 py-2 bg-primary text-on-primary hover:bg-primary/90 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95"
+                                    >
+                                        <span class="material-symbols-outlined text-sm">{"done_all"}</span>
+                                        <span>{format!("Save Selection ({})", selected_ids.len())}</span>
+                                    </button>
+                                }
+                            } else {
+                                html! {}
+                            }
+                        }
                     </div>
                 </div>
             </div>

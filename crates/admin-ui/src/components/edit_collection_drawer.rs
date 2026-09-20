@@ -20,6 +20,7 @@ pub struct CustomField {
     pub presentable: bool,
     pub hidden: bool,
     pub related_to: Option<String>,
+    pub multiple: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -121,6 +122,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                     presentable: f.presentable,
                     hidden: f.hidden,
                     related_to: f.related_to.clone(),
+                    multiple: f.multiple,
                 })
                 .collect::<Vec<_>>();
             let len = parsed_fields.len();
@@ -291,6 +293,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                 presentable: true,
                 hidden: false,
                 related_to: None,
+                multiple: false,
             });
             fields.set(current);
             next_field_id.set(*next_field_id + 1);
@@ -586,6 +589,26 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
         })
     };
 
+    let update_field_multiple = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, bool)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            multiple: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
     // Form Submission
     let on_submit = {
         let original_name = props.collection.name.clone();
@@ -670,6 +693,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                             data_type: f.data_type,
                             index: is_indexed,
                             related_to: f.related_to,
+                            multiple: f.multiple,
                             required: f.required,
                             hidden: f.hidden,
                             presentable: f.presentable,
@@ -1013,6 +1037,14 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                         })
                                                     };
 
+                                                    let on_multiple_change = {
+                                                        let update_field_multiple = update_field_multiple.clone();
+                                                        let f_multiple = f.multiple;
+                                                        Callback::from(move |_| {
+                                                            update_field_multiple.emit((f_id, !f_multiple));
+                                                        })
+                                                    };
+
                                                     let icon = match f_type.to_lowercase().as_str() {
                                                         "number" => "123",
                                                         "bool" => "check_box",
@@ -1080,6 +1112,7 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                         },
                                                         "Relation" => {
                                                             let current_rel = f.related_to.clone().unwrap_or_default();
+                                                            let f_multiple = f.multiple;
                                                             html! {
                                                                 <div class="grid grid-cols-2 gap-4">
                                                                     <div class="bg-surface-container-low p-3 rounded-lg industrial-border col-span-2">
@@ -1098,6 +1131,18 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                                                 }).collect::<Html>()
                                                                             }
                                                                         </select>
+                                                                    </div>
+                                                                    <div class="col-span-2 bg-surface-container-low p-3 rounded-lg industrial-border flex items-center justify-between">
+                                                                        <div class="flex items-center gap-2">
+                                                                            <span class="material-symbols-outlined text-[18px] text-primary">{"library_add"}</span>
+                                                                            <div>
+                                                                                <div class="font-bold text-xs text-on-surface">{"Select multiple records (One-to-Many)"}</div>
+                                                                                <div class="text-[11px] text-on-surface-variant/70">{"Store an array of foreign keys linking multiple records"}</div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <label class="relative inline-flex items-center cursor-pointer">
+                                                                            <input type="checkbox" checked={f_multiple} onchange={on_multiple_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary h-4 w-4" />
+                                                                        </label>
                                                                     </div>
                                                                 </div>
                                                             }
@@ -1187,6 +1232,15 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                                             <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
                                                                             <option value="GeoPoint" selected={f_type == "GeoPoint"}>{"GeoPoint"}</option>
                                                                         </select>
+                                                                        {if f_type == "Relation" {
+                                                                            if f.multiple {
+                                                                                html! { <span class="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[9px] font-bold tracking-tight" title="One-to-Many relation">{"1:N"}</span> }
+                                                                            } else {
+                                                                                html! { <span class="px-1.5 py-0.5 bg-surface-container text-on-surface-variant border border-outline-variant/40 rounded text-[9px] font-medium tracking-tight" title="Single relation">{"1:1"}</span> }
+                                                                            }
+                                                                        } else {
+                                                                            html! {}
+                                                                        }}
 
                                                                         <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>
                                                                             {"REQ"}
@@ -1226,6 +1280,15 @@ pub fn edit_collection_drawer(props: &EditCollectionDrawerProps) -> Html {
                                                                         <option value="Json" selected={f_type == "Json"}>{"JSON"}</option>
                                                                         <option value="GeoPoint" selected={f_type == "GeoPoint"}>{"GeoPoint"}</option>
                                                                     </select>
+                                                                    {if f_type == "Relation" {
+                                                                        if f.multiple {
+                                                                            html! { <span class="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[9px] font-bold tracking-tight" title="One-to-Many relation">{"1:N"}</span> }
+                                                                        } else {
+                                                                            html! { <span class="px-1.5 py-0.5 bg-surface-container text-on-surface-variant border border-outline-variant/40 rounded text-[9px] font-medium tracking-tight" title="Single relation">{"1:1"}</span> }
+                                                                        }
+                                                                    } else {
+                                                                        html! {}
+                                                                    }}
 
                                                                     <button onclick={on_req_toggle} class={classes!("px-2", "py-1", "border", "rounded", "text-[10px]", "font-bold", "transition-colors", if f_req { "bg-primary-container/20 border-primary text-primary" } else { "bg-transparent border-outline-variant text-on-surface-variant hover:border-outline" })}>
                                                                         {"REQ"}

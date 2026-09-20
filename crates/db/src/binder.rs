@@ -24,11 +24,7 @@ pub fn bind_typed_value(
             separated.push_bind(*u); // Sends OID 2950 (UUID)
         }
         TypedValue::Json(j) => {
-            let s = match j {
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            separated.push_bind(s);
+            separated.push_bind(j.clone());
         }
         TypedValue::Null(dtype) => match dtype {
             DataTypes::Relation => {
@@ -74,11 +70,7 @@ pub fn bind_typed_value_to_builder(
             builder.push_bind(*u);
         }
         TypedValue::Json(j) => {
-            let s = match j {
-                serde_json::Value::String(s) => s.clone(),
-                other => other.to_string(),
-            };
-            builder.push_bind(s);
+            builder.push_bind(j.clone());
         }
         TypedValue::Null(dtype) => match dtype {
             DataTypes::Relation => {
