@@ -161,16 +161,15 @@ impl TestApp {
         token: &str,
     ) -> Response<axum::body::Body> {
         let uri = safe_uri(path);
-        self.request(
-            Request::builder()
-                .method(Method::PATCH)
-                .uri(uri)
-                .header("Content-Type", "application/json")
-                .header("Authorization", format!("Bearer {token}"))
-                .body(Body::from(body.to_string()))
-                .unwrap(),
-        )
-        .await
+        let mut b = Request::builder()
+            .method(Method::PATCH)
+            .uri(uri)
+            .header("Content-Type", "application/json");
+        if !token.is_empty() {
+            b = b.header("Authorization", format!("Bearer {token}"));
+        }
+        self.request(b.body(Body::from(body.to_string())).unwrap())
+            .await
     }
 
     /// DELETE with Bearer token
@@ -315,7 +314,13 @@ pub async fn create_collection(
     let body = expect(res, StatusCode::OK).await;
     app.patch_json(
         &format!("/api/collections/{name}"),
-        json!({ "list_rule": "", "view_rule": "" }),
+        json!({
+            "list_rule": "",
+            "view_rule": "",
+            "create_rule": "",
+            "update_rule": "",
+            "delete_rule": ""
+        }),
         token,
     )
     .await;

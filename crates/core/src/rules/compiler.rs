@@ -6,6 +6,7 @@ use crate::rules::parser::Expr;
 pub struct SqlContext {
     pub auth: Option<serde_json::Value>, // Maps "@request.auth.*" dynamically (JSON Object)
     pub query: HashMap<String, String>,  // Maps "@request.query.x" etc
+    pub data: Option<serde_json::Value>, // Maps "@request.data.*" dynamically (JSON Object)
 }
 
 impl SqlContext {
@@ -25,6 +26,7 @@ impl SqlContext {
                 "collectionName": "_superusers"
             })),
             query: HashMap::new(),
+            data: None,
         }
     }
 
@@ -81,12 +83,30 @@ impl RulesSqlCompiler {
                         .unwrap_or_default();
 
                     self.bindings.push(val);
-                    Ok(format!("${}", self.bindings.len()))
+                    Ok(format!("${}", self.bindings.len() + self.binding_offset))
+                } else if name.starts_with("@request.data.") {
+                    let key = name.strip_prefix("@request.data.").unwrap();
+                    let val = self
+                        .context
+                        .data
+                        .as_ref()
+                        .and_then(|v| v.get(key))
+                        .map(|v| match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            serde_json::Value::Bool(b) => b.to_string(),
+                            serde_json::Value::Null => "".to_string(),
+                            other => other.to_string(),
+                        })
+                        .unwrap_or_default();
+
+                    self.bindings.push(val);
+                    Ok(format!("${}", self.bindings.len() + self.binding_offset))
                 } else if name.starts_with("@request.query.") {
                     let key = name.strip_prefix("@request.query.").unwrap();
                     let val = self.context.query.get(key).cloned().unwrap_or_default();
                     self.bindings.push(val);
-                    Ok(format!("${}", self.bindings.len()))
+                    Ok(format!("${}", self.bindings.len() + self.binding_offset))
                 } else {
                     if name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                         Ok(format!("\"{}\"", name))
@@ -138,7 +158,7 @@ impl RulesSqlCompiler {
             }
             Expr::Value(val) => {
                 self.bindings.push(val.clone());
-                Ok(format!("${}", self.bindings.len()))
+                Ok(format!("${}", self.bindings.len() + self.binding_offset))
             }
             Expr::Bool(b) => Ok(if *b {
                 "TRUE".to_string()
@@ -168,6 +188,7 @@ mod tests {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
         let (sql, bindings) = compile_helper("status = 'active'", context).unwrap();
         assert_eq!(sql, "(\"status\" = $1)");
@@ -179,6 +200,7 @@ mod tests {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
         let (sql, bindings) = compile_helper("active = true", context.clone()).unwrap();
         assert_eq!(sql, "(\"active\" = TRUE)");
@@ -194,6 +216,7 @@ mod tests {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
         let (sql, bindings) = compile_helper("owner_id = null", context.clone()).unwrap();
         assert_eq!(sql, "(\"owner_id\" IS NULL)");
@@ -220,6 +243,7 @@ mod tests {
             let context = SqlContext {
                 auth: None,
                 query: HashMap::new(),
+                ..Default::default()
             };
             let (sql, bindings) = compile_helper(input, context).unwrap();
             assert_eq!(sql, expected_sql);
@@ -232,6 +256,7 @@ mod tests {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
         let (sql, bindings) =
             compile_helper("status = 'active' & role = 'admin'", context).unwrap();
@@ -249,6 +274,7 @@ mod tests {
         let context = SqlContext {
             auth: Some(auth),
             query: HashMap::new(),
+            ..Default::default()
         };
 
         let (sql, bindings) = compile_helper("owner_id = @request.auth.id", context).unwrap();
@@ -261,7 +287,11 @@ mod tests {
         let mut query = HashMap::new();
         query.insert("search".to_string(), "rust".to_string());
 
-        let context = SqlContext { auth: None, query };
+        let context = SqlContext {
+            auth: None,
+            query,
+            ..Default::default()
+        };
 
         let (sql, bindings) = compile_helper("title ~ @request.query.search", context).unwrap();
         assert_eq!(sql, "(\"title\" ILIKE ('%' || $1 || '%'))");
@@ -269,10 +299,29 @@ mod tests {
     }
 
     #[test]
+    fn test_compile_data_context() {
+        let data = serde_json::json!({
+            "status": "draft",
+            "score": 42
+        });
+
+        let context = SqlContext {
+            auth: None,
+            query: HashMap::new(),
+            data: Some(data),
+        };
+
+        let (sql, bindings) = compile_helper("@request.data.status = 'draft'", context).unwrap();
+        assert_eq!(sql, "($1 = $2)");
+        assert_eq!(bindings, vec!["draft".to_string(), "draft".to_string()]);
+    }
+
+    #[test]
     fn test_compile_missing_context_vars() {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
 
         let (sql, bindings) = compile_helper("owner_id = @request.auth.id", context).unwrap();
@@ -285,6 +334,7 @@ mod tests {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
 
         let unsafe_expr = Expr::Variable("status; DROP TABLE users;".to_string());
@@ -299,6 +349,7 @@ mod tests {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
         let (sql, bindings) = compile_helper("price >= 300", context.clone()).unwrap();
         assert_eq!(sql, "(\"price\" >= 300)");
@@ -314,6 +365,7 @@ mod tests {
         let context = SqlContext {
             auth: None,
             query: HashMap::new(),
+            ..Default::default()
         };
         let expr = Expr::Binary {
             left: Box::new(Expr::Variable("age".to_string())),

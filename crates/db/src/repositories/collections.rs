@@ -190,15 +190,26 @@ impl CollectionRepository {
 
         let col_id = Uuid::new_v4().to_string();
 
-        let sql = format!(
-            r#"
-                INSERT INTO _collections(id, system, name, type, fields, indexes, options)
-                VALUES ('{}', {}, '{}', '{}', '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)
-            "#,
-            col_id, 0, collection.name, col_type, columns_json, indexs_json, options_json
-        );
+        let sql = r#"
+            INSERT INTO _collections(id, system, name, type, fields, indexes, options, list_rule, view_rule, create_rule, update_rule, delete_rule)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7::jsonb, $8, $9, $10, $11, $12)
+        "#;
 
-        sqlx::query(&sql).execute(&mut *tx).await?;
+        sqlx::query(sql)
+            .bind(&col_id)
+            .bind(0)
+            .bind(&collection.name)
+            .bind(&col_type)
+            .bind(&columns_json)
+            .bind(&indexs_json)
+            .bind(&options_json)
+            .bind(&collection.list_rule)
+            .bind(&collection.view_rule)
+            .bind(&collection.create_rule)
+            .bind(&collection.update_rule)
+            .bind(&collection.delete_rule)
+            .execute(&mut *tx)
+            .await?;
 
         tx.commit().await?;
 
@@ -218,11 +229,11 @@ impl CollectionRepository {
             },
             created: Utc::now(),
             updated: Utc::now(),
-            list_rule: None,
-            view_rule: None,
-            create_rule: None,
-            update_rule: None,
-            delete_rule: None,
+            list_rule: collection.list_rule,
+            view_rule: collection.view_rule,
+            create_rule: collection.create_rule,
+            update_rule: collection.update_rule,
+            delete_rule: collection.delete_rule,
             collection_type: col_type,
         })
     }

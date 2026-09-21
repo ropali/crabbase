@@ -45,6 +45,12 @@ async fn test_validation_required_field_missing_on_create_rejected() {
         )
         .await;
     expect(col_res, StatusCode::OK).await;
+    app.patch_json(
+        "/api/collections/projects",
+        json!({ "create_rule": "" }),
+        &token,
+    )
+    .await;
 
     // 2. Attempt to create a record without `title`
     let res = app
@@ -89,6 +95,12 @@ async fn test_validation_string_min_max_length_enforced() {
         )
         .await;
     expect(col_res, StatusCode::OK).await;
+    app.patch_json(
+        "/api/collections/usernames",
+        json!({ "create_rule": "" }),
+        &token,
+    )
+    .await;
 
     // 1. Handle too short (< 3 chars): "ab"
     let too_short_res = app
@@ -151,6 +163,12 @@ async fn test_validation_number_min_max_range_enforced() {
         )
         .await;
     expect(col_res, StatusCode::OK).await;
+    app.patch_json(
+        "/api/collections/ratings",
+        json!({ "create_rule": "" }),
+        &token,
+    )
+    .await;
 
     // Score < 1 (0) -> 400
     let low_res = app
@@ -202,6 +220,12 @@ async fn test_validation_pattern_regex_enforced() {
         )
         .await;
     expect(col_res, StatusCode::OK).await;
+    app.patch_json(
+        "/api/collections/zip_codes",
+        json!({ "create_rule": "" }),
+        &token,
+    )
+    .await;
 
     // Invalid pattern ("abcde") -> 400
     let invalid_res = app

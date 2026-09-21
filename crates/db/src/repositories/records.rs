@@ -481,10 +481,8 @@ impl RecordsRepository {
         &self,
         collection: String,
         mut body: CreateRecordRequest,
-        sql_context: SqlContext,
+        mut sql_context: SqlContext,
     ) -> Result<Record, RepositoryError> {
-        let _is_admin = sql_context.is_admin();
-
         let obj = &mut body.data;
 
         if obj.is_empty() {
@@ -501,6 +499,26 @@ impl RecordsRepository {
         }
 
         let col = col_repo.get_by_name(&collection).await?;
+
+        // Enforce create_rule
+        if !sql_context.is_admin() {
+            if sql_context.data.is_none() {
+                sql_context.data = Some(serde_json::Value::Object(obj.clone()));
+            }
+            if let Some(compiled) = Self::compile_rule(&col.create_rule, &sql_context, 0)? {
+                let check_sql = format!("SELECT ({})", compiled.sql_clause);
+                let mut query = sqlx::query_scalar::<_, bool>(&check_sql);
+                for b in &compiled.bindings {
+                    query = query.bind(b);
+                }
+                let allowed: bool = query.fetch_one(&self.db).await.unwrap_or(false);
+                if !allowed {
+                    return Err(RepositoryError::Forbidden(
+                        "Only admin can perform this action".to_string(),
+                    ));
+                }
+            }
+        }
 
         if col.collection_type.eq_ignore_ascii_case("auth") {
             if let Some(serde_json::Value::String(plain_pw)) = obj.get("password") {
@@ -606,7 +624,7 @@ impl RecordsRepository {
         collection: &str,
         id: &str,
         mut payload: UpdateRecordRequest,
-        _sql_context: &SqlContext,
+        sql_context: &SqlContext,
     ) -> Result<Record, RepositoryError> {
         let col_repo = CollectionRepository::new(self.db.clone());
 
@@ -623,6 +641,12 @@ impl RecordsRepository {
         }
 
         let col = col_repo.get_by_name(&collection).await?;
+
+        if !sql_context.is_admin() {
+            if let Some(_compiled) = Self::compile_rule(&col.update_rule, sql_context, 1)? {
+                // Expression rule evaluation will be added in row-level filtering phase
+            }
+        }
 
         // Validate record existence and return NotFound before attempting update.
         // We use an internal admin context to bypass `view_rule`. Updates are governed
@@ -690,7 +714,12 @@ impl RecordsRepository {
             .await
     }
 
-    pub async fn delete_record(&self, collection: &str, id: &str) -> Result<bool, RepositoryError> {
+    pub async fn delete_record(
+        &self,
+        collection: &str,
+        id: &str,
+        sql_context: &SqlContext,
+    ) -> Result<bool, RepositoryError> {
         let col_repo = CollectionRepository::new(self.db.clone());
 
         let exist = col_repo.exists(collection).await;
@@ -699,17 +728,35 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(collection.to_string()));
         }
 
+        let col = col_repo.get_by_name(collection).await?;
+
+        // Enforce delete_rule
+        let rule_clause = Self::compile_rule(&col.delete_rule, sql_context, 1)?;
+
         let id_uuid = uuid::Uuid::parse_str(id).ok();
 
-        let sql = format!("DELETE FROM {collection} WHERE id = $1");
-        let query = sqlx::query(&sql);
-        let query = if let Some(uuid) = id_uuid {
-            query.bind(uuid)
+        let mut sql = format!("DELETE FROM {} WHERE id = $1", quote_ident(collection));
+        let mut bindings = Vec::new();
+
+        if let Some(compiled) = rule_clause {
+            sql.push_str(&format!(" AND ({})", compiled.sql_clause));
+            bindings = compiled.bindings;
+        }
+
+        let mut query = if let Some(uuid) = id_uuid {
+            sqlx::query(&sql).bind(uuid)
         } else {
-            query.bind(id.to_string())
+            sqlx::query(&sql).bind(id.to_string())
         };
 
-        query.execute(&self.db).await?;
+        for b in bindings {
+            query = query.bind(b);
+        }
+
+        let res = query.execute(&self.db).await?;
+        if res.rows_affected() == 0 {
+            return Err(RepositoryError::NotFound(format!("record {id}")));
+        }
 
         Ok(true)
     }
@@ -798,7 +845,7 @@ mod tests {
         data.insert("views".to_string(), Value::Number(1.into()));
         let create_req = CreateRecordRequest { data: data.clone() };
         let created = repo
-            .create_record("articles".to_string(), create_req, SqlContext::default())
+            .create_record("articles".to_string(), create_req, SqlContext::admin())
             .await
             .unwrap();
         assert_eq!(
@@ -830,7 +877,7 @@ mod tests {
         data.insert("title".to_string(), Value::String("hello".to_string()));
         let create_req = CreateRecordRequest { data: data.clone() };
         let created = repo
-            .create_record("items".to_string(), create_req, SqlContext::default())
+            .create_record("items".to_string(), create_req, SqlContext::admin())
             .await
             .unwrap();
 
@@ -864,7 +911,7 @@ mod tests {
         data.insert("title".to_string(), Value::String("hello".to_string()));
         let create_req = CreateRecordRequest { data: data.clone() };
         let created = repo
-            .create_record("items".to_string(), create_req, SqlContext::default())
+            .create_record("items".to_string(), create_req, SqlContext::admin())
             .await
             .unwrap();
 
@@ -922,7 +969,7 @@ mod tests {
         );
         let create_req = CreateRecordRequest { data };
         let created = repo
-            .create_record("users".to_string(), create_req, SqlContext::default())
+            .create_record("users".to_string(), create_req, SqlContext::admin())
             .await
             .unwrap();
 
@@ -971,7 +1018,7 @@ mod tests {
                 "users",
                 &created.id.to_string(),
                 upd_same,
-                &SqlContext::default(),
+                &SqlContext::admin(),
             )
             .await
             .unwrap();
@@ -1031,7 +1078,7 @@ mod tests {
             data.insert("title".to_string(), Value::String(format!("t{}", i)));
             data.insert("views".to_string(), Value::Number((i as i64).into()));
             let create_req = CreateRecordRequest { data };
-            repo.create_record("blogs".to_string(), create_req, SqlContext::default())
+            repo.create_record("blogs".to_string(), create_req, SqlContext::admin())
                 .await
                 .unwrap();
         }
@@ -1077,12 +1124,12 @@ mod tests {
         data.insert("title".to_string(), Value::String("bye".to_string()));
         let create_req = CreateRecordRequest { data };
         let created = repo
-            .create_record("trash".to_string(), create_req, SqlContext::default())
+            .create_record("trash".to_string(), create_req, SqlContext::admin())
             .await
             .unwrap();
 
         let deleted = repo
-            .delete_record("trash", &created.id.to_string())
+            .delete_record("trash", &created.id.to_string(), &SqlContext::admin())
             .await
             .unwrap();
         assert!(deleted);

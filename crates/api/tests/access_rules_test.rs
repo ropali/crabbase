@@ -85,7 +85,7 @@ async fn test_list_rule_empty_string_is_public() {
         "public_col",
         json!(""), // public
         json!(null),
-        json!(null),
+        json!(""), // create is public to seed
         json!(null),
         json!(null),
         &token,
@@ -115,7 +115,7 @@ async fn test_list_rule_null_requires_admin() {
         "admin_only_list",
         json!(null), // null -> Admin-Only
         json!(null),
-        json!(null),
+        json!(""), // create is public to seed
         json!(null),
         json!(null),
         &token,
@@ -143,10 +143,10 @@ async fn test_list_rule_null_requires_admin() {
     );
 
     // 2. Authenticated superuser MUST get 200 OK
-    let admin_res = app
+    let authed_res = app
         .get_auth("/api/collections/admin_only_list/records", &token)
         .await;
-    let body = expect(admin_res, StatusCode::OK).await;
+    let body = expect(authed_res, StatusCode::OK).await;
     let items = body["items"].as_array().expect("items");
     assert!(!items.is_empty(), "Admin should be able to view records");
 }
@@ -161,7 +161,7 @@ async fn test_list_rule_expression_filters_rows() {
         "filtered_posts",
         json!("status = 'published'"),
         json!(null),
-        json!(null),
+        json!(""), // create is public to seed
         json!(null),
         json!(null),
         &token,
@@ -204,7 +204,7 @@ async fn test_view_rule_null_blocks_unauthenticated_get() {
         "secret_docs",
         json!(""),   // list is public
         json!(null), // view is Admin-only
-        json!(null),
+        json!(""),   // create is public to seed
         json!(null),
         json!(null),
         &token,
@@ -254,7 +254,7 @@ async fn test_view_rule_expression_enforced() {
         "articles_view",
         json!(""),
         json!("status = 'public'"), // only public status can be viewed
-        json!(null),
+        json!(""),                  // create is public to seed
         json!(null),
         json!(null),
         &token,
@@ -294,7 +294,7 @@ async fn test_view_rule_expression_enforced() {
     // FAIL REASON IF NOT IMPLEMENTED: `view_rule` expression is not evaluated.
     assert!(
         status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND,
-        "MVP Gap: view_rule expression should block viewing draft records, got {}",
+        "view_rule expression should block viewing draft records, got {}",
         status
     );
 }
@@ -303,9 +303,8 @@ async fn test_view_rule_expression_enforced() {
 // 3. CREATE RULE TESTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// [MVP GAP / Phase 1.4]: `create_rule = null` must reject unauthenticated record creation with 403.
+/// `create_rule = null` must reject unauthenticated record creation with 403.
 ///
-/// Ref: MVP_ROADMAP.md §2.2 / §Phase 1.4
 #[tokio::test]
 async fn test_create_rule_null_blocks_unauthenticated_create() {
     let (app, token) = setup().await;
@@ -393,7 +392,7 @@ async fn test_create_rule_with_request_data_context() {
 // 4. UPDATE RULE TESTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// [MVP GAP / Phase 1.4]: `update_rule = null` must reject unauthenticated PATCH with 403.
+/// `update_rule = null` must reject unauthenticated PATCH with 403.
 #[tokio::test]
 async fn test_update_rule_null_blocks_unauthenticated_update() {
     let (app, token) = setup().await;
@@ -428,11 +427,10 @@ async fn test_update_rule_null_blocks_unauthenticated_update() {
         .await;
 
     let status = patch_res.status();
-    // FAIL REASON IF NOT IMPLEMENTED: `update_rule` not evaluated in `update_record`.
     assert_eq!(
         status,
         StatusCode::FORBIDDEN,
-        "MVP Gap: update_rule=null must return 403 FORBIDDEN for unauthenticated PATCH /records/:id, but got {}",
+        "update_rule=null must return 403 FORBIDDEN for unauthenticated PATCH /records/:id, but got {}",
         status
     );
 }

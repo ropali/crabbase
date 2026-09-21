@@ -312,12 +312,22 @@ where
     Err(D::Error::custom("invalid data_type format"))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateCollectionRequest {
     pub name: String,
     #[serde(default)]
     pub collection_type: Option<String>,
     pub columns: Vec<Column>,
+    #[serde(default)]
+    pub list_rule: Option<String>,
+    #[serde(default)]
+    pub view_rule: Option<String>,
+    #[serde(default)]
+    pub create_rule: Option<String>,
+    #[serde(default)]
+    pub update_rule: Option<String>,
+    #[serde(default)]
+    pub delete_rule: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -54,9 +54,10 @@ async fn get_record(
 async fn create_record(
     Path(name): Path<String>,
     state: axum::extract::State<AppState>,
-    RequestContext(sql_context): RequestContext,
+    RequestContext(mut sql_context): RequestContext,
     Json(body): Json<CreateRecordRequest>,
 ) -> Result<Json<Record>, APIError> {
+    sql_context.data = Some(serde_json::Value::Object(body.data.clone()));
     match state
         .records_repo()
         .create_record(name, body, sql_context)
@@ -86,8 +87,13 @@ async fn update_record(
 async fn delete_record(
     Path((name, id)): Path<(String, String)>,
     state: axum::extract::State<AppState>,
+    RequestContext(sql_context): RequestContext,
 ) -> Result<Json<Value>, APIError> {
-    match state.records_repo().delete_record(&name, &id).await {
+    match state
+        .records_repo()
+        .delete_record(&name, &id, &sql_context)
+        .await
+    {
         Ok(_) => Ok(Json(json!({"details": "record deleted successfully."}))),
         Err(err) => Err(err.into()),
     }

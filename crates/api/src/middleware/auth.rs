@@ -142,6 +142,7 @@ impl FromRequestParts<AppState> for RequestContext {
         Ok(RequestContext(SqlContext {
             auth: auth_val,
             query: query_params,
+            data: None,
         }))
     }
 }
