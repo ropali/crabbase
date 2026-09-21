@@ -312,7 +312,14 @@ pub async fn create_collection(
             Some(token),
         )
         .await;
-    expect(res, StatusCode::OK).await
+    let body = expect(res, StatusCode::OK).await;
+    app.patch_json(
+        &format!("/api/collections/{name}"),
+        json!({ "list_rule": "", "view_rule": "" }),
+        token,
+    )
+    .await;
+    body
 }
 
 /// Create a record via the API (no auth — for public/base collections in tests).

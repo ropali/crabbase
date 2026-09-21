@@ -193,9 +193,8 @@ async fn test_list_rule_expression_filters_rows() {
 // 2. VIEW RULE TESTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// [MVP GAP / Phase 1.4]: `view_rule = null` must reject unauthenticated `GET /records/:id` with 403 Forbidden.
+/// `view_rule = null` must reject unauthenticated `GET /records/:id` with 403 Forbidden.
 ///
-/// Ref: MVP_ROADMAP.md §2.2 / §Phase 1.4
 #[tokio::test]
 async fn test_view_rule_null_blocks_unauthenticated_get() {
     let (app, token) = setup().await;
@@ -230,7 +229,7 @@ async fn test_view_rule_null_blocks_unauthenticated_get() {
     assert_eq!(
         status,
         StatusCode::FORBIDDEN,
-        "MVP Gap: view_rule=null must return 403 FORBIDDEN for unauthenticated GET /records/:id, but got {}",
+        "view_rule=null must return 403 FORBIDDEN for unauthenticated GET /records/:id, but got {}",
         status
     );
 

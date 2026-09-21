@@ -9,6 +9,25 @@ pub struct SqlContext {
 }
 
 impl SqlContext {
+    /// Creates a trusted administrative / superuser context.
+    ///
+    /// When evaluated, `is_admin()` returns `true`, which bypasses collection-level
+    /// access rules (such as `view_rule = null`).
+    ///
+    /// This is used for:
+    /// - Trusted internal operations (e.g. `update_record` fetching existing records
+    ///   internally without being blocked by `view_rule`).
+    /// - Database repository unit tests that verify SQL execution directly without
+    ///   requiring HTTP auth tokens.
+    pub fn admin() -> Self {
+        Self {
+            auth: Some(serde_json::json!({
+                "collectionName": "_superusers"
+            })),
+            query: HashMap::new(),
+        }
+    }
+
     pub fn is_admin(&self) -> bool {
         self.auth
             .as_ref()

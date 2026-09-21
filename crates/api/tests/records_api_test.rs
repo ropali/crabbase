@@ -422,6 +422,12 @@ async fn test_expand_parameter_populates_related_record() {
         )
         .await;
     expect(books_res, StatusCode::OK).await;
+    app.patch_json(
+        "/api/collections/books",
+        json!({ "list_rule": "", "view_rule": "" }),
+        &token,
+    )
+    .await;
 
     // 3. Create an author record
     let author = create_record_api(&app, "authors", json!({ "name": "George Orwell" })).await;
@@ -485,7 +491,7 @@ async fn test_one_to_many_relation_expand() {
     // Allow public listing of records on the `posts_multi_rel` collection
     app.patch_json(
         "/api/collections/posts_multi_rel",
-        json!({ "list_rule": "" }),
+        json!({ "list_rule": "", "view_rule": "" }),
         &token,
     )
     .await;

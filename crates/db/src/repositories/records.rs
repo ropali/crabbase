@@ -436,13 +436,9 @@ impl RecordsRepository {
         let mut bindings: Vec<String> = Vec::new();
 
         if !sql_context.is_admin() {
-            if let Some(ref rule_expr) = col.view_rule {
-                if !rule_expr.trim().is_empty() {
-                    if let Ok(Some(compiled)) = Self::compile_rule(&col.view_rule, sql_context, 1) {
-                        sql.push_str(&format!(" AND ({})", compiled.sql_clause));
-                        bindings = compiled.bindings;
-                    }
-                }
+            if let Some(compiled) = Self::compile_rule(&col.view_rule, sql_context, 1)? {
+                sql.push_str(&format!(" AND ({})", compiled.sql_clause));
+                bindings = compiled.bindings;
             }
         }
 
@@ -610,7 +606,7 @@ impl RecordsRepository {
         collection: &str,
         id: &str,
         mut payload: UpdateRecordRequest,
-        sql_context: &SqlContext,
+        _sql_context: &SqlContext,
     ) -> Result<Record, RepositoryError> {
         let col_repo = CollectionRepository::new(self.db.clone());
 
@@ -629,7 +625,12 @@ impl RecordsRepository {
         let col = col_repo.get_by_name(&collection).await?;
 
         // Validate record existence and return NotFound before attempting update.
-        let existing_record = self.get_record(collection, id, None, &sql_context).await?;
+        // We use an internal admin context to bypass `view_rule`. Updates are governed
+        // by `update_rule`, so fetching the existing row internally for validation
+        // and password hash comparison should not be blocked if `view_rule` is locked down.
+        let existing_record = self
+            .get_record(collection, id, None, &SqlContext::admin())
+            .await?;
 
         if col.collection_type.eq_ignore_ascii_case("auth") {
             if let Some(serde_json::Value::String(plain_pw)) = payload.data.get("password") {
@@ -683,7 +684,10 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(format!("record {id}")));
         }
 
-        self.get_record(collection, id, None, &sql_context).await
+        // Fetch and return the updated record using trusted internal admin context
+        // so the return payload is not blocked if `view_rule` is restricted to admins.
+        self.get_record(collection, id, None, &SqlContext::admin())
+            .await
     }
 
     pub async fn delete_record(&self, collection: &str, id: &str) -> Result<bool, RepositoryError> {
@@ -831,12 +835,7 @@ mod tests {
             .unwrap();
 
         let got = repo
-            .get_record(
-                "items",
-                &created.id.to_string(),
-                None,
-                &SqlContext::default(),
-            )
+            .get_record("items", &created.id.to_string(), None, &SqlContext::admin())
             .await
             .unwrap();
         assert_eq!(got.id, created.id);
@@ -873,12 +872,7 @@ mod tests {
         upd_map.insert("title".to_string(), Value::String("updated".to_string()));
         let upd = UpdateRecordRequest { data: upd_map };
         let updated = repo
-            .update_record(
-                "items",
-                &created.id.to_string(),
-                upd,
-                &SqlContext::default(),
-            )
+            .update_record("items", &created.id.to_string(), upd, &SqlContext::admin())
             .await
             .unwrap();
         assert_eq!(
@@ -950,12 +944,7 @@ mod tests {
         );
         let upd = UpdateRecordRequest { data: upd_map };
         let updated = repo
-            .update_record(
-                "users",
-                &created.id.to_string(),
-                upd,
-                &SqlContext::default(),
-            )
+            .update_record("users", &created.id.to_string(), upd, &SqlContext::admin())
             .await
             .unwrap();
 
@@ -1099,12 +1088,7 @@ mod tests {
         assert!(deleted);
 
         let res = repo
-            .get_record(
-                "trash",
-                &created.id.to_string(),
-                None,
-                &SqlContext::default(),
-            )
+            .get_record("trash", &created.id.to_string(), None, &SqlContext::admin())
             .await;
         assert!(matches!(
             res,
