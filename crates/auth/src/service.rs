@@ -121,6 +121,10 @@ impl AuthService {
             return Err(APIError::Unauthorized);
         }
 
+        if !user.verified {
+            return Err(APIError::Forbidden);
+        }
+
         let col_token = col
             .options
             .auth_token
@@ -157,10 +161,18 @@ impl AuthService {
         let access_token = create_token(access_token_params).map_err(|_| APIError::Unauthorized)?;
 
         // Create Refresh Token
-
-        // TODO: remove the hardcoded duration
-
-        let refresh_duration = 604800; // 7 days in seconds
+        let refresh_duration: usize = col
+            .options
+            .auth_token
+            .as_ref()
+            .and_then(|t| {
+                t.get("refreshDuration")
+                    .or_else(|| t.get("refresh_duration"))
+            })
+            .and_then(|v| v.as_number())
+            .and_then(|n| n.as_u64())
+            .and_then(|num| num.try_into().ok())
+            .unwrap_or(604800); // 7 days in seconds
         let family_id = uuid::Uuid::new_v4();
         let jti = uuid::Uuid::new_v4().to_string();
 
@@ -238,13 +250,24 @@ impl AuthService {
         let family_id = uuid::Uuid::parse_str(family_id_str).map_err(|_| APIError::Unauthorized)?;
 
         let new_jti = uuid::Uuid::new_v4().to_string();
-        let refresh_duration = 604800; // 7 days
+        let refresh_duration: usize = col
+            .options
+            .auth_token
+            .as_ref()
+            .and_then(|t| {
+                t.get("refreshDuration")
+                    .or_else(|| t.get("refresh_duration"))
+            })
+            .and_then(|v| v.as_number())
+            .and_then(|n| n.as_u64())
+            .and_then(|num| num.try_into().ok())
+            .unwrap_or(604800); // Default 7 days in seconds
         let expires_at = chrono::Utc::now() + chrono::Duration::seconds(refresh_duration as i64);
 
         // Consume old token and insert new token
         let new_record_opt = self
             .auth_repo
-            .rotate_refreh_token(old_jti, &new_jti, expires_at)
+            .rotate_refresh_token(old_jti, &new_jti, expires_at)
             .await?;
 
         if let Some(new_record) = new_record_opt {
@@ -292,76 +315,18 @@ impl AuthService {
             });
         }
 
-        // Check if token already used, revoked, or non existent
+        // Token was already consumed, revoked, expired, or non-existent
         let existing_token = self
             .auth_repo
             .get_refresh_token_by_jti(old_jti)
             .await?
             .ok_or(APIError::Unauthorized)?;
 
-        if existing_token.revoked {
-            return Err(APIError::Unauthorized);
+        // If the token was already used or revoked, reuse is detected -> revoke entire token family
+        if existing_token.used || existing_token.revoked {
+            self.auth_repo.revoke_token_family(family_id).await?;
+            tracing::warn!(user_id = %user.id, family_id = %family_id, "Refresh token reuse detected. Revoking family session.");
         }
-
-        // check for grace period for concurrent refresh
-        if let Some(used_at) = existing_token.used_at {
-            let elapsed = chrono::Utc::now().signed_duration_since(used_at);
-
-            if elapsed <= chrono::Duration::seconds(10) {
-                if let Some(child_record) = self
-                    .auth_repo
-                    .get_child_refresh_token(existing_token.id)
-                    .await?
-                {
-                    let duration: Option<usize> = col
-                        .options
-                        .auth_token
-                        .as_ref()
-                        .and_then(|t| t.get("duration"))
-                        .and_then(|v| v.as_number())
-                        .and_then(|n| n.as_u64())
-                        .and_then(|num| num.try_into().ok());
-
-                    let access_token_params = TokenParams {
-                        user_id: &user.id,
-                        collection_id: &col.id,
-                        collection_name: &col.name,
-                        secret: &secret,
-                        token_type: TokenType::Auth,
-                        duration: duration,
-                        jti: None,
-                        family_id: None,
-                    };
-
-                    let access_token =
-                        create_token(access_token_params).map_err(|_| APIError::Unauthorized)?;
-
-                    let new_jti_grace = uuid::Uuid::new_v4().to_string();
-                    let refresh_token_params = TokenParams {
-                        user_id: &user.id,
-                        collection_id: &col.id,
-                        collection_name: &col.name,
-                        secret: &secret,
-                        token_type: TokenType::Refresh,
-                        duration: Some(refresh_duration),
-                        jti: Some(new_jti_grace),
-                        family_id: Some(child_record.family_id),
-                    };
-                    let refresh_token =
-                        create_token(refresh_token_params).map_err(|_| APIError::Unauthorized)?;
-
-                    return Ok(AuthTokens {
-                        access_token,
-                        refresh_token,
-                    });
-                }
-            }
-        }
-
-        // Reuse detected
-        self.auth_repo.revoke_token_family(family_id).await?;
-
-        tracing::warn!(user_id = %user.id, family_id = %family_id, "Refresh token reuse detected. Revoking family session.");
 
         Err(APIError::Unauthorized)
     }

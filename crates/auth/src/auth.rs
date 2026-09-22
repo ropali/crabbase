@@ -63,6 +63,10 @@ pub fn create_token(params: TokenParams) -> Result<String, jsonwebtoken::errors:
         3600 // 1 hour
     };
 
+    let jti = params
+        .jti
+        .or_else(|| Some(uuid::Uuid::new_v4().to_string()));
+
     let claims = Claims {
         token_type: token_type.clone(),
         id: params.user_id.to_string(),
@@ -72,7 +76,7 @@ pub fn create_token(params: TokenParams) -> Result<String, jsonwebtoken::errors:
         sub: params.user_id.to_string(),
         exp: now + params.duration.unwrap_or(default_duration),
         iat: now,
-        jti: params.jti,
+        jti,
         family_id: params.family_id.map(|f| f.to_string()),
     };
 

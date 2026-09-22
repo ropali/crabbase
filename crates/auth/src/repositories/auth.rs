@@ -81,7 +81,7 @@ impl AuthRepository {
     }
 
     // OPTIMIZED ATOMIC ROTATION CTE: Consumes old token & issues new token in 1 DB roundtrip
-    pub async fn rotate_refreh_token(
+    pub async fn rotate_refresh_token(
         &self,
         old_jti: &str,
         new_jti: &str,
@@ -111,6 +111,17 @@ impl AuthRepository {
             .await?;
 
         Ok(new_record)
+    }
+
+    #[inline]
+    pub async fn rotate_refreh_token(
+        &self,
+        old_jti: &str,
+        new_jti: &str,
+        new_expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Option<RefreshTokenRecord>, RepositoryError> {
+        self.rotate_refresh_token(old_jti, new_jti, new_expires_at)
+            .await
     }
 
     pub async fn get_child_refresh_token(
