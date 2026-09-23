@@ -20,6 +20,7 @@ use common::{
     insert_superuser, login, number_col, text_col,
 };
 use serde_json::json;
+use sqlx::Row;
 
 // ─── Shared setup ─────────────────────────────────────────────────────────────
 
@@ -288,16 +289,28 @@ async fn test_create_auth_record_hashes_password() {
     )
     .await;
 
-    let stored_pw = record["data"]["password"]
-        .as_str()
-        .expect("password field in response");
+    // Response sanitization ensures password hash is never exposed in API responses
+    assert!(
+        record["data"].get("password").is_none() || record["data"]["password"].is_null(),
+        "password hash must not be leaked in API response"
+    );
+
+    // Verify the password was hashed securely in the database
+    let id = record["id"].as_str().expect("record id");
+    let row = sqlx::query("SELECT password FROM customers WHERE id = $1")
+        .bind(uuid::Uuid::parse_str(id).unwrap())
+        .fetch_one(&app.db.pool)
+        .await
+        .expect("fetch record from db");
+
+    let stored_pw: String = row.try_get("password").expect("password column in db");
 
     assert_ne!(
         stored_pw, "my_secret_pw",
         "password was stored as plaintext!"
     );
     assert!(
-        bcrypt::verify("my_secret_pw", stored_pw).unwrap_or(false),
+        bcrypt::verify("my_secret_pw", &stored_pw).unwrap_or(false),
         "stored value is not a valid bcrypt hash"
     );
 }
