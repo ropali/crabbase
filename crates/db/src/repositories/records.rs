@@ -227,21 +227,11 @@ impl RecordsRepository {
 
             let rows = query.fetch_all(&self.db).await?;
 
-            // Determine hidden columns on target collection
-            let hidden_fields: HashSet<&str> = target_col
-                .fields
-                .iter()
-                .filter(|f| f.hidden)
-                .map(|f| f.name.as_str())
-                .collect();
-
-            // Build lookup map and redact hidden fields
+            // Build lookup map and sanitize related records
             let mut lookup: HashMap<String, Record> = HashMap::with_capacity(rows.len());
             for row in rows {
                 let mut rec = Record::from_row(&row)?;
-                if !hidden_fields.is_empty() {
-                    rec.data.retain(|k, _| !hidden_fields.contains(k.as_str()));
-                }
+                Self::sanitize_record(&mut rec, &target_col, sql_context);
                 lookup.insert(rec.id.clone(), rec);
             }
 
@@ -273,6 +263,42 @@ impl RecordsRepository {
         }
 
         Ok(())
+    }
+
+    pub fn sanitize_record(record: &mut Record, col: &Collection, sql_context: &SqlContext) {
+        // remove hidden fields
+        for field in &col.fields {
+            if field.hidden {
+                record.data.remove(&field.name);
+            }
+        }
+
+        // Remove sensitive fields like password and token key
+        if col.collection_type.eq_ignore_ascii_case("auth") {
+            record.data.remove("password");
+            record.data.remove("token_key");
+            record.data.remove("tokenKey");
+
+            let is_email_public = record
+                .data
+                .get("emailVisibility")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let if_admin = sql_context.is_admin();
+
+            let is_owner = sql_context
+                .auth
+                .as_ref()
+                .and_then(|v| v.get("id"))
+                .and_then(|v| v.as_str())
+                .map(|auth_id| auth_id == record.id)
+                .unwrap_or(false);
+
+            if !is_email_public && !if_admin && !is_owner {
+                record.data.remove("email");
+            }
+        }
     }
 
     pub async fn list(
@@ -410,6 +436,10 @@ impl RecordsRepository {
         self.expand_records(&mut items, &col, params.expand.as_deref(), &sql_context)
             .await?;
 
+        for item in &mut items {
+            Self::sanitize_record(item, &col, &sql_context);
+        }
+
         Ok(RecordListResponse {
             items,
             total: total_count as u64,
@@ -456,23 +486,11 @@ impl RecordsRepository {
         let row = query.fetch_one(&self.db).await?;
         let mut record = Record::from_row(&row)?;
 
-        // Redact hidden fields on primary record
-        let hidden_fields: HashSet<&str> = col
-            .fields
-            .iter()
-            .filter(|f| f.hidden)
-            .map(|f| f.name.as_str())
-            .collect();
-
-        if !hidden_fields.is_empty() {
-            record
-                .data
-                .retain(|k, _| !hidden_fields.contains(k.as_str()));
-        }
-
         // In place expand single record
         self.expand_records(std::slice::from_mut(&mut record), &col, expand, sql_context)
             .await?;
+
+        Self::sanitize_record(&mut record, &col, sql_context);
 
         Ok(record)
     }
@@ -604,13 +622,25 @@ impl RecordsRepository {
                     row.try_get::<uuid::Uuid, _>("id")?.to_string()
                 };
 
-                Ok(Record {
+                let mut record = Record {
                     id,
                     data: body.data,
                     expand: None,
                     created: row.try_get::<chrono::DateTime<chrono::Utc>, _>("created")?,
                     updated: row.try_get::<chrono::DateTime<chrono::Utc>, _>("updated")?,
-                })
+                };
+
+                let mut create_ctx = sql_context.clone();
+                if create_ctx.auth.is_none() {
+                    create_ctx.auth = Some(serde_json::json!({
+                        "id": record.id,
+                        "collectionName": col.name,
+                    }));
+                }
+
+                Self::sanitize_record(&mut record, &col, &create_ctx);
+
+                Ok(record)
             }
             Err(err) => Err(RepositoryError::QueryFailed {
                 message: "failed to create the record".to_string(),
@@ -710,8 +740,11 @@ impl RecordsRepository {
 
         // Fetch and return the updated record using trusted internal admin context
         // so the return payload is not blocked if `view_rule` is restricted to admins.
-        self.get_record(collection, id, None, &SqlContext::admin())
-            .await
+        let mut updated_rec = self
+            .get_record(collection, id, None, &SqlContext::admin())
+            .await?;
+        Self::sanitize_record(&mut updated_rec, &col, sql_context);
+        Ok(updated_rec)
     }
 
     pub async fn delete_record(

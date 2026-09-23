@@ -338,7 +338,7 @@ FEATURE_CHECKLIST = [
         "👤 Auth & Users",
         "test_record_responses_strip_password_and_token_key",
         "Response sanitization (never leak password/token_key)",
-        "feature",
+        "pass",
     ),
     # ── Category 6: Server-Side Field Validation Engine ───────────────────────
     (

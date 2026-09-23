@@ -6,7 +6,6 @@
 //!   - Private email addresses must be stripped when `emailVisibility == false`
 //!     unless requester is the record owner or a superuser.
 //!
-//! Ref: MVP_ROADMAP.md §2.3 and §Phase 2.3
 
 mod common;
 
@@ -21,11 +20,10 @@ async fn setup() -> (TestApp, String) {
     (app, token)
 }
 
-/// [MVP SECURITY GAP / Phase 2.3]: Password Hash & Token Key must be stripped from Record responses.
+///  Password Hash & Token Key must be stripped from Record responses.
 /// Currently `Record::from_row` returns whatever is stored in the Postgres row, leaking
 /// the bcrypt password hash and token_key in JSON payloads.
 ///
-/// Ref: MVP_ROADMAP.md §2.3 / §Phase 2.3
 #[tokio::test]
 async fn test_record_responses_strip_password_and_token_key() {
     let (app, token) = setup().await;
