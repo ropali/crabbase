@@ -1,9 +1,9 @@
 [database]
-host = "localhost"
-port = 5432
-user = "postgres"
-password = "postgres" # use $ prefix to load it from environment like $DB_PASSWORD
-database = "crabbase"
+host = "localhost"     # Connects to the local Docker Compose PostgreSQL container
+port = 5432            # Matches POSTGRES_PORT in docker-compose.yaml
+user = "postgres"      # Matches POSTGRES_USER in docker-compose.yaml
+password = "postgres"  # Matches POSTGRES_PASSWORD in docker-compose.yaml (prefix with $ to load from env, e.g. $DB_PASSWORD)
+database = "crabbase"  # Matches POSTGRES_DB in docker-compose.yaml
 schema = "crabbase"
 max_connections = 10
 

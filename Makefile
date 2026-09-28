@@ -16,7 +16,7 @@ serve:
 
 # Start the admin dashboard
 admin:
-	cargo run -- admin --config crabbase.toml
+	RUST_BACKTRACE=1 RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- admin --config crabbase.toml
 
 release:
 	CRABBASE_API_URL="http://0.0.0.0:8989/api" cd crates/admin-ui && trunk build --release
@@ -126,6 +126,9 @@ cargo-test: test-raw
 
 watch:
 	RUST_BACKTRACE=1 RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- serve --config crabbase.toml
+
+watch-admin:
+	RUST_BACKTRACE=1 RUSTFLAGS=-Awarnings RUST_LOG=info bacon run -- admin --config crabbase.toml
 
 watch-fe:
 	@cd crates/admin-ui && trunk serve

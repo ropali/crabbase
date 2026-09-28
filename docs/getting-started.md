@@ -39,15 +39,15 @@ Using Make targets:
 
 ```sh
 make serve                 # API only,        http://0.0.0.0:8989
-make admin                 # Dashboard + API, http://0.0.0.0:8181
+make admin                 # Dashboard + API, http://0.0.0.0:9898
 make serve port=9000 host=127.0.0.1
 ```
 
 Or with cargo directly:
 
 ```sh
-cargo run -- serve --port 8989 --host 0.0.0.0
-cargo run -- admin --port 8181
+cargo run -- serve --config crabbase.toml
+cargo run -- admin --config crabbase.toml
 ```
 
 ### The two commands
@@ -69,7 +69,7 @@ Both commands run migrations and ensure the superuser exists before listening. Y
 
 ## First steps
 
-1. Open the dashboard at `http://localhost:8181` and log in as the superuser.
+1. Open the dashboard at `http://localhost:9898` and log in as the superuser.
 2. Create a collection (e.g. `posts`) with a few fields using the **Create Collection** drawer.
 3. Your API is live immediately:
 
@@ -77,7 +77,7 @@ Both commands run migrations and ensure the superuser exists before listening. Y
 curl http://localhost:8989/api/collections/posts/records
 ```
 
-4. Explore the generated API interactively at `http://localhost:8181/api/docs`.
+4. Explore the generated API interactively at `http://localhost:9898/api/docs`.
 
 The dashboard can run **separately** from your public API server — both are stateless against Postgres. A common setup is one `crabbase admin` process on an internal host/port for you, and one or more `crabbase serve` processes facing users; they all share the same database, so changes made in the dashboard are instantly live on every API instance.
 

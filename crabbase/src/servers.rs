@@ -2,7 +2,7 @@ use axum::{
     Router,
     body::Body,
     http::{StatusCode, Uri, header},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Redirect, Response},
 };
 use crabbase_api::{get_app_routes, state::AppState};
 use rust_embed::RustEmbed;
@@ -54,6 +54,10 @@ pub async fn run_server(
     config: &Config,
     db_pool: Pool<Postgres>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let display_addr = config.server_bind_addr.replace("0.0.0.0", "localhost");
+    info!("Starting API server on http://{}/api", display_addr);
+    info!("To access Admin Dashboard, run: cargo run -- admin (or make admin)");
+
     let app_state = AppState { db: db_pool };
 
     let cors = CorsLayer::new()
@@ -78,14 +82,26 @@ pub async fn run_admin(
     config: &Config,
     db_pool: Pool<Postgres>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!("Starting Admin dashboard on {}", config.admin_bind_addr);
+    let display_addr = config.admin_bind_addr.replace("0.0.0.0", "localhost");
+    info!("Starting Admin dashboard on http://{}/", display_addr);
+    info!("API endpoints available at http://{}/api", display_addr);
 
     let app_state = AppState { db: db_pool };
     let api = get_app_routes(app_state).layer(TraceLayer::new_for_http().make_span_with(|req: &axum::http::Request<_>| {
         info_span!("http_request", method = %req.method(), path = %req.uri().path())
     }));
 
-    let app = Router::new().nest("/api", api).fallback(static_handler);
+    let app = Router::new()
+        .route(
+            "/admin",
+            axum::routing::get(|| async { Redirect::temporary("/") }),
+        )
+        .route(
+            "/admin/",
+            axum::routing::get(|| async { Redirect::temporary("/") }),
+        )
+        .merge(api)
+        .fallback(static_handler);
 
     let listener = TcpListener::bind(&config.admin_bind_addr).await?;
     axum::serve(listener, app).await?;

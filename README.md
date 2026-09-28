@@ -142,7 +142,7 @@ On startup Crabbase reads the TOML file, connects to Postgres, runs all pending 
 
 ### 3. Open the dashboard
 
-Visit `http://localhost:8181` and log in with the superuser credentials (`admin@crabbase.local` / your `ADMIN_PASSWORD`). **Almost everything can be done here without touching curl or code:**
+Visit `http://localhost:9898` and log in with the superuser credentials (`admin@crabbase.local` / your `ADMIN_PASSWORD`). **Almost everything can be done here without touching curl or code:**
 
 - **Create collections** — pick a name, type (`base`/`auth`), add fields of any type, toggle indexes
 - **Manage records** — browse, create, edit, delete data in any collection; this includes **creating users** in auth collections
@@ -189,6 +189,53 @@ curl -G 'http://localhost:8989/api/collections/products/records' \
 curl 'http://localhost:8989/api/collections/books/records?expand=author'
 ```
 
+---
+
+## Local Development Environment (Docker Compose)
+
+For local development, Crabbase runs directly on your machine as a native binary, while backing infrastructure (**PostgreSQL 16** and **Floci** AWS emulator) runs via Docker Compose.
+
+### 1. Start the backing services
+
+```sh
+docker compose up -d
+```
+
+This spins up:
+- **PostgreSQL 16**: available at `localhost:5432` (`database: crabbase`, `user: postgres`, `password: postgres`) with persistent volume storage.
+- **Floci AWS Emulator**: available at `http://localhost:4566` (providing local S3, SQS, SES, SNS emulation).
+
+> **Note:** If port `5432` is already in use by a local PostgreSQL instance, specify a custom port: `POSTGRES_PORT=5433 docker compose up -d` and update `port = 5433` in `crabbase.toml`.
+
+### 2. Run Crabbase
+
+Once the database and emulator are up, run Crabbase directly from your terminal:
+
+```sh
+# Run Admin Web Dashboard + REST API
+make admin        # http://localhost:9898
+
+# Or run the headless REST API
+make serve        # http://localhost:8989
+```
+
+Or via cargo:
+
+```sh
+cargo run -- admin --config crabbase.toml
+cargo run -- serve --config crabbase.toml
+```
+
+Crabbase connects to `localhost:5432`, applies pending SQL migrations automatically, creates the initial superuser, and starts serving.
+
+### 3. Stop the backing services
+
+```sh
+docker compose down
+```
+
+---
+
 ## Documentation
 
 | Doc | Contents |
@@ -215,7 +262,12 @@ Every step has a REST equivalent documented in [docs/](docs/) if you prefer auto
 
 ## Deploying & scaling
 
-*Coming Soon*
+Because Crabbase is stateless and delegates all persistent state to PostgreSQL, deployment and scaling are straightforward:
+
+- **Container Deployment**: Run the Docker container on AWS ECS, Fly.io, Google Cloud Run, Render, or Kubernetes pointing to any managed PostgreSQL instance (Supabase, Neon, AWS RDS, Cloud SQL).
+- **Horizontal Scaling**: Run multiple Crabbase containers behind any reverse proxy or load balancer (Nginx, Traefik, Caddy, Cloudflare). Since authentication tokens, collections, and settings live in Postgres, multiple replicas share all state with zero coordination.
+- **Connection Pooling**: Place PgBouncer between Crabbase instances and PostgreSQL when scaling to handle thousands of concurrent client connections.
+- **Admin & API Separation**: Deploy `crabbase admin` on an internal/VPN-protected port for administration, while exposing `crabbase serve` containers for public client traffic.
 
 ## Development
 

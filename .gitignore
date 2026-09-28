@@ -12,3 +12,6 @@ logs/*
 crates/admin-ui/dist/
 
 crabbase.toml
+
+# Floci / local runtime data
+data/

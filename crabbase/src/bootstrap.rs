@@ -67,14 +67,9 @@ fn print_startup_info(config: &Config) {
     tracing::info!("version:  {}", env!("CARGO_PKG_VERSION"));
     tracing::info!("database: connected ✓");
     tracing::info!("Database: Migration Applied ✓");
-    if let Some(_) = config.initial_users {
-        tracing::info!(
-            "Intial Superuser: {} configured ✓",
-            config.initial_users.iter().len(),
-        );
+    if let Some(users) = &config.initial_users {
+        tracing::info!("Initial Superuser: {} configured ✓", users.len(),);
     }
-    tracing::info!("admin UI: http://{}/admin", config.admin_bind_addr);
-    tracing::info!("api:      http://{}/api", config.server_bind_addr);
 }
 
 async fn setup_superuser(
