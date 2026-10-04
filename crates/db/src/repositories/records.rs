@@ -869,6 +869,7 @@ mod tests {
             name: "articles".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -902,6 +903,7 @@ mod tests {
             name: "items".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -936,6 +938,7 @@ mod tests {
             name: "items".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -987,6 +990,7 @@ mod tests {
             name: "users".into(),
             columns,
             collection_type: Some("auth".to_string()),
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -1091,6 +1095,7 @@ mod tests {
             name: "blogs".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -1149,6 +1154,7 @@ mod tests {
             name: "trash".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 

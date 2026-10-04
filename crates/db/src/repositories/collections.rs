@@ -712,6 +712,7 @@ mod tests {
             name: "testcol".to_string(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
 
         let created = repo.create(req).await.unwrap();
@@ -736,6 +737,7 @@ mod tests {
             name: "getcol".to_string(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
 
         repo.create(req).await.unwrap();
@@ -761,6 +763,7 @@ mod tests {
             name: "listcol".to_string(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
 
         repo.create(req).await.unwrap();
@@ -786,6 +789,7 @@ mod tests {
             name: "oldname".to_string(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
 
         repo.create(req).await.unwrap();
@@ -820,6 +824,7 @@ mod tests {
             name: "todelete".to_string(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
 
         repo.create(req).await.unwrap();
@@ -848,6 +853,7 @@ mod tests {
             name: "other_table".to_string(),
             columns: related_columns,
             collection_type: None,
+            ..Default::default()
         };
         repo.create(req_related).await.unwrap();
 
@@ -957,6 +963,7 @@ mod tests {
             name: "types_test".to_string(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
 
         let created = repo.create(req).await.unwrap();
@@ -988,6 +995,7 @@ mod tests {
             name: "other_table".to_string(),
             columns: related_columns,
             collection_type: None,
+            ..Default::default()
         };
         repo.create(req_related).await.unwrap();
 
@@ -1012,6 +1020,7 @@ mod tests {
             name: "my_table".to_string(),
             columns,
             collection_type: None,
+            ..Default::default()
         };
         repo.create(req).await.unwrap();
 
@@ -1064,6 +1073,7 @@ mod tests {
             name: "table1".to_string(),
             columns: columns1,
             collection_type: None,
+            ..Default::default()
         };
         let err1 = repo.create(req1).await.unwrap_err();
         assert!(
@@ -1084,6 +1094,7 @@ mod tests {
             name: "table2".to_string(),
             columns: columns2,
             collection_type: None,
+            ..Default::default()
         };
         let err2 = repo.create(req2).await.unwrap_err();
         assert!(
@@ -1104,6 +1115,7 @@ mod tests {
             name: "table3".to_string(),
             columns: columns3,
             collection_type: None,
+            ..Default::default()
         };
         let err3 = repo.create(req3).await.unwrap_err();
         assert!(
@@ -1140,6 +1152,7 @@ mod tests {
             name: "test_schema".to_string(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
 
         repo.create(req).await.unwrap();

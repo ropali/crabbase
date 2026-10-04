@@ -299,7 +299,7 @@ Implemented and working:
 
 Not yet (placeholders exist in the codebase):
 
-- **File uploads/storage** — the `File` column type stores a path string only; there is no upload endpoint.
+- **File uploads/storage** — the `File` column type stores a path string only; there is no upload endpoint (see [FILE_STORAGE_SETUP.md](FILE_STORAGE_SETUP.md) for architecture & S3 setup guide).
 - **Realtime** — no websockets/SSE subscriptions.
 - **Hooks** — no background triggers.
 - **Public registration / email verification endpoints** — create users by POSTing records to an auth collection; the `allowPublicUserRegistration` setting exists but is not enforced yet.

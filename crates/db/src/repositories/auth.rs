@@ -122,17 +122,10 @@ impl UserRepository {
     ) -> Result<Option<Collection>, RepositoryError> {
         let sql = "SELECT * FROM _collections WHERE id = $1 LIMIT 1";
 
-        let col = if let Some(uuid) = uuid::Uuid::parse_str(id).ok() {
-            sqlx::query_as::<_, Collection>(sql)
-                .bind(uuid)
-                .fetch_optional(&self.db)
-                .await?
-        } else {
-            sqlx::query_as::<_, Collection>(sql)
-                .bind(id)
-                .fetch_optional(&self.db)
-                .await?
-        };
+        let col = sqlx::query_as::<_, Collection>(sql)
+            .bind(id)
+            .fetch_optional(&self.db)
+            .await?;
 
         Ok(col)
     }

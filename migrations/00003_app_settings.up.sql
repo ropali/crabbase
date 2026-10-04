@@ -3,7 +3,7 @@
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS _settings (
-    id      TEXT PRIMARY KEY NOT NULL DEFAULT gen_random_uuid()::text,
+    id      UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     name    VARCHAR(60) UNIQUE NOT NULL,
     value   TEXT DEFAULT NULL,
     created TIMESTAMPTZ NOT NULL DEFAULT now(),

@@ -2,6 +2,7 @@ use crabbase_auth::{
     repositories::{auth::AuthRepository, otp::OtpRepository},
     service::AuthService,
 };
+use crabbase_files::service::FileUploadService;
 use sqlx::{Pool, Postgres};
 
 use crabbase_db::repositories::{
@@ -46,5 +47,10 @@ impl AppState {
             self.settings_repo(),
             self.otp_repo(),
         )
+    }
+    pub fn file_service(&self) -> FileUploadService {
+        FileUploadService {
+            settings_repo: self.settings_repo(),
+        }
     }
 }

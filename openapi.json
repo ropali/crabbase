@@ -1212,6 +1212,197 @@
           }
         }
       }
+    },
+    "/files/upload": {
+      "post": {
+        "tags": ["Files"],
+        "summary": "Upload file(s)",
+        "operationId": "uploadFiles",
+        "description": "Upload one or more files using multipart form data",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "File payload to upload"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Files uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid multipart payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/presign-upload": {
+      "post": {
+        "tags": ["Files"],
+        "summary": "Generate presigned upload URL",
+        "operationId": "presignUpload",
+        "description": "Generates a pre-signed direct upload URL for client-side uploads",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Presigned upload URL generated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files/{path}": {
+      "get": {
+        "tags": ["Files"],
+        "summary": "Download or stream a file",
+        "operationId": "downloadFile",
+        "description": "Downloads or streams the binary content of a file by its storage key/path",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "description": "Storage path of the file (e.g. uploads/uuid/file.png)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File binary content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["Files"],
+        "summary": "Delete a file",
+        "operationId": "deleteFile",
+        "description": "Deletes a stored file by its storage path",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "description": "Storage path of the file to delete",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "File deleted successfully"
+          },
+          "404": {
+            "description": "File not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1778,6 +1969,54 @@
           "user_registration": {
             "$ref": "#/components/schemas/EmailTemplate",
             "description": "User registration email template"
+          }
+        }
+      },
+      "FileUploadResponse": {
+        "type": "object",
+        "required": ["status", "keys"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "success"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Storage keys of the uploaded files"
+          }
+        }
+      },
+      "PresignRequest": {
+        "type": "object",
+        "required": ["filename", "content_type"],
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original name of the file to upload",
+            "example": "document.pdf"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME type of the file",
+            "example": "application/pdf"
+          }
+        }
+      },
+      "PresignResponse": {
+        "type": "object",
+        "required": ["upload_url", "storage_key"],
+        "properties": {
+          "upload_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Direct upload URL"
+          },
+          "storage_key": {
+            "type": "string",
+            "description": "Assigned storage key for the file"
           }
         }
       }

@@ -20,6 +20,7 @@ pub fn get_app_routes(state: AppState) -> Router {
         )
         .nest("/auth", routes::auth::get_routes(state.clone()))
         .nest("/settings", routes::setting::get_routes(state.clone()))
+        .nest("/files", routes::files::get_routes(state.clone()))
         .with_state(state);
 
     #[cfg(debug_assertions)]
