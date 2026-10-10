@@ -6,8 +6,8 @@ use crabbase_files::service::FileUploadService;
 use sqlx::{Pool, Postgres};
 
 use crabbase_db::repositories::{
-    auth::UserRepository, collections::CollectionRepository, records::RecordsRepository,
-    settings::SettingsRepository,
+    auth::UserRepository, collections::CollectionRepository, files::FilesRepository,
+    records::RecordsRepository, settings::SettingsRepository,
 };
 
 #[derive(Debug, Clone)]
@@ -40,6 +40,10 @@ impl AppState {
         OtpRepository::new(self.db.clone())
     }
 
+    pub fn files_repo(&self) -> FilesRepository {
+        FilesRepository::new(self.db.clone())
+    }
+
     pub fn auth_service(&self) -> AuthService {
         AuthService::new(
             self.user_repo(),
@@ -49,8 +53,6 @@ impl AppState {
         )
     }
     pub fn file_service(&self) -> FileUploadService {
-        FileUploadService {
-            settings_repo: self.settings_repo(),
-        }
+        FileUploadService::new(self.settings_repo(), self.files_repo())
     }
 }

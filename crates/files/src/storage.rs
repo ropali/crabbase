@@ -2,7 +2,9 @@ use async_trait::async_trait;
 use aws_config::Region;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::{Client, config::Config, presigning::PresigningConfig, primitives::ByteStream};
+use crabbase_db::repositories::files::FileBackend;
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -32,11 +34,12 @@ impl fmt::Display for StorageError {
 
 impl std::error::Error for StorageError {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
-pub enum StorageTypes {
+pub enum StorageBackend {
     #[serde(alias = "S3", alias = "s3")]
     S3,
+    #[default]
     #[serde(alias = "Local", alias = "local")]
     Local,
 }
@@ -60,6 +63,15 @@ pub struct S3Config {
 
 #[async_trait]
 pub trait FileStorage: Send + Sync {
+    /// Engine backing this instance. Recorded on every file written through it
+    /// so the file can be resolved again later, independently of whichever
+    /// backend the active storage config points at.
+    fn backend(&self) -> FileBackend;
+
+    /// Local base path, or S3 bucket name. Persisted alongside the file as
+    /// `_files.container`.
+    fn container(&self) -> Cow<'_, str>;
+
     /// Uploads an object payload to storage.
     async fn put_object(
         &self,
@@ -74,20 +86,18 @@ pub trait FileStorage: Send + Sync {
     /// Deletes an object from storage.
     async fn delete_object(&self, key: &str) -> Result<(), StorageError>;
 
-    /// Generates a pre-signed URL for direct client/browser uploads.
-    async fn presigned_put_url(
+    /// Generates a presigned PUT URL for direct client uploads.
+    /// Only supported by S3 storage.
+    async fn presign_put(
         &self,
-        key: &str,
-        expires_in: Duration,
-        content_type: &str,
-    ) -> Result<String, StorageError>;
-
-    /// Generates a pre-signed URL for secure temporary downloads.
-    async fn presigned_get_url(
-        &self,
-        key: &str,
-        expires_in: Duration,
-    ) -> Result<String, StorageError>;
+        _key: &str,
+        _expires_in: Duration,
+        _content_type: &str,
+    ) -> Result<String, StorageError> {
+        Err(StorageError::Presign(
+            "Presigned URLs are not supported by this storage backend".to_string(),
+        ))
+    }
 }
 
 #[derive(Clone)]
@@ -141,6 +151,14 @@ impl S3Storage {
 
 #[async_trait]
 impl FileStorage for S3Storage {
+    fn backend(&self) -> FileBackend {
+        FileBackend::S3
+    }
+
+    fn container(&self) -> Cow<'_, str> {
+        Cow::Borrowed(&self.bucket)
+    }
+
     async fn put_object(
         &self,
         key: &str,
@@ -199,13 +217,13 @@ impl FileStorage for S3Storage {
         Ok(())
     }
 
-    async fn presigned_put_url(
+    async fn presign_put(
         &self,
         key: &str,
         expires_in: Duration,
         content_type: &str,
     ) -> Result<String, StorageError> {
-        let presigning_config = PresigningConfig::expires_in(expires_in)
+        let presign_config = PresigningConfig::expires_in(expires_in)
             .map_err(|e| StorageError::Presign(e.to_string()))?;
 
         let presigned = self
@@ -214,27 +232,7 @@ impl FileStorage for S3Storage {
             .bucket(&self.bucket)
             .key(key)
             .content_type(content_type)
-            .presigned(presigning_config)
-            .await
-            .map_err(|e| StorageError::Presign(e.to_string()))?;
-
-        Ok(presigned.uri().to_string())
-    }
-
-    async fn presigned_get_url(
-        &self,
-        key: &str,
-        expires_in: Duration,
-    ) -> Result<String, StorageError> {
-        let presigning_config = PresigningConfig::expires_in(expires_in)
-            .map_err(|e| StorageError::Presign(e.to_string()))?;
-
-        let presigned = self
-            .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(key)
-            .presigned(presigning_config)
+            .presigned(presign_config)
             .await
             .map_err(|e| StorageError::Presign(e.to_string()))?;
 
@@ -286,6 +284,16 @@ impl LocalStorage {
 
 #[async_trait]
 impl FileStorage for LocalStorage {
+    fn backend(&self) -> FileBackend {
+        FileBackend::Local
+    }
+
+    /// The configured path, not the `$HOME`-expanded one — it has to survive a
+    /// round-trip through the database and rebuild the same storage later.
+    fn container(&self) -> Cow<'_, str> {
+        self.base_path.to_string_lossy()
+    }
+
     async fn put_object(
         &self,
         key: &str,
@@ -324,35 +332,16 @@ impl FileStorage for LocalStorage {
         }
         Ok(())
     }
-
-    async fn presigned_put_url(
-        &self,
-        _key: &str,
-        _expires_in: Duration,
-        _content_type: &str,
-    ) -> Result<String, StorageError> {
-        Err(StorageError::Presign(
-            "Presigned upload URLs are not supported for local filesystem storage".to_string(),
-        ))
-    }
-
-    async fn presigned_get_url(
-        &self,
-        key: &str,
-        _expires_in: Duration,
-    ) -> Result<String, StorageError> {
-        Ok(format!(
-            "/api/files/download/{}",
-            key.trim_start_matches('/')
-        ))
-    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageConfig {
-    pub storage_type: StorageTypes,
+    #[serde(default)]
+    pub storage_type: StorageBackend,
+    #[serde(default)]
     pub local: LocalStorage,
+    #[serde(default)]
     pub s3: S3Config,
 }
 
@@ -425,7 +414,7 @@ mod tests {
         }"#;
 
         let cfg: StorageConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(cfg.storage_type, StorageTypes::Local);
+        assert_eq!(cfg.storage_type, StorageBackend::Local);
         assert_eq!(cfg.s3.bucket, "crabbase_files");
     }
 }

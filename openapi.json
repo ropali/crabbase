@@ -291,13 +291,15 @@
       "patch": {
         "tags": ["Collections"],
         "summary": "Update a collection",
+        "description": "Updates collection schema, columns, or access rules (admin only)",
         "operationId": "updateCollection",
-        "security": [{"bearerAuth": [], "requireAdmin": []}],
+        "security": [{"bearerAuth": []}],
         "parameters": [
           {
             "name": "name",
             "in": "path",
             "required": true,
+            "description": "Name of the collection to update",
             "schema": {
               "type": "string"
             }
@@ -315,7 +317,7 @@
         },
         "responses": {
           "200": {
-            "description": "Collection updated",
+            "description": "Collection updated successfully",
             "content": {
               "application/json": {
                 "schema": {
@@ -325,7 +327,27 @@
             }
           },
           "400": {
-            "description": "Invalid input",
+            "description": "Invalid input / schema validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - admin privileges required",
             "content": {
               "application/json": {
                 "schema": {
@@ -818,6 +840,83 @@
       }
     },
 
+    "/auth/{collection}/reset-password": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Reset password",
+        "description": "Resets the user's password using the OTP verification code",
+        "operationId": "resetPassword",
+        "security": [],
+        "parameters": [
+          {
+            "name": "collection",
+            "in": "path",
+            "required": true,
+            "description": "Collection name for the authentication context",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string",
+                      "example": "Password reset successfully."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error or invalid OTP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User or collection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
     "/collections/{name}/records/{id}": {
       "get": {
         "tags": ["Records"],
@@ -876,12 +975,17 @@
       "patch": {
         "tags": ["Records"],
         "summary": "Update a record",
+        "description": "Updates an existing record's fields in the specified collection by its ID",
         "operationId": "updateRecord",
+        "security": [
+          { "bearerAuth": [] }
+        ],
         "parameters": [
           {
             "name": "name",
             "in": "path",
             "required": true,
+            "description": "Name of the collection",
             "schema": {
               "type": "string"
             }
@@ -890,6 +994,7 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "description": "Unique identifier of the record to update",
             "schema": {
               "type": "string"
             }
@@ -907,16 +1012,51 @@
         },
         "responses": {
           "200": {
-            "description": "Record updated",
+            "description": "Record updated successfully",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "details": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/Record"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input / validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - access rule denied update",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Record or collection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -1015,8 +1155,10 @@
       },
       "post": {
         "tags": ["Settings"],
-        "summary": "Save mail settings",
+        "summary": "Update mail settings",
+        "description": "Saves and updates mail server configuration (admin only)",
         "operationId": "saveMailSettings",
+        "security": [{"bearerAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
@@ -1029,16 +1171,47 @@
         },
         "responses": {
           "200": {
-            "description": "Mail settings saved",
+            "description": "Mail settings saved successfully",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "details": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "Email settings saved"
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input / configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - admin privileges required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -1090,8 +1263,10 @@
       },
       "post": {
         "tags": ["Settings"],
-        "summary": "Save application settings",
+        "summary": "Update application settings",
+        "description": "Saves and updates general application settings (admin only)",
         "operationId": "saveAppSettings",
+        "security": [{"bearerAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
@@ -1104,16 +1279,47 @@
         },
         "responses": {
           "200": {
-            "description": "Application settings saved",
+            "description": "Application settings saved successfully",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "details": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "App settings saved."
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input / configuration",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - admin privileges required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -1172,8 +1378,10 @@
       },
       "post": {
         "tags": ["Settings"],
-        "summary": "Save email templates",
+        "summary": "Update email templates",
+        "description": "Saves and updates email templates for system notifications and password resets (admin only)",
         "operationId": "saveEmailTemplates",
+        "security": [{"bearerAuth": []}],
         "requestBody": {
           "required": true,
           "content": {
@@ -1186,16 +1394,47 @@
         },
         "responses": {
           "200": {
-            "description": "Email templates saved",
+            "description": "Email templates saved successfully",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
                     "details": {
-                      "type": "string"
+                      "type": "string",
+                      "example": "Email templates saved."
                     }
                   }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input / template syntax error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - admin authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - admin privileges required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
                 }
               }
             }
@@ -1253,46 +1492,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/files/presign-upload": {
-      "post": {
-        "tags": ["Files"],
-        "summary": "Generate presigned upload URL",
-        "operationId": "presignUpload",
-        "description": "Generates a pre-signed direct upload URL for client-side uploads",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PresignRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Presigned upload URL generated successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PresignResponse"
                 }
               }
             }
@@ -1835,6 +2034,26 @@
           }
         }
       },
+      "PasswordResetConfirmRequest": {
+        "type": "object",
+        "required": ["email", "otp", "new_pwd"],
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "description": "Email address of the account"
+          },
+          "otp": {
+            "type": "integer",
+            "description": "One-time password verification code sent via email"
+          },
+          "new_pwd": {
+            "type": "string",
+            "format": "password",
+            "description": "New password to set for the account"
+          }
+        }
+      },
       "UserProfile": {
         "type": "object",
         "required": ["id", "email"],
@@ -1972,51 +2191,63 @@
           }
         }
       },
+      "FileRef": {
+        "type": "object",
+        "required": ["key", "backend"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true,
+            "description": "File record ID (null if metadata write failed)"
+          },
+          "key": {
+            "type": "string",
+            "description": "Storage key/path of the file"
+          },
+          "backend": {
+            "type": "string",
+            "enum": ["Local", "S3", "local", "s3"],
+            "description": "Storage backend used"
+          },
+          "original_name": {
+            "type": "string",
+            "description": "Original filename"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME type of the file"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "File size in bytes"
+          }
+        }
+      },
       "FileUploadResponse": {
         "type": "object",
-        "required": ["status", "keys"],
+        "required": ["status"],
         "properties": {
           "status": {
             "type": "string",
             "example": "success"
           },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileRef"
+            },
+            "description": "Uploaded files with metadata"
+          },
           "keys": {
             "type": "array",
             "items": {
-              "type": "string"
+              "oneOf": [
+                { "type": "string" },
+                { "$ref": "#/components/schemas/FileRef" }
+              ]
             },
-            "description": "Storage keys of the uploaded files"
-          }
-        }
-      },
-      "PresignRequest": {
-        "type": "object",
-        "required": ["filename", "content_type"],
-        "properties": {
-          "filename": {
-            "type": "string",
-            "description": "Original name of the file to upload",
-            "example": "document.pdf"
-          },
-          "content_type": {
-            "type": "string",
-            "description": "MIME type of the file",
-            "example": "application/pdf"
-          }
-        }
-      },
-      "PresignResponse": {
-        "type": "object",
-        "required": ["upload_url", "storage_key"],
-        "properties": {
-          "upload_url": {
-            "type": "string",
-            "format": "uri",
-            "description": "Direct upload URL"
-          },
-          "storage_key": {
-            "type": "string",
-            "description": "Assigned storage key for the file"
+            "description": "Storage keys or file references of the uploaded files"
           }
         }
       }
