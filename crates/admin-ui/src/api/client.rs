@@ -463,4 +463,29 @@ impl ApiClient {
         Self::check_response(res).await?;
         Ok(())
     }
+
+    pub async fn get_storage_settings(&self) -> Result<Option<serde_json::Value>, gloo_net::Error> {
+        let res = self.request("GET", "/settings/storage").send().await?;
+        if res.status() == 204 {
+            return Ok(None);
+        }
+        let data = Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+        Ok(Some(data))
+    }
+
+    pub async fn save_storage_settings(
+        &self,
+        body: serde_json::Value,
+    ) -> Result<(), gloo_net::Error> {
+        let res = self
+            .request("POST", "/settings/storage")
+            .json(&body)?
+            .send()
+            .await?;
+        Self::check_response(res).await?;
+        Ok(())
+    }
 }

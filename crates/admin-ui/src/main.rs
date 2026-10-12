@@ -199,7 +199,19 @@ fn app_main(props: &AppMainProps) -> Html {
                             });
                             html! { <SettingsMail on_save={on_mail_saved} /> }
                         },
-                        Route::SettingsStorage => html! { <SettingsStorage /> },
+                        Route::SettingsStorage => {
+                            let notification = notification.clone();
+                            let on_storage_saved = Callback::from(move |_| {
+                                let id = js_sys::Date::now() as u64;
+                                notification.set(Some(NotificationMessage {
+                                    id,
+                                    kind: NotificationKind::Success,
+                                    title: "Settings saved".to_string(),
+                                    message: "Storage settings have been saved successfully.".to_string(),
+                                }));
+                            });
+                            html! { <SettingsStorage on_save={on_storage_saved} /> }
+                        },
                         Route::SettingsGeneral | Route::SettingsGeneralExplicit => {
                             let notification = notification.clone();
                             let on_general_saved = Callback::from(move |_| {
