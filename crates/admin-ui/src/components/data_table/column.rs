@@ -292,3 +292,129 @@ pub fn relation_render(
         }
     }
 }
+
+pub fn file_render(
+    _field_name: String,
+    v: &CellValue,
+    _on_view: Option<&Callback<ViewCellPayload>>,
+) -> Html {
+    if v.is_null() {
+        return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
+    }
+
+    let text = v.display();
+    if text.trim().is_empty() || text == "null" || text == "N/A" {
+        return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
+    }
+
+    let files: Vec<String> = if text.trim_start().starts_with('[') {
+        serde_json::from_str::<Vec<String>>(&text).unwrap_or_else(|_| vec![text.clone()])
+    } else {
+        vec![text.clone()]
+    };
+
+    if files.is_empty() {
+        return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
+    }
+
+    let base_url = crate::api::client::ApiClient::get_base_url();
+    let base_trimmed = base_url.trim_end_matches('/');
+
+    let stop_prop = Callback::from(|e: MouseEvent| {
+        e.stop_propagation();
+    });
+
+    let render_single_file = |storage_key: &str| {
+        let filename = storage_key
+            .rsplit('/')
+            .next()
+            .unwrap_or(storage_key)
+            .to_string();
+
+        let display_name = if filename.len() > 18 {
+            format!("{}...", &filename[..15])
+        } else {
+            filename.clone()
+        };
+
+        let file_url = format!("{}/files/{}", base_trimmed, storage_key);
+
+        let lower = storage_key.to_lowercase();
+        let is_image = lower.ends_with(".png")
+            || lower.ends_with(".jpg")
+            || lower.ends_with(".jpeg")
+            || lower.ends_with(".gif")
+            || lower.ends_with(".webp")
+            || lower.ends_with(".svg")
+            || lower.ends_with(".avif");
+
+        let stop_prop_click = stop_prop.clone();
+        let stop_prop_dl = stop_prop.clone();
+
+        if is_image {
+            html! {
+                <div class="inline-flex items-center gap-1.5 max-w-[220px]" title={storage_key.to_string()}>
+                    <a
+                        href={file_url.clone()}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onclick={stop_prop_click}
+                        class="shrink-0 relative group/thumb"
+                        title={format!("View image: {}", filename)}
+                    >
+                        <img
+                            src={file_url.clone()}
+                            alt={filename.clone()}
+                            class="w-7 h-7 object-cover rounded border border-outline-variant bg-surface hover:scale-125 transition-transform shadow-xs"
+                        />
+                    </a>
+                    <span class="font-mono text-xs text-on-surface truncate min-w-0" title={filename.clone()}>
+                        { display_name }
+                    </span>
+                    <a
+                        href={file_url.clone()}
+                        download={filename.clone()}
+                        onclick={stop_prop_dl}
+                        class="p-1 rounded text-on-surface-variant hover:text-primary hover:bg-surface-container-high transition-colors shrink-0 flex items-center justify-center"
+                        title={format!("Download {}", filename)}
+                    >
+                        <span class="material-symbols-outlined text-[15px]">{"download"}</span>
+                    </a>
+                </div>
+            }
+        } else {
+            html! {
+                <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container-high/60 border border-outline-variant/40 max-w-[220px]" title={storage_key.to_string()}>
+                    <span class="material-symbols-outlined text-[16px] text-primary shrink-0">
+                        {"description"}
+                    </span>
+                    <span class="font-mono text-xs text-on-surface truncate min-w-0" title={filename.clone()}>
+                        { display_name }
+                    </span>
+                    <a
+                        href={file_url.clone()}
+                        download={filename.clone()}
+                        onclick={stop_prop_dl}
+                        class="p-0.5 rounded text-on-surface-variant hover:text-primary hover:bg-surface-container transition-colors shrink-0 flex items-center justify-center ml-0.5"
+                        title={format!("Download {}", filename)}
+                    >
+                        <span class="material-symbols-outlined text-[15px]">{"download"}</span>
+                    </a>
+                </div>
+            }
+        }
+    };
+
+    if files.len() == 1 {
+        render_single_file(&files[0])
+    } else {
+        html! {
+            <div class="flex items-center gap-1.5 flex-wrap">
+                { render_single_file(&files[0]) }
+                <span class="text-xs text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded font-mono">
+                    { format!("+{}", files.len() - 1) }
+                </span>
+            </div>
+        }
+    }
+}

@@ -527,13 +527,21 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                             </div>
                                                         }
                                                     } else if dt == "file" {
+                                                        let on_file_change = {
+                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                            let key = key.clone();
+                                                            Callback::from(move |new_key: String| {
+                                                                on_dynamic_field_change.emit((key.clone(), new_key));
+                                                            })
+                                                        };
                                                         html! {
-                                                            <div class="group" key={f.name.clone()}>
-                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
-                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
-                                                                </label>
-                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface focus:ring-secondary focus:border-transparent outline-none" placeholder="Enter file name or URL..." type="text" value={current_val} oninput={on_input} />
-                                                            </div>
+                                                            <crate::components::FileFieldInput
+                                                                key={f.name.clone()}
+                                                                label={label_text}
+                                                                value={current_val}
+                                                                required={f.required}
+                                                                on_change={on_file_change}
+                                                            />
                                                         }
                                                     } else if dt == "json" {
                                                         let on_json_change = {

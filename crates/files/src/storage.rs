@@ -51,11 +51,26 @@ pub struct S3Config {
     pub bucket: String,
     #[serde(default)]
     pub region: String,
-    #[serde(alias = "accessKey", default)]
+    #[serde(
+        rename = "accessKey",
+        alias = "access_key_id",
+        alias = "accessKeyId",
+        default
+    )]
     pub access_key_id: String,
-    #[serde(alias = "secret", default)]
+    #[serde(
+        rename = "secret",
+        alias = "secret_access_key",
+        alias = "secretAccessKey",
+        default
+    )]
     pub secret_access_key: String,
-    #[serde(alias = "endpoint", default)]
+    #[serde(
+        rename = "endpoint",
+        alias = "endpoint_url",
+        alias = "endpointUrl",
+        default
+    )]
     pub endpoint_url: Option<String>,
     #[serde(default)]
     pub force_path_style: bool,

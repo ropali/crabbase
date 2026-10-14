@@ -1,6 +1,6 @@
 use crate::components::data_table::column::{
-    ColumnDef, bool_render, clipped_text_render, date_render, default_render, id_render,
-    json_render, relation_render, richtext_render,
+    ColumnDef, bool_render, clipped_text_render, date_render, default_render, file_render,
+    id_render, json_render, relation_render, richtext_render,
 };
 use crate::models::collection::Collection;
 
@@ -61,6 +61,7 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
                         "number" => default_render(cell_val, on_view),
                         "relation" => relation_render(cell_val, is_multiple, on_view),
                         "datetime" | "autodatetime" | "autodate" => date_render(cell_val, on_view),
+                        "file" => file_render(key_clone.clone(), cell_val, on_view),
                         "json" => json_render(key_clone.clone(), cell_val, on_view),
                         "richtext" | "editor" => {
                             richtext_render(key_clone.clone(), cell_val, on_view)

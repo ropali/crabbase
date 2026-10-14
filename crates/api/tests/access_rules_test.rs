@@ -484,3 +484,38 @@ async fn test_delete_rule_null_blocks_unauthenticated_delete() {
         status
     );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Files API Unauthenticated Access Tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_files_api_is_unauthenticated() {
+    let (app, _token) = setup().await;
+
+    let state = crabbase_api::state::AppState {
+        db: app.db.pool.clone(),
+    };
+    let upload_result = state
+        .file_service()
+        .upload_bytes("public.txt", "text/plain", b"public file content".to_vec())
+        .await
+        .expect("upload file bytes");
+    let file_key = upload_result.key;
+
+    // Unauthenticated GET /api/files/{file_key} succeeds
+    let res = app.get(&format!("/api/files/{file_key}")).await;
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Unauthenticated DELETE /api/files/{file_key} succeeds
+    let del_res = app
+        .request(
+            axum::http::Request::builder()
+                .method(axum::http::Method::DELETE)
+                .uri(&format!("/api/files/{file_key}"))
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(del_res.status(), StatusCode::NO_CONTENT);
+}

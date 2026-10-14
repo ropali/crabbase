@@ -1,4 +1,3 @@
-use crate::state::AppState;
 use axum::{
     Router,
     body::Body,
@@ -8,9 +7,9 @@ use axum::{
     routing::{get, post},
 };
 use crabbase_core::errors::APIError;
-use crabbase_files::{FileStorage, LocalStorage, S3Config, S3Storage};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+
+use crate::state::AppState;
 
 #[derive(Deserialize)]
 pub struct PresignRequest {
@@ -81,6 +80,13 @@ pub async fn download_file_handler(
 
     Response::builder()
         .header(header::CONTENT_TYPE, mime.as_ref())
+        .header(
+            header::CONTENT_DISPOSITION,
+            format!(
+                "inline; filename=\"{}\"",
+                path.rsplit('/').next().unwrap_or("file")
+            ),
+        )
         .body(Body::from(data))
         .map_err(|e| APIError::Internal {
             message: format!("failed to build response: {e}"),

@@ -488,4 +488,36 @@ impl ApiClient {
         Self::check_response(res).await?;
         Ok(())
     }
+
+    pub async fn upload_file(
+        &self,
+        form_data: web_sys::FormData,
+    ) -> Result<String, gloo_net::Error> {
+        let res = self
+            .request("POST", "/files/upload")
+            .body(form_data)?
+            .send()
+            .await?;
+        let json = Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        let key = json
+            .get("keys")
+            .and_then(|k| k.get(0))
+            .and_then(|item| {
+                item.get("key")
+                    .and_then(|k| k.as_str())
+                    .or_else(|| item.as_str())
+            })
+            .ok_or_else(|| {
+                gloo_net::Error::GlooError(
+                    "Upload succeeded but no storage key was returned".into(),
+                )
+            })?
+            .to_string();
+
+        Ok(key)
+    }
 }

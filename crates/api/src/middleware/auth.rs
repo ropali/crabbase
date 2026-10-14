@@ -171,22 +171,25 @@ pub async fn extract_auth_context(
     mut req: Request<axum::body::Body>,
     next: Next,
 ) -> Result<Response, APIError> {
-    let auth_header_res = req
+    let token_opt = if let Some(header_val) = req
         .headers()
         .get("Authorization")
         .and_then(|v| v.to_str().ok())
-        .ok_or(APIError::Unauthorized);
-
-    let auth_header = match auth_header_res {
-        Result::Ok(val) => val,
-        Err(_) => return Ok(next.run(req).await),
+    {
+        header_val.strip_prefix("Bearer ").map(|s| s.to_string())
+    } else {
+        req.uri()
+            .query()
+            .and_then(|q| serde_urlencoded::from_str::<HashMap<String, String>>(q).ok())
+            .and_then(|params| params.get("token").cloned())
     };
 
-    let token = auth_header
-        .strip_prefix("Bearer ")
-        .ok_or(APIError::Unauthorized)?;
+    let token = match token_opt {
+        Some(t) => t,
+        None => return Ok(next.run(req).await),
+    };
 
-    let claims = extract_unverified_claims(token).map_err(|_| APIError::Unauthorized)?;
+    let claims = extract_unverified_claims(&token).map_err(|_| APIError::Unauthorized)?;
 
     let collection = state
         .collection_repo()
@@ -212,7 +215,7 @@ pub async fn extract_auth_context(
 
     let user = user_opt.ok_or(APIError::Unauthorized)?;
 
-    let claims = verify_token(token, &format!("{col_token}-{}", user.token_key))
+    let claims = verify_token(&token, &format!("{col_token}-{}", user.token_key))
         .map_err(|_| APIError::Unauthorized)?;
 
     let user = state.auth_service().verify_session(&claims).await?;

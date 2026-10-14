@@ -420,6 +420,19 @@ impl FileUploadService {
                 details: serde_json::Value::Null,
             })
     }
+
+    pub async fn presigned_put_url(
+        &self,
+        key: &str,
+        expires_in: Duration,
+        content_type: &str,
+    ) -> Result<String, APIError> {
+        let storage = self.resolve_storage().await?;
+        storage
+            .presign_put(key, expires_in, content_type)
+            .await
+            .map_err(|e| map_storage_error("presigned_put_url", e))
+    }
 }
 
 /// Builds the key a new upload will be stored under, for callers that need to
@@ -443,6 +456,7 @@ mod tests {
     use super::*;
     use sqlx::postgres::PgPoolOptions;
     use std::path::PathBuf;
+    use std::time::Duration;
 
     // ── Test infrastructure ───────────────────────────────────────────────────
 

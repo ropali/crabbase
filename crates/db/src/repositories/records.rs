@@ -682,18 +682,24 @@ impl RecordsRepository {
         // We use an internal admin context to bypass `view_rule`. Updates are governed
         // by `update_rule`, so fetching the existing row internally for validation
         // and password hash comparison should not be blocked if `view_rule` is locked down.
-        let existing_record = self
+        let _existing_record = self
             .get_record(collection, id, None, &SqlContext::admin())
             .await?;
 
         if col.collection_type.eq_ignore_ascii_case("auth") {
             if let Some(serde_json::Value::String(plain_pw)) = payload.data.get("password") {
-                let existing_pw_hash = existing_record
-                    .data
-                    .get("password")
-                    .and_then(|v| v.as_str());
+                let existing_pw_row: Option<(Option<String>,)> = sqlx::query_as(&format!(
+                    "SELECT password FROM {} WHERE id = $1::uuid",
+                    quote_ident(collection)
+                ))
+                .bind(id)
+                .fetch_optional(&self.db)
+                .await
+                .map_err(RepositoryError::from)?;
 
-                if existing_pw_hash != Some(plain_pw) {
+                let existing_pw_hash = existing_pw_row.and_then(|r| r.0);
+
+                if existing_pw_hash.as_deref() != Some(plain_pw.as_str()) {
                     let hashed_pw = bcrypt::hash(plain_pw, bcrypt::DEFAULT_COST).map_err(|e| {
                         RepositoryError::OtherError(format!("Failed to hash password: {e}"))
                     })?;
@@ -1010,13 +1016,13 @@ mod tests {
             .await
             .unwrap();
 
-        let first_pw_hash = created
-            .data
-            .get("password")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+        // Sensitive fields like password are stripped from the Record response, verify directly from DB
+        let row = sqlx::query("SELECT password FROM users WHERE id = $1::uuid")
+            .bind(&created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let first_pw_hash: String = row.get("password");
         assert_ne!(first_pw_hash, "mysecretpw");
         assert!(bcrypt::verify("mysecretpw", &first_pw_hash).unwrap());
 
@@ -1027,18 +1033,17 @@ mod tests {
             Value::String("newsecretpw".to_string()),
         );
         let upd = UpdateRecordRequest { data: upd_map };
-        let updated = repo
+        let _updated = repo
             .update_record("users", &created.id.to_string(), upd, &SqlContext::admin())
             .await
             .unwrap();
 
-        let second_pw_hash = updated
-            .data
-            .get("password")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+        let row = sqlx::query("SELECT password FROM users WHERE id = $1::uuid")
+            .bind(&created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let second_pw_hash: String = row.get("password");
         assert_ne!(second_pw_hash, "newsecretpw");
         assert_ne!(second_pw_hash, first_pw_hash);
         assert!(bcrypt::verify("newsecretpw", &second_pw_hash).unwrap());
@@ -1050,7 +1055,7 @@ mod tests {
             Value::String(second_pw_hash.clone()),
         );
         let upd_same = UpdateRecordRequest { data: upd_same_map };
-        let updated_same = repo
+        let _updated_same = repo
             .update_record(
                 "users",
                 &created.id.to_string(),
@@ -1060,13 +1065,12 @@ mod tests {
             .await
             .unwrap();
 
-        let third_pw_hash = updated_same
-            .data
-            .get("password")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+        let row = sqlx::query("SELECT password FROM users WHERE id = $1::uuid")
+            .bind(&created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let third_pw_hash: String = row.get("password");
         assert_eq!(third_pw_hash, second_pw_hash);
         assert!(bcrypt::verify("newsecretpw", &third_pw_hash).unwrap());
     }
