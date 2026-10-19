@@ -2,9 +2,13 @@ pub mod middleware;
 pub mod routes;
 pub mod state;
 
+use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
 use axum::{Json, Router, response::Html, routing::get};
 use state::AppState;
+
+/// Upper bound for request bodies (multipart file uploads included).
+pub const MAX_REQUEST_BODY_BYTES: usize = 100 * 1024 * 1024;
 
 #[cfg(debug_assertions)]
 const OPENAPI_JSON: &str = include_str!("../../../openapi.json");
@@ -13,14 +17,14 @@ const OPENAPI_JSON: &str = include_str!("../../../openapi.json");
 const SWAGGER_HTML: &str = include_str!("routes/swagger.html");
 
 pub fn get_app_routes(state: AppState) -> Router {
+    let collections_router = routes::collections::get_routes(state.clone());
     let mut api = Router::new()
-        .nest(
-            "/collections",
-            routes::collections::get_routes(state.clone()),
-        )
+        .nest("/collections", collections_router.clone())
+        .nest("/collection", collections_router)
         .nest("/auth", routes::auth::get_routes(state.clone()))
         .nest("/settings", routes::setting::get_routes(state.clone()))
         .nest("/files", routes::files::get_routes(state.clone()))
+        .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .with_state(state);
 
     #[cfg(debug_assertions)]

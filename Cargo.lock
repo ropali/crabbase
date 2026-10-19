@@ -1073,6 +1073,7 @@ dependencies = [
 name = "crabbase_db"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bcrypt",
  "chrono",
  "crabbase_core",

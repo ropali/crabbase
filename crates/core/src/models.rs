@@ -242,15 +242,49 @@ pub struct Column {
     pub related_to: Option<String>,
 
     #[serde(default)]
-    pub multiple: bool,
+    pub max_size: Option<usize>,
+
+    #[serde(default)]
+    pub mime_types: Option<Vec<String>>,
 }
 
 impl Column {
+    /// File and Relation columns store a single value unless their `min`/`max`
+    /// constraints describe a range above one. `max: 1` (or no min/max) means
+    /// a single value; `max > 1` or `min > 1` means an array.
+    pub fn is_multiple(&self) -> bool {
+        let above_one = |v: Option<usize>| v.map(|n| n > 1).unwrap_or(false);
+        above_one(self.min) || above_one(self.max)
+    }
+
+    /// Enforces `min`/`max` as item-count bounds (File and Relation columns).
+    fn check_count(&self, count: usize) -> Result<(), String> {
+        if let Some(min) = self.min {
+            if count < min {
+                return Err(format!(
+                    "field '{}' must contain at least {} item(s)",
+                    self.name, min
+                ));
+            }
+        }
+        if let Some(max) = self.max {
+            if count > max {
+                return Err(format!(
+                    "field '{}' must not contain more than {} item(s)",
+                    self.name, max
+                ));
+            }
+        }
+        Ok(())
+    }
+
     pub fn to_sql_definition(&self) -> String {
         match &self.data_type {
-            DataTypes::Relation => {
-                if self.multiple {
+            DataTypes::Relation | DataTypes::File => {
+                if self.is_multiple() {
                     format!("\"{}\" JSONB DEFAULT '[]'::jsonb", self.name)
+                } else if self.data_type == DataTypes::File {
+                    format!("\"{}\" TEXT", self.name)
                 } else {
                     let target = self.related_to.as_deref().unwrap_or("unknown");
                     format!("\"{}\" UUID REFERENCES \"{}\"(\"id\")", self.name, target)
@@ -265,7 +299,7 @@ impl Column {
 
     pub fn relation_type(&self) -> Option<RelationType> {
         if self.data_type == DataTypes::Relation {
-            Some(if self.multiple {
+            Some(if self.is_multiple() {
                 RelationType::OneToMany
             } else {
                 RelationType::OneToOne
@@ -354,14 +388,14 @@ pub enum TypedValue {
     Bool(bool),
     Datetime(DateTime<Utc>),
     Uuid(Uuid),
-    Json(serde_json::Value),
+    Json(Value),
     Null(DataTypes),
 }
 
 impl Column {
     /// Coerces an incoming client JSON Value into a validated, typed domain value
     /// according to this column's data type definition and constraints.
-    pub fn coerce_value(&self, val: &serde_json::Value) -> Result<TypedValue, String> {
+    pub fn coerce_value(&self, val: &Value) -> Result<TypedValue, String> {
         if val.is_null() {
             if self.required {
                 return Err(format!("field '{}' is required", self.name));
@@ -370,9 +404,9 @@ impl Column {
         }
 
         match &self.data_type {
-            DataTypes::PlainText | DataTypes::RichText | DataTypes::File | DataTypes::Select => {
+            DataTypes::PlainText | DataTypes::RichText | DataTypes::Select => {
                 let s = match val {
-                    serde_json::Value::String(s) => s.clone(),
+                    Value::String(s) => s.clone(),
                     other => other.to_string(),
                 };
                 if let Some(min) = self.min {
@@ -404,6 +438,51 @@ impl Column {
                 Ok(TypedValue::Text(s))
             }
 
+            DataTypes::File => {
+                if self.is_multiple() {
+                    match val {
+                        Value::Array(arr) => {
+                            self.check_count(arr.len())?;
+                            for item in arr {
+                                let s = item.as_str().ok_or_else(|| {
+                                    format!(
+                                        "field '{}' array elements must be file key or id strings",
+                                        self.name
+                                    )
+                                })?;
+                                if s.trim().is_empty() {
+                                    return Err(format!(
+                                        "field '{}' contains an empty file reference",
+                                        self.name
+                                    ));
+                                }
+                            }
+                            Ok(TypedValue::Json(val.clone()))
+                        }
+                        _ => Err(format!(
+                            "field '{}' must be an array of file keys or ids",
+                            self.name
+                        )),
+                    }
+                } else {
+                    match val {
+                        Value::String(s) => {
+                            if s.trim().is_empty() {
+                                return Err(format!(
+                                    "field '{}' must not be an empty file reference",
+                                    self.name
+                                ));
+                            }
+                            Ok(TypedValue::Text(s.clone()))
+                        }
+                        _ => Err(format!(
+                            "field '{}' must be a file key or id string",
+                            self.name
+                        )),
+                    }
+                }
+            }
+
             DataTypes::Email => {
                 let s = val
                     .as_str()
@@ -432,7 +511,7 @@ impl Column {
 
             DataTypes::Number => {
                 let (typed, num_val) = match val {
-                    serde_json::Value::Number(n) => {
+                    Value::Number(n) => {
                         if let Some(i) = n.as_i64() {
                             (TypedValue::NumberInt(i), i as f64)
                         } else if let Some(f) = n.as_f64() {
@@ -444,7 +523,7 @@ impl Column {
                             ));
                         }
                     }
-                    serde_json::Value::String(s) => {
+                    Value::String(s) => {
                         if let Ok(i) = s.parse::<i64>() {
                             (TypedValue::NumberInt(i), i as f64)
                         } else if let Ok(f) = s.parse::<f64>() {
@@ -474,18 +553,18 @@ impl Column {
             }
 
             DataTypes::Bool => match val {
-                serde_json::Value::Bool(b) => Ok(TypedValue::Bool(*b)),
-                serde_json::Value::String(s) => match s.to_lowercase().as_str() {
+                Value::Bool(b) => Ok(TypedValue::Bool(*b)),
+                Value::String(s) => match s.to_lowercase().as_str() {
                     "true" | "1" => Ok(TypedValue::Bool(true)),
                     "false" | "0" => Ok(TypedValue::Bool(false)),
                     _ => Err(format!("field '{}' must be a boolean", self.name)),
                 },
-                serde_json::Value::Number(n) => Ok(TypedValue::Bool(n.as_i64().unwrap_or(0) != 0)),
+                Value::Number(n) => Ok(TypedValue::Bool(n.as_i64().unwrap_or(0) != 0)),
                 _ => Err(format!("field '{}' must be a boolean", self.name)),
             },
 
             DataTypes::Datetime | DataTypes::AutoDatetime(_) => match val {
-                serde_json::Value::String(s) => DateTime::parse_from_rfc3339(s)
+                Value::String(s) => DateTime::parse_from_rfc3339(s)
                     .map(|dt| TypedValue::Datetime(dt.with_timezone(&Utc)))
                     .or_else(|_| {
                         chrono::NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
@@ -498,9 +577,10 @@ impl Column {
             },
 
             DataTypes::Relation => {
-                if self.multiple {
+                if self.is_multiple() {
                     match val {
-                        serde_json::Value::Array(arr) => {
+                        Value::Array(arr) => {
+                            self.check_count(arr.len())?;
                             for item in arr {
                                 let s = item.as_str().ok_or_else(|| {
                                     format!(
@@ -522,7 +602,7 @@ impl Column {
                     }
                 } else {
                     match val {
-                        serde_json::Value::String(s) => Uuid::parse_str(s)
+                        Value::String(s) => Uuid::parse_str(s)
                             .map(TypedValue::Uuid)
                             .map_err(|_| format!("field '{}' must be a valid UUID", self.name)),
                         _ => Err(format!(
@@ -536,7 +616,7 @@ impl Column {
             DataTypes::Json => Ok(TypedValue::Json(val.clone())),
 
             DataTypes::GeoPoint => match val {
-                serde_json::Value::String(s) => {
+                Value::String(s) => {
                     // Validates format "lat,lng"
                     let parts: Vec<&str> = s.split(',').map(str::trim).collect();
                     if parts.len() == 2
@@ -554,6 +634,64 @@ impl Column {
                 _ => Err(format!("field '{}' must be a geopoint string", self.name)),
             },
         }
+    }
+
+    /// Validates an incoming file's name, content type and size against this
+    /// column's `pattern`, `max_size` and `mime_types` constraints. The
+    /// `pattern` regex is matched against the original file name, so it can be
+    /// used to restrict extensions (e.g. `\.(png|jpe?g)$`). No-op for
+    /// non-file columns.
+    pub fn validate_file_upload(
+        &self,
+        file_name: &str,
+        content_type: &str,
+        size_bytes: usize,
+    ) -> Result<(), String> {
+        if self.data_type != DataTypes::File {
+            return Ok(());
+        }
+
+        if let Some(ref pat) = self.pattern {
+            let matched = regex::Regex::new(pat)
+                .map(|re| re.is_match(file_name))
+                .unwrap_or(true);
+            if !matched {
+                return Err(format!(
+                    "file in field '{}' has a name that does not match pattern {}",
+                    self.name, pat
+                ));
+            }
+        }
+
+        if let Some(max) = self.max_size {
+            if size_bytes > max {
+                return Err(format!(
+                    "file in field '{}' exceeds maximum allowed size of {} bytes",
+                    self.name, max
+                ));
+            }
+        }
+
+        if let Some(ref allowed) = self.mime_types {
+            let matched = allowed.iter().any(|pattern| {
+                if pattern == "*" || pattern == "*/*" {
+                    true
+                } else if let Some(prefix) = pattern.strip_suffix('*') {
+                    content_type.starts_with(prefix)
+                } else {
+                    pattern.eq_ignore_ascii_case(content_type)
+                }
+            });
+
+            if !matched {
+                return Err(format!(
+                    "file in field '{}' has unsupported MIME type '{}'. Allowed: {:?}",
+                    self.name, content_type, allowed
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -661,7 +799,7 @@ mod tests {
         let col = Column {
             name: "tags".to_string(),
             data_type: DataTypes::Relation,
-            multiple: true,
+            max: Some(5),
             ..Default::default()
         };
         let sql = col.to_sql_definition();
@@ -669,11 +807,35 @@ mod tests {
     }
 
     #[test]
+    fn test_column_sql_definition_file_single() {
+        let col = Column {
+            name: "attachment".to_string(),
+            data_type: DataTypes::File,
+            ..Default::default()
+        };
+        assert_eq!(col.to_sql_definition(), "\"attachment\" TEXT");
+    }
+
+    #[test]
+    fn test_column_sql_definition_file_multiple() {
+        let col = Column {
+            name: "photos".to_string(),
+            data_type: DataTypes::File,
+            max: Some(10),
+            ..Default::default()
+        };
+        assert_eq!(
+            col.to_sql_definition(),
+            "\"photos\" JSONB DEFAULT '[]'::jsonb"
+        );
+    }
+
+    #[test]
     fn test_column_relation_type() {
         let col_single = Column {
             name: "author_id".to_string(),
             data_type: DataTypes::Relation,
-            multiple: false,
+            max: Some(1),
             ..Default::default()
         };
         assert_eq!(col_single.relation_type(), Some(RelationType::OneToOne));
@@ -681,7 +843,7 @@ mod tests {
         let col_multi = Column {
             name: "tag_ids".to_string(),
             data_type: DataTypes::Relation,
-            multiple: true,
+            min: Some(2),
             ..Default::default()
         };
         assert_eq!(col_multi.relation_type(), Some(RelationType::OneToMany));
@@ -920,6 +1082,66 @@ mod tests {
                 .unwrap(),
             TypedValue::Text("photo.jpg".into())
         );
+        assert!(
+            col_file
+                .coerce_value(&serde_json::json!(["a.jpg", "b.jpg"]))
+                .is_err()
+        );
+        assert!(col_file.coerce_value(&serde_json::json!(123)).is_err());
+        assert!(col_file.coerce_value(&serde_json::json!("")).is_err());
+
+        let col_file_multi = Column {
+            name: "gallery".into(),
+            data_type: DataTypes::File,
+            max: Some(4),
+            ..Default::default()
+        };
+        assert_eq!(
+            col_file_multi
+                .coerce_value(&serde_json::json!(["a.jpg", "b.jpg"]))
+                .unwrap(),
+            TypedValue::Json(serde_json::json!(["a.jpg", "b.jpg"]))
+        );
+        assert_eq!(
+            col_file_multi.coerce_value(&serde_json::json!([])).unwrap(),
+            TypedValue::Json(serde_json::json!([]))
+        );
+        assert!(
+            col_file_multi
+                .coerce_value(&serde_json::json!("single.jpg"))
+                .is_err()
+        );
+        assert!(
+            col_file_multi
+                .coerce_value(&serde_json::json!([1, 2]))
+                .is_err()
+        );
+        assert!(
+            col_file_multi
+                .coerce_value(&serde_json::json!([""]))
+                .is_err()
+        );
+        // Count bounds: 5 items exceeds max = 4
+        assert!(
+            col_file_multi
+                .coerce_value(&serde_json::json!(["a", "b", "c", "d", "e"]))
+                .is_err()
+        );
+
+        // min bounds require a minimum item count
+        let col_file_min = Column {
+            name: "album".into(),
+            data_type: DataTypes::File,
+            min: Some(2),
+            ..Default::default()
+        };
+        assert!(col_file_min.coerce_value(&serde_json::json!([])).is_err());
+        assert_eq!(
+            col_file_min
+                .coerce_value(&serde_json::json!(["a.jpg", "b.jpg"]))
+                .unwrap(),
+            TypedValue::Json(serde_json::json!(["a.jpg", "b.jpg"]))
+        );
 
         // 10. Relation
         let col_rel = Column {
@@ -941,7 +1163,7 @@ mod tests {
         let col_rel_multi = Column {
             name: "rel_multi".into(),
             data_type: DataTypes::Relation,
-            multiple: true,
+            max: Some(10),
             ..Default::default()
         };
         assert_eq!(
@@ -1060,5 +1282,93 @@ mod tests {
         assert!(col_pat.coerce_value(&serde_json::json!("1234")).is_err());
         assert!(col_pat.coerce_value(&serde_json::json!("abcde")).is_err());
         assert!(col_pat.coerce_value(&serde_json::json!("12345")).is_ok());
+    }
+
+    #[test]
+    fn test_column_validate_file_upload_no_constraints() {
+        let col = Column {
+            name: "f".into(),
+            data_type: DataTypes::File,
+            ..Default::default()
+        };
+        assert!(
+            col.validate_file_upload("report.pdf", "application/pdf", 10_000_000)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_column_validate_file_upload_max_size() {
+        let col = Column {
+            name: "f".into(),
+            data_type: DataTypes::File,
+            max_size: Some(1024),
+            ..Default::default()
+        };
+        assert!(col.validate_file_upload("a.png", "image/png", 1024).is_ok());
+        assert!(col.validate_file_upload("a.png", "image/png", 1025).is_err());
+    }
+
+    #[test]
+    fn test_column_validate_file_upload_mime_types() {
+        let col = Column {
+            name: "avatar".into(),
+            data_type: DataTypes::File,
+            mime_types: Some(vec!["image/png".into(), "image/*".into()]),
+            ..Default::default()
+        };
+        assert!(col.validate_file_upload("a.png", "image/png", 10).is_ok());
+        assert!(col.validate_file_upload("b.jpg", "image/jpeg", 10).is_ok());
+        assert!(col.validate_file_upload("c.pdf", "application/pdf", 10).is_err());
+
+        let wildcard = Column {
+            name: "any".into(),
+            data_type: DataTypes::File,
+            mime_types: Some(vec!["*/*".into()]),
+            ..Default::default()
+        };
+        assert!(
+            wildcard
+                .validate_file_upload("blob.bin", "application/octet-stream", 10)
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_column_validate_file_upload_pattern() {
+        let col = Column {
+            name: "doc".into(),
+            data_type: DataTypes::File,
+            pattern: Some(r"\.(png|jpe?g)$".into()),
+            ..Default::default()
+        };
+        assert!(col.validate_file_upload("photo.png", "image/png", 10).is_ok());
+        assert!(col.validate_file_upload("photo.JPG", "image/jpeg", 10).is_err());
+        assert!(col.validate_file_upload("notes.pdf", "application/pdf", 10).is_err());
+
+        // Invalid regexes are ignored rather than rejecting every upload
+        let bad_re = Column {
+            name: "bad".into(),
+            data_type: DataTypes::File,
+            pattern: Some("[".into()),
+            ..Default::default()
+        };
+        assert!(bad_re.validate_file_upload("anything.bin", "application/octet-stream", 10).is_ok());
+    }
+
+    #[test]
+    fn test_column_validate_file_upload_ignores_non_file_columns() {
+        let col = Column {
+            name: "title".into(),
+            data_type: DataTypes::PlainText,
+            max_size: Some(1),
+            mime_types: Some(vec!["image/png".into()]),
+            pattern: Some("nope".into()),
+            ..Default::default()
+        };
+        assert!(
+            col.validate_file_upload("whatever.bin", "text/plain", 999)
+                .is_ok()
+        );
     }
 }

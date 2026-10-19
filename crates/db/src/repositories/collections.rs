@@ -49,9 +49,9 @@ impl CollectionRepository {
                 index: false,
                 min: Some(8),
                 max: Some(255),
-                pattern: None,
-                presentable: false,
-                multiple: false,
+                pattern: None,presentable: false,
+                max_size: None,
+                mime_types: None,
             },
             Column {
                 name: "email".to_string(),
@@ -62,9 +62,9 @@ impl CollectionRepository {
                 index: true,
                 min: Some(3),
                 max: Some(150),
-                pattern: None,
-                presentable: true,
-                multiple: false,
+                pattern: None,presentable: true,
+                max_size: None,
+                mime_types: None,
             },
             Column {
                 name: "token_key".to_string(),
@@ -75,9 +75,9 @@ impl CollectionRepository {
                 index: false,
                 min: None,
                 max: None,
-                pattern: None,
-                presentable: false,
-                multiple: false,
+                pattern: None,presentable: false,
+                max_size: None,
+                mime_types: None,
             },
             Column {
                 name: "emailVisibility".to_string(),
@@ -88,9 +88,9 @@ impl CollectionRepository {
                 index: false,
                 min: None,
                 max: None,
-                pattern: None,
-                presentable: false,
-                multiple: false,
+                pattern: None,presentable: false,
+                max_size: None,
+                mime_types: None,
             },
             Column {
                 name: "verified".to_string(),
@@ -101,9 +101,9 @@ impl CollectionRepository {
                 index: false,
                 min: None,
                 max: None,
-                pattern: None,
-                presentable: false,
-                multiple: false,
+                pattern: None,presentable: false,
+                max_size: None,
+                mime_types: None,
             },
         ];
 
@@ -562,7 +562,7 @@ async fn migrate_collection_table(
                 // Check if data type or relation constraint changed
                 let type_changed = current_col.data_type != next_col.data_type
                     || current_col.related_to != next_col.related_to
-                    || current_col.multiple != next_col.multiple;
+                    || current_col.is_multiple() != next_col.is_multiple();
 
                 if type_changed {
                     // Drop old index

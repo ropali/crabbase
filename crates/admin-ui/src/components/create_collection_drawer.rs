@@ -20,7 +20,8 @@ pub struct CustomField {
     pub presentable: bool,
     pub hidden: bool,
     pub related_to: Option<String>,
-    pub multiple: bool,
+    pub min_count: Option<usize>,
+    pub max_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -141,7 +142,8 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                 presentable: true,
                 hidden: false,
                 related_to: None,
-                multiple: false,
+                min_count: None,
+                max_count: None,
             });
             fields.set(current);
             next_field_id.set(*next_field_id + 1);
@@ -437,15 +439,35 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
         })
     };
 
-    let update_field_multiple = {
+    let update_field_min_count = {
         let fields = fields.clone();
-        Callback::from(move |(id, val): (usize, bool)| {
+        Callback::from(move |(id, val): (usize, Option<usize>)| {
             let current: Vec<CustomField> = (*fields)
                 .iter()
                 .map(|f| {
                     if f.id == id {
                         CustomField {
-                            multiple: val,
+                            min_count: val,
+                            ..f.clone()
+                        }
+                    } else {
+                        f.clone()
+                    }
+                })
+                .collect();
+            fields.set(current);
+        })
+    };
+
+    let update_field_max_count = {
+        let fields = fields.clone();
+        Callback::from(move |(id, val): (usize, Option<usize>)| {
+            let current: Vec<CustomField> = (*fields)
+                .iter()
+                .map(|f| {
+                    if f.id == id {
+                        CustomField {
+                            max_count: val,
                             ..f.clone()
                         }
                     } else {
@@ -556,6 +578,17 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                         return;
                     }
                 }
+                if f.data_type == "Relation" || f.data_type == "File" {
+                    if let (Some(min), Some(max)) = (f.min_count, f.max_count) {
+                        if min > max {
+                            error_msg.set(Some(format!(
+                                "Field '{}' min items must be less than or equal to max items",
+                                f.name
+                            )));
+                            return;
+                        }
+                    }
+                }
             }
 
             wasm_bindgen_futures::spawn_local(async move {
@@ -576,6 +609,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                             "Number" => {
                                 (f.min_val.map(|v| v as usize), f.max_val.map(|v| v as usize))
                             }
+                            "Relation" | "File" => (f.min_count, f.max_count),
                             _ => (None, None),
                         };
                         let pattern = if f.validation_pattern.is_empty() {
@@ -588,13 +622,14 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                             data_type: f.data_type,
                             index: is_indexed,
                             related_to: f.related_to,
-                            multiple: f.multiple,
                             required: f.required,
                             hidden: f.hidden,
                             presentable: f.presentable,
                             min,
                             max,
                             pattern,
+                            max_size: None,
+                            mime_types: None,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -614,13 +649,14 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                 data_type: af_type.to_string(),
                                 index: false,
                                 related_to: None,
-                                multiple: false,
                                 required: false,
                                 hidden: false,
                                 presentable: af_name == "email",
                                 min: None,
                                 max: None,
                                 pattern: None,
+                                max_size: None,
+                                mime_types: None,
                             });
                         }
                     }
@@ -875,6 +911,8 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                     let f_name = f.name.clone();
                                                     let f_type = f.data_type.clone();
                                                     let f_req = f.required;
+                                                    let f_multi = f.min_count.map(|v| v > 1).unwrap_or(false)
+                                                        || f.max_count.map(|v| v > 1).unwrap_or(false);
 
                                                     let on_name_change = {
                                                         let update_field_name = update_field_name.clone();
@@ -1008,11 +1046,21 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                         })
                                                     };
 
-                                                    let on_multiple_change = {
-                                                        let update_field_multiple = update_field_multiple.clone();
-                                                        let f_multiple = f.multiple;
-                                                        Callback::from(move |_| {
-                                                            update_field_multiple.emit((f_id, !f_multiple));
+                                                    let on_min_count_change = {
+                                                        let update_field_min_count = update_field_min_count.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            let val = input.value().parse::<usize>().ok();
+                                                            update_field_min_count.emit((f_id, val));
+                                                        })
+                                                    };
+
+                                                    let on_max_count_change = {
+                                                        let update_field_max_count = update_field_max_count.clone();
+                                                        Callback::from(move |ev: InputEvent| {
+                                                            let input: HtmlInputElement = ev.target_unchecked_into();
+                                                            let val = input.value().parse::<usize>().ok();
+                                                            update_field_max_count.emit((f_id, val));
                                                         })
                                                     };
 
@@ -1081,40 +1129,58 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                 </div>
                                                             </div>
                                                         },
-                                                        "Relation" => {
+                                                        "Relation" | "File" => {
+                                                            let is_relation = f_type == "Relation";
                                                             let current_rel = f.related_to.clone().unwrap_or_default();
-                                                            let f_multiple = f.multiple;
+                                                            let count_help = if is_relation {
+                                                                "Min/max records stored for this field. More than 1 stores an array (One-to-Many)."
+                                                            } else {
+                                                                "Min/max files stored for this field. More than 1 allows multiple uploads."
+                                                            };
                                                             html! {
                                                                 <div class="grid grid-cols-2 gap-4">
-                                                                    <div class="bg-surface-container-low p-3 rounded-lg industrial-border col-span-2">
-                                                                        <div class="flex items-center gap-1 mb-1">
-                                                                            <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Related collection"}</span>
-                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"link"}</span>
-                                                                        </div>
-                                                                        <select value={current_rel.clone()} onchange={on_related_to_change} class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface cursor-pointer focus:outline-none">
-                                                                            <option value="" selected={current_rel.is_empty()}>{"Select collection..."}</option>
-                                                                            {
-                                                                                available_collections.iter().map(|col| {
-                                                                                    let is_selected = current_rel == col.name;
-                                                                                    html! {
-                                                                                        <option value={col.name.clone()} selected={is_selected}>{col.name.clone()}</option>
-                                                                                    }
-                                                                                }).collect::<Html>()
-                                                                            }
-                                                                        </select>
-                                                                    </div>
-                                                                    <div class="col-span-2 bg-surface-container-low p-3 rounded-lg industrial-border flex items-center justify-between">
-                                                                        <div class="flex items-center gap-2">
-                                                                            <span class="material-symbols-outlined text-[18px] text-primary">{"library_add"}</span>
-                                                                            <div>
-                                                                                <div class="font-bold text-xs text-on-surface">{"Select multiple records (One-to-Many)"}</div>
-                                                                                <div class="text-[11px] text-on-surface-variant/70">{"Store an array of foreign keys linking multiple records"}</div>
+                                                                    if is_relation {
+                                                                        <div class="bg-surface-container-low p-3 rounded-lg industrial-border col-span-2">
+                                                                            <div class="flex items-center gap-1 mb-1">
+                                                                                <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Related collection"}</span>
+                                                                                <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60">{"link"}</span>
                                                                             </div>
+                                                                            <select value={current_rel.clone()} onchange={on_related_to_change} class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface cursor-pointer focus:outline-none">
+                                                                                <option value="" selected={current_rel.is_empty()}>{"Select collection..."}</option>
+                                                                                {
+                                                                                    available_collections.iter().map(|col| {
+                                                                                        let is_selected = current_rel == col.name;
+                                                                                        html! {
+                                                                                            <option value={col.name.clone()} selected={is_selected}>{col.name.clone()}</option>
+                                                                                        }
+                                                                                    }).collect::<Html>()
+                                                                                }
+                                                                            </select>
                                                                         </div>
-                                                                        <label class="relative inline-flex items-center cursor-pointer">
-                                                                            <input type="checkbox" checked={f_multiple} onchange={on_multiple_change} class="rounded-sm border-outline-variant text-primary focus:ring-primary h-4 w-4" />
-                                                                        </label>
+                                                                    }
+                                                                    <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                        <div class="flex items-center gap-1 mb-1">
+                                                                            <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Min items"}</span>
+                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title={count_help}>{"info"}</span>
+                                                                        </div>
+                                                                        <input type="number" min="0" value={f.min_count.map(|v| v.to_string()).unwrap_or_default()} oninput={on_min_count_change} placeholder="No min limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
                                                                     </div>
+                                                                    <div class="bg-surface-container-low p-3 rounded-lg industrial-border">
+                                                                        <div class="flex items-center gap-1 mb-1">
+                                                                            <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"Max items"}</span>
+                                                                            <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title={count_help}>{"info"}</span>
+                                                                        </div>
+                                                                        <input type="number" min="1" value={f.max_count.map(|v| v.to_string()).unwrap_or_default()} oninput={on_max_count_change} placeholder="No max limit" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none" />
+                                                                    </div>
+                                                                    if !is_relation {
+                                                                        <div class="bg-surface-container-low p-3 rounded-lg industrial-border col-span-2">
+                                                                            <div class="flex items-center gap-1 mb-1">
+                                                                                <span class="font-label-xs text-label-xs text-on-surface-variant uppercase">{"File name pattern"}</span>
+                                                                                <span class="material-symbols-outlined text-[14px] text-on-surface-variant/60 hover:text-on-surface cursor-help transition-colors" title="Regex matched against the original file name, e.g. \\.(png|jpe?g)$ to restrict extensions">{"info"}</span>
+                                                                            </div>
+                                                                            <input type="text" value={f.validation_pattern.clone()} oninput={on_validation_change} placeholder="Ex. \\.(png|jpe?g)$" class="w-full bg-transparent border-none p-0 focus:ring-0 text-body-sm text-on-surface outline-none font-code-md text-code-md" />
+                                                                        </div>
+                                                                    }
                                                                 </div>
                                                             }
                                                         },
@@ -1204,7 +1270,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                             <option value="GeoPoint" selected={f_type == "GeoPoint"}>{"GeoPoint"}</option>
                                                                         </select>
                                                                         {if f_type == "Relation" {
-                                                                            if f.multiple {
+                                                                            if f_multi {
                                                                                 html! { <span class="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[9px] font-bold tracking-tight" title="One-to-Many relation">{"1:N"}</span> }
                                                                             } else {
                                                                                 html! { <span class="px-1.5 py-0.5 bg-surface-container text-on-surface-variant border border-outline-variant/40 rounded text-[9px] font-medium tracking-tight" title="Single relation">{"1:1"}</span> }
@@ -1252,7 +1318,7 @@ pub fn create_collection_drawer(props: &CreateCollectionDrawerProps) -> Html {
                                                                             <option value="GeoPoint" selected={f_type == "GeoPoint"}>{"GeoPoint"}</option>
                                                                         </select>
                                                                         {if f_type == "Relation" {
-                                                                            if f.multiple {
+                                                                            if f_multi {
                                                                                 html! { <span class="px-1.5 py-0.5 bg-primary/10 text-primary border border-primary/20 rounded text-[9px] font-bold tracking-tight" title="One-to-Many relation">{"1:N"}</span> }
                                                                             } else {
                                                                                 html! { <span class="px-1.5 py-0.5 bg-surface-container text-on-surface-variant border border-outline-variant/40 rounded text-[9px] font-medium tracking-tight" title="Single relation">{"1:1"}</span> }

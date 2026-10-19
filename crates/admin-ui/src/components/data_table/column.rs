@@ -293,28 +293,36 @@ pub fn relation_render(
     }
 }
 
+struct FileItemRender {
+    key: String,
+    name: String,
+    path: String,
+    ctype: String,
+}
+
+impl FileItemRender {
+    fn bare(key: &str) -> Self {
+        let name = key.rsplit('/').next().unwrap_or(key).to_string();
+        Self {
+            key: key.to_string(),
+            name,
+            path: String::new(),
+            ctype: String::new(),
+        }
+    }
+}
+
 pub fn file_render(
+    collection_name: String,
     _field_name: String,
     v: &CellValue,
     _on_view: Option<&Callback<ViewCellPayload>>,
 ) -> Html {
+    let na =
+        || html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
+
     if v.is_null() {
-        return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
-    }
-
-    let text = v.display();
-    if text.trim().is_empty() || text == "null" || text == "N/A" {
-        return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
-    }
-
-    let files: Vec<String> = if text.trim_start().starts_with('[') {
-        serde_json::from_str::<Vec<String>>(&text).unwrap_or_else(|_| vec![text.clone()])
-    } else {
-        vec![text.clone()]
-    };
-
-    if files.is_empty() {
-        return html! { <span class="font-body-sm text-body-sm text-outline italic">{ "N/A" }</span> };
+        return na();
     }
 
     let base_url = crate::api::client::ApiClient::get_base_url();
@@ -324,12 +332,102 @@ pub fn file_render(
         e.stop_propagation();
     });
 
-    let render_single_file = |storage_key: &str| {
-        let filename = storage_key
-            .rsplit('/')
-            .next()
-            .unwrap_or(storage_key)
-            .to_string();
+    let make_item = |value: &serde_json::Value| -> Option<FileItemRender> {
+        if let Some(obj) = value.as_object() {
+            let id = obj.get("id").and_then(|x| x.as_str()).unwrap_or("");
+            let path = obj.get("path").and_then(|x| x.as_str()).unwrap_or("");
+            if id.is_empty() && path.is_empty() {
+                return None;
+            }
+            let key = if !id.is_empty() { id } else { path };
+            Some(FileItemRender {
+                key: key.to_string(),
+                name: obj
+                    .get("name")
+                    .or_else(|| obj.get("originalName"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or(key)
+                    .to_string(),
+                path: path.to_string(),
+                ctype: obj
+                    .get("type")
+                    .or_else(|| obj.get("contentType"))
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            })
+        } else if let Some(s) = value.as_str() {
+            if s.trim().is_empty() {
+                None
+            } else {
+                Some(FileItemRender::bare(s))
+            }
+        } else {
+            None
+        }
+    };
+
+    let items: Vec<FileItemRender> = match v {
+        CellValue::Json(val) => match val {
+            serde_json::Value::Array(arr) => arr.iter().filter_map(make_item).collect(),
+            serde_json::Value::Object(_) => make_item(val).into_iter().collect(),
+            _ => val
+                .as_str()
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| vec![FileItemRender::bare(s)])
+                .unwrap_or_default(),
+        },
+        _ => {
+            let text = v.display();
+            if text.trim().is_empty() || text == "null" || text == "N/A" {
+                return na();
+            }
+            if text.trim_start().starts_with('[') {
+                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&text) {
+                    arr.iter().filter_map(make_item).collect()
+                } else {
+                    vec![FileItemRender::bare(&text)]
+                }
+            } else {
+                vec![FileItemRender::bare(&text)]
+            }
+        }
+    };
+
+    if items.is_empty() {
+        return na();
+    }
+
+    let render_single_file = |item: &FileItemRender| {
+        let filename = if item.name.trim().is_empty() {
+            item.key.rsplit('/').next().unwrap_or(&item.key).to_string()
+        } else {
+            item.name.clone()
+        };
+
+        let file_url = if item.path.starts_with("http://") || item.path.starts_with("https://") {
+            item.path.clone()
+        } else if item.path.starts_with('/') {
+            format!("{}{}", base_trimmed, item.path)
+        } else if item.key.starts_with("http://") || item.key.starts_with("https://") {
+            item.key.clone()
+        } else if item.key.starts_with('/') {
+            format!("{}{}", base_trimmed, item.key)
+        } else if !collection_name.trim().is_empty() {
+            format!(
+                "{}/collections/{}/files/{}",
+                base_trimmed, collection_name, item.key
+            )
+        } else {
+            format!("{}/files/{}", base_trimmed, item.key)
+        };
+
+        let lower_name = filename.to_lowercase();
+        let lower_key = item.key.to_lowercase();
+        let is_image = item.ctype.starts_with("image/")
+            || [".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif"]
+                .iter()
+                .any(|ext| lower_name.ends_with(ext) || lower_key.ends_with(ext));
 
         let display_name = if filename.len() > 18 {
             format!("{}...", &filename[..15])
@@ -337,23 +435,13 @@ pub fn file_render(
             filename.clone()
         };
 
-        let file_url = format!("{}/files/{}", base_trimmed, storage_key);
-
-        let lower = storage_key.to_lowercase();
-        let is_image = lower.ends_with(".png")
-            || lower.ends_with(".jpg")
-            || lower.ends_with(".jpeg")
-            || lower.ends_with(".gif")
-            || lower.ends_with(".webp")
-            || lower.ends_with(".svg")
-            || lower.ends_with(".avif");
-
         let stop_prop_click = stop_prop.clone();
         let stop_prop_dl = stop_prop.clone();
+        let storage_key = item.key.clone();
 
         if is_image {
             html! {
-                <div class="inline-flex items-center gap-1.5 max-w-[220px]" title={storage_key.to_string()}>
+                <div class="inline-flex items-center gap-1.5" title={storage_key.clone()}>
                     <a
                         href={file_url.clone()}
                         target="_blank"
@@ -368,7 +456,7 @@ pub fn file_render(
                             class="w-7 h-7 object-cover rounded border border-outline-variant bg-surface hover:scale-125 transition-transform shadow-xs"
                         />
                     </a>
-                    <span class="font-mono text-xs text-on-surface truncate min-w-0" title={filename.clone()}>
+                    <span class="font-mono text-xs text-on-surface truncate min-w-0 max-w-[140px]" title={filename.clone()}>
                         { display_name }
                     </span>
                     <a
@@ -384,7 +472,7 @@ pub fn file_render(
             }
         } else {
             html! {
-                <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container-high/60 border border-outline-variant/40 max-w-[220px]" title={storage_key.to_string()}>
+                <div class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container-high/60 border border-outline-variant/40 max-w-[220px]" title={storage_key.clone()}>
                     <span class="material-symbols-outlined text-[16px] text-primary shrink-0">
                         {"description"}
                     </span>
@@ -405,14 +493,25 @@ pub fn file_render(
         }
     };
 
-    if files.len() == 1 {
-        render_single_file(&files[0])
+    if items.len() == 1 {
+        render_single_file(&items[0])
     } else {
+        let tooltip = items
+            .iter()
+            .map(|item| {
+                if item.name.trim().is_empty() {
+                    item.key.clone()
+                } else {
+                    item.name.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
         html! {
-            <div class="flex items-center gap-1.5 flex-wrap">
-                { render_single_file(&files[0]) }
+            <div class="flex items-center gap-1.5 flex-wrap" title={tooltip}>
+                { render_single_file(&items[0]) }
                 <span class="text-xs text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded font-mono">
-                    { format!("+{}", files.len() - 1) }
+                    { format!("+{}", items.len() - 1) }
                 </span>
             </div>
         }

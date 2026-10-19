@@ -12,12 +12,16 @@
     }
   ],
   "security": [
-    { "bearerAuth": [] }
+    {
+      "bearerAuth": []
+    }
   ],
   "paths": {
     "/openapi.json": {
       "get": {
-        "tags": ["Docs"],
+        "tags": [
+          "Docs"
+        ],
         "summary": "Get OpenAPI spec",
         "operationId": "getOpenApi",
         "security": [],
@@ -26,7 +30,9 @@
             "description": "OpenAPI JSON",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           }
@@ -35,7 +41,9 @@
     },
     "/docs": {
       "get": {
-        "tags": ["Docs"],
+        "tags": [
+          "Docs"
+        ],
         "summary": "Swagger UI",
         "operationId": "getDocs",
         "security": [],
@@ -44,7 +52,9 @@
             "description": "Swagger UI HTML",
             "content": {
               "text/html": {
-                "schema": { "type": "string" }
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -53,10 +63,17 @@
     },
     "/collections": {
       "get": {
-        "tags": ["Collections"],
+        "tags": [
+          "Collections"
+        ],
         "summary": "List all collections",
         "operationId": "listCollections",
-        "security": [{"bearerAuth": [], "requireAdmin": []}],
+        "security": [
+          {
+            "bearerAuth": [],
+            "requireAdmin": []
+          }
+        ],
         "parameters": [
           {
             "name": "page",
@@ -112,10 +129,17 @@
         }
       },
       "post": {
-        "tags": ["Collections"],
+        "tags": [
+          "Collections"
+        ],
         "summary": "Create a new collection",
         "operationId": "createCollection",
-        "security": [{"bearerAuth": [], "requireAdmin": []}],
+        "security": [
+          {
+            "bearerAuth": [],
+            "requireAdmin": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -174,7 +198,9 @@
                       },
                       {
                         "name": "created_at",
-                        "data_type": {"AutoDatetime": "now"},
+                        "data_type": {
+                          "AutoDatetime": "now"
+                        },
                         "index": false,
                         "related_to": null
                       },
@@ -241,10 +267,17 @@
     },
     "/collections/{name}": {
       "get": {
-        "tags": ["Collections"],
+        "tags": [
+          "Collections"
+        ],
         "summary": "Get a collection by name",
         "operationId": "getCollection",
-        "security": [{"bearerAuth": [], "requireAdmin": []}],
+        "security": [
+          {
+            "bearerAuth": [],
+            "requireAdmin": []
+          }
+        ],
         "parameters": [
           {
             "name": "name",
@@ -289,11 +322,17 @@
         }
       },
       "patch": {
-        "tags": ["Collections"],
+        "tags": [
+          "Collections"
+        ],
         "summary": "Update a collection",
         "description": "Updates collection schema, columns, or access rules (admin only)",
         "operationId": "updateCollection",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "name",
@@ -379,10 +418,17 @@
         }
       },
       "delete": {
-        "tags": ["Collections"],
+        "tags": [
+          "Collections"
+        ],
         "summary": "Delete a collection",
         "operationId": "deleteCollection",
-        "security": [{"bearerAuth": [], "requireAdmin": []}],
+        "security": [
+          {
+            "bearerAuth": [],
+            "requireAdmin": []
+          }
+        ],
         "parameters": [
           {
             "name": "name",
@@ -424,10 +470,17 @@
     },
     "/collections/{name}/truncate": {
       "post": {
-        "tags": ["Collections"],
+        "tags": [
+          "Collections"
+        ],
         "summary": "Truncate a collection (delete all records)",
         "operationId": "truncateCollection",
-        "security": [{"bearerAuth": [], "requireAdmin": []}],
+        "security": [
+          {
+            "bearerAuth": [],
+            "requireAdmin": []
+          }
+        ],
         "parameters": [
           {
             "name": "name",
@@ -469,7 +522,9 @@
     },
     "/collections/{name}/records": {
       "get": {
-        "tags": ["Records"],
+        "tags": [
+          "Records"
+        ],
         "summary": "List records in a collection",
         "operationId": "listRecords",
         "parameters": [
@@ -543,7 +598,9 @@
         }
       },
       "post": {
-        "tags": ["Records"],
+        "tags": [
+          "Records"
+        ],
         "summary": "Create a new record in a collection",
         "operationId": "createRecord",
         "parameters": [
@@ -590,9 +647,292 @@
         }
       }
     },
+    "/collections/{name}/records/upload": {
+      "post": {
+        "tags": [
+          "Records"
+        ],
+        "summary": "Upload file(s) for a collection record",
+        "operationId": "uploadRecordFile",
+        "description": "Uploads one or more files associated with a collection using multipart form data. Governed by the collection's create_rule (or update_rule) access policy: callers who do not have permission to create records for the collection cannot upload files. Multipart parts named after a File column of the collection enforce that column's max_size (bytes), mime_types (wildcards like image/* and */* are supported), and pattern (regex matched against the original file name); a single-file column (no max or max: 1) rejects more than one part for the same field name, while a multi-file column (max > 1 or min > 1) accepts up to max parts. Returns the stored file records with the id/key to use when creating or updating records. Note: Singular aliases /collection/{name}/record/upload and /collections/{name}/record/upload are also supported.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Name of the target collection in the database (e.g. 'posts', 'articles', 'users'). Note: The collection must already exist.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Single file payload to upload"
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "description": "Multiple file payloads to upload at once"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Files uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid multipart payload, no file provided, a field constraint violation (max_size, mime_types, pattern, or max item count), or multiple parts for a single-file column",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - user lacks permission to create records in this collection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found - the specified collection name does not exist in the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{name}/files": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "List files associated with a collection",
+        "operationId": "listCollectionFiles",
+        "description": "Lists all uploaded files associated with the specified collection. Governed by the collection's list_rule access policy. Note: Singular alias /collection/{name}/files is also supported.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Collection name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of files in the collection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "size": {
+                            "type": "integer"
+                          },
+                          "contentType": {
+                            "type": "string"
+                          },
+                          "collectionName": {
+                            "type": "string"
+                          },
+                          "created": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "updated": {
+                            "type": "string",
+                            "format": "date-time"
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "totalItems": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - access rule denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found - the specified collection name does not exist in the database",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/{name}/files/{file_id}": {
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Download or view a file from a collection",
+        "operationId": "downloadCollectionFile",
+        "description": "Streams a file associated with a collection by file ID or storage key. Governed by the collection's view_rule access policy. Note: Singular alias /collection/{name}/files/{file_id} is also supported.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Collection name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "description": "File record UUID ID or storage key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - access rule denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection or file not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/{collection}/login": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Authenticate user and receive JWT token",
         "operationId": "login",
         "security": [],
@@ -601,7 +941,9 @@
             "name": "collection",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -640,7 +982,9 @@
     },
     "/auth/profile": {
       "get": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Get authenticated user's profile",
         "operationId": "getProfile",
         "responses": {
@@ -669,11 +1013,17 @@
     },
     "/auth/{collection}/auth-refresh": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Refresh authentication token",
         "description": "Refreshes an authentication token by validating the provided refresh token.",
         "operationId": "refreshToken",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "collection",
@@ -731,7 +1081,9 @@
     },
     "/auth/{collection}/logout": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Logout user and invalidate session",
         "operationId": "logout",
         "security": [],
@@ -740,7 +1092,9 @@
             "name": "collection",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -785,7 +1139,9 @@
     },
     "/auth/{collection}/forget-password": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Request password reset",
         "description": "Sends a password reset link to the user's email address",
         "operationId": "forgetPassword",
@@ -795,7 +1151,9 @@
             "name": "collection",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Collection name for the authentication context"
           }
         ],
@@ -839,10 +1197,11 @@
         }
       }
     },
-
     "/auth/{collection}/reset-password": {
       "post": {
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "summary": "Reset password",
         "description": "Resets the user's password using the OTP verification code",
         "operationId": "resetPassword",
@@ -853,7 +1212,9 @@
             "in": "path",
             "required": true,
             "description": "Collection name for the authentication context",
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -916,10 +1277,11 @@
         }
       }
     },
-
     "/collections/{name}/records/{id}": {
       "get": {
-        "tags": ["Records"],
+        "tags": [
+          "Records"
+        ],
         "summary": "Get a record by ID",
         "operationId": "getRecord",
         "parameters": [
@@ -973,12 +1335,16 @@
         }
       },
       "patch": {
-        "tags": ["Records"],
+        "tags": [
+          "Records"
+        ],
         "summary": "Update a record",
         "description": "Updates an existing record's fields in the specified collection by its ID",
         "operationId": "updateRecord",
         "security": [
-          { "bearerAuth": [] }
+          {
+            "bearerAuth": []
+          }
         ],
         "parameters": [
           {
@@ -1074,7 +1440,9 @@
         }
       },
       "delete": {
-        "tags": ["Records"],
+        "tags": [
+          "Records"
+        ],
         "summary": "Delete a record",
         "operationId": "deleteRecord",
         "parameters": [
@@ -1124,10 +1492,11 @@
         }
       }
     },
-
     "/settings/mail": {
       "get": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Get mail settings",
         "operationId": "getMailSettings",
         "responses": {
@@ -1154,11 +1523,17 @@
         }
       },
       "post": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Update mail settings",
         "description": "Saves and updates mail server configuration (admin only)",
         "operationId": "saveMailSettings",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1229,10 +1604,11 @@
         }
       }
     },
-
     "/settings/app": {
       "get": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Get application settings",
         "operationId": "getAppSettings",
         "responses": {
@@ -1262,11 +1638,17 @@
         }
       },
       "post": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Update application settings",
         "description": "Saves and updates general application settings (admin only)",
         "operationId": "saveAppSettings",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1337,10 +1719,11 @@
         }
       }
     },
-
     "/settings/email-templates": {
       "get": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Get email templates",
         "operationId": "getEmailTemplates",
         "responses": {
@@ -1377,11 +1760,17 @@
         }
       },
       "post": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Update email templates",
         "description": "Saves and updates email templates for system notifications and password resets (admin only)",
         "operationId": "saveEmailTemplates",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -1454,24 +1843,37 @@
     },
     "/settings/storage": {
       "get": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Get storage configuration",
         "description": "Retrieves the file storage configuration (admin only)",
         "operationId": "getStorageSettings",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Storage configuration",
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/StorageConfig"
                 }
               }
             }
           },
-          "204": {
-            "description": "No storage settings configured"
+          "404": {
+            "description": "Storage configuration not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized - admin authentication required",
@@ -1506,17 +1908,23 @@
         }
       },
       "post": {
-        "tags": ["Settings"],
+        "tags": [
+          "Settings"
+        ],
         "summary": "Update storage configuration",
         "description": "Saves and updates file storage configuration (admin only)",
         "operationId": "saveStorageSettings",
-        "security": [{"bearerAuth": []}],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object"
+                "$ref": "#/components/schemas/StorageConfig"
               }
             }
           }
@@ -1581,69 +1989,15 @@
         }
       }
     },
-    "/files/upload": {
-      "post": {
-        "tags": ["Files"],
-        "summary": "Upload file(s)",
-        "operationId": "uploadFiles",
-        "description": "Upload one or more files using multipart form data",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "multipart/form-data": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "file": {
-                    "type": "string",
-                    "format": "binary",
-                    "description": "File payload to upload"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Files uploaded successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FileUploadResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid multipart payload",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorBody"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/files/{path}": {
       "get": {
-        "tags": ["Files"],
+        "tags": [
+          "Files"
+        ],
         "summary": "Download or stream a file",
         "operationId": "downloadFile",
         "description": "Downloads or streams the binary content of a file by its storage key/path",
+        "security": [],
         "parameters": [
           {
             "name": "path",
@@ -1690,10 +2044,18 @@
         }
       },
       "delete": {
-        "tags": ["Files"],
-        "summary": "Delete a file",
+        "tags": [
+          "Files"
+        ],
+        "summary": "Delete a file (admin only)",
         "operationId": "deleteFile",
-        "description": "Deletes a stored file by its storage path",
+        "description": "Deletes a stored file by its storage path. Admin-only: requires a bearer token for a _superusers account.",
+        "security": [
+          {
+            "bearerAuth": [],
+            "requireAdmin": []
+          }
+        ],
         "parameters": [
           {
             "name": "path",
@@ -1708,6 +2070,26 @@
         "responses": {
           "204": {
             "description": "File deleted successfully"
+          },
+          "401": {
+            "description": "Unauthorized - admin authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - admin privileges required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           },
           "404": {
             "description": "File not found",
@@ -1750,7 +2132,16 @@
     "schemas": {
       "Collection": {
         "type": "object",
-        "required": ["id", "name", "system", "collection_type", "fields", "indexes", "created", "updated"],
+        "required": [
+          "id",
+          "name",
+          "system",
+          "collection_type",
+          "fields",
+          "indexes",
+          "created",
+          "updated"
+        ],
         "properties": {
           "id": {
             "type": "string",
@@ -1835,7 +2226,12 @@
       },
       "CollectionListResponse": {
         "type": "object",
-        "required": ["items", "total", "page", "per_page"],
+        "required": [
+          "items",
+          "total",
+          "page",
+          "per_page"
+        ],
         "properties": {
           "items": {
             "type": "array",
@@ -1859,7 +2255,10 @@
       },
       "CreateCollectionRequest": {
         "type": "object",
-        "required": ["name", "columns"],
+        "required": [
+          "name",
+          "columns"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -1922,7 +2321,11 @@
       },
       "Column": {
         "type": "object",
-        "required": ["name", "data_type", "index"],
+        "required": [
+          "name",
+          "data_type",
+          "index"
+        ],
         "properties": {
           "name": {
             "type": "string",
@@ -1949,17 +2352,17 @@
           "min": {
             "type": "integer",
             "nullable": true,
-            "description": "Minimum value/length constraint"
+            "description": "Minimum value/length constraint; for File and Relation columns, the minimum number of items"
           },
           "max": {
             "type": "integer",
             "nullable": true,
-            "description": "Maximum value/length constraint"
+            "description": "Maximum value/length constraint; for File and Relation columns, the maximum number of items (max > 1 or min > 1 makes the column multi-value)"
           },
           "pattern": {
             "type": "string",
             "nullable": true,
-            "description": "Regular expression pattern for validation"
+            "description": "Regular expression pattern for validation; for File columns, matched against the original file name (e.g. \\.(png|jpe?g)$)"
           },
           "related_to": {
             "type": "string",
@@ -1995,14 +2398,21 @@
                 "description": "Auto-datetime mode (e.g. 'now', 'created', 'updated')"
               }
             },
-            "required": ["AutoDatetime"]
+            "required": [
+              "AutoDatetime"
+            ]
           }
         ],
         "description": "Available column data types"
       },
       "Record": {
         "type": "object",
-        "required": ["id", "data", "created", "updated"],
+        "required": [
+          "id",
+          "data",
+          "created",
+          "updated"
+        ],
         "properties": {
           "id": {
             "type": "string",
@@ -2030,7 +2440,12 @@
       },
       "RecordListResponse": {
         "type": "object",
-        "required": ["items", "total", "page", "per_page"],
+        "required": [
+          "items",
+          "total",
+          "page",
+          "per_page"
+        ],
         "properties": {
           "items": {
             "type": "array",
@@ -2054,7 +2469,9 @@
       },
       "CreateRecordRequest": {
         "type": "object",
-        "required": ["data"],
+        "required": [
+          "data"
+        ],
         "properties": {
           "data": {
             "type": "object",
@@ -2065,7 +2482,9 @@
       },
       "UpdateRecordRequest": {
         "type": "object",
-        "required": ["data"],
+        "required": [
+          "data"
+        ],
         "properties": {
           "data": {
             "type": "object",
@@ -2076,7 +2495,10 @@
       },
       "ErrorBody": {
         "type": "object",
-        "required": ["code", "message"],
+        "required": [
+          "code",
+          "message"
+        ],
         "properties": {
           "code": {
             "type": "string",
@@ -2093,7 +2515,10 @@
       },
       "LoginRequest": {
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "properties": {
           "email": {
             "type": "string",
@@ -2107,7 +2532,9 @@
       },
       "LoginResponse": {
         "type": "object",
-        "required": ["tokens"],
+        "required": [
+          "tokens"
+        ],
         "properties": {
           "tokens": {
             "$ref": "#/components/schemas/AuthTokens"
@@ -2116,7 +2543,10 @@
       },
       "AuthTokens": {
         "type": "object",
-        "required": ["accessToken", "refreshToken"],
+        "required": [
+          "accessToken",
+          "refreshToken"
+        ],
         "properties": {
           "accessToken": {
             "type": "string",
@@ -2130,7 +2560,9 @@
       },
       "AuthRefreshRequest": {
         "type": "object",
-        "required": ["refreshToken"],
+        "required": [
+          "refreshToken"
+        ],
         "properties": {
           "refreshToken": {
             "type": "string",
@@ -2140,7 +2572,10 @@
       },
       "LogoutRequest": {
         "type": "object",
-        "required": ["refreshToken", "email"],
+        "required": [
+          "refreshToken",
+          "email"
+        ],
         "properties": {
           "refreshToken": {
             "type": "string",
@@ -2154,7 +2589,9 @@
       },
       "PasswordResetRequest": {
         "type": "object",
-        "required": ["email"],
+        "required": [
+          "email"
+        ],
         "properties": {
           "email": {
             "type": "string",
@@ -2165,7 +2602,11 @@
       },
       "PasswordResetConfirmRequest": {
         "type": "object",
-        "required": ["email", "otp", "new_pwd"],
+        "required": [
+          "email",
+          "otp",
+          "new_pwd"
+        ],
         "properties": {
           "email": {
             "type": "string",
@@ -2185,10 +2626,19 @@
       },
       "UserProfile": {
         "type": "object",
-        "required": ["id", "email"],
+        "required": [
+          "id",
+          "email"
+        ],
         "properties": {
-          "id": { "type": "string", "description": "User ID" },
-          "email": { "type": "string", "description": "User email" }
+          "id": {
+            "type": "string",
+            "description": "User ID"
+          },
+          "email": {
+            "type": "string",
+            "description": "User email"
+          }
         }
       },
       "AuthClaims": {
@@ -2227,7 +2677,14 @@
       },
       "MailSettings": {
         "type": "object",
-        "required": ["sender_name", "sender_address", "smtp_host", "smtp_port", "smtp_username", "smtp_password"],
+        "required": [
+          "sender_name",
+          "sender_address",
+          "smtp_host",
+          "smtp_port",
+          "smtp_username",
+          "smtp_password"
+        ],
         "properties": {
           "sender_name": {
             "type": "string",
@@ -2258,7 +2715,12 @@
       },
       "AppSettings": {
         "type": "object",
-        "required": ["app_name", "app_url", "contact_email", "allow_public_user_registration"],
+        "required": [
+          "app_name",
+          "app_url",
+          "contact_email",
+          "allow_public_user_registration"
+        ],
         "properties": {
           "app_name": {
             "type": "string",
@@ -2282,7 +2744,11 @@
       },
       "EmailTemplate": {
         "type": "object",
-        "required": ["subject", "body_html", "body_text"],
+        "required": [
+          "subject",
+          "body_html",
+          "body_text"
+        ],
         "properties": {
           "key": {
             "type": "string",
@@ -2308,7 +2774,10 @@
       },
       "EmailTemplates": {
         "type": "object",
-        "required": ["password_reset", "user_registration"],
+        "required": [
+          "password_reset",
+          "user_registration"
+        ],
         "properties": {
           "password_reset": {
             "$ref": "#/components/schemas/EmailTemplate",
@@ -2320,63 +2789,162 @@
           }
         }
       },
-      "FileRef": {
+      "StorageBackend": {
+        "type": "string",
+        "enum": [
+          "local",
+          "s3"
+        ],
+        "description": "Storage backend type ('local' or 's3')"
+      },
+      "LocalStorageConfig": {
         "type": "object",
-        "required": ["key", "backend"],
+        "properties": {
+          "basePath": {
+            "type": "string",
+            "description": "Local filesystem directory for file storage"
+          }
+        }
+      },
+      "S3Config": {
+        "type": "object",
+        "properties": {
+          "bucket": {
+            "type": "string",
+            "description": "S3 bucket name"
+          },
+          "region": {
+            "type": "string",
+            "description": "AWS region"
+          },
+          "accessKey": {
+            "type": "string",
+            "description": "AWS access key ID"
+          },
+          "secret": {
+            "type": "string",
+            "description": "AWS secret access key"
+          },
+          "endpoint": {
+            "type": "string",
+            "nullable": true,
+            "description": "Custom S3 endpoint URL (for MinIO, Wasabi, etc.)"
+          },
+          "forcePathStyle": {
+            "type": "boolean",
+            "description": "Whether to force path style S3 URLs"
+          }
+        }
+      },
+      "StorageConfig": {
+        "type": "object",
+        "properties": {
+          "storageType": {
+            "$ref": "#/components/schemas/StorageBackend"
+          },
+          "local": {
+            "$ref": "#/components/schemas/LocalStorageConfig"
+          },
+          "s3": {
+            "$ref": "#/components/schemas/S3Config"
+          }
+        }
+      },
+      "FileRecord": {
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "backend",
+          "container",
+          "originalName",
+          "contentType",
+          "sizeBytes",
+          "collectionName",
+          "created",
+          "updated"
+        ],
         "properties": {
           "id": {
             "type": "string",
-            "nullable": true,
-            "description": "File record ID (null if metadata write failed)"
+            "description": "Unique file record ID"
           },
           "key": {
             "type": "string",
             "description": "Storage key/path of the file"
           },
           "backend": {
-            "type": "string",
-            "enum": ["Local", "S3", "local", "s3"],
-            "description": "Storage backend used"
+            "$ref": "#/components/schemas/StorageBackend"
           },
-          "original_name": {
+          "container": {
+            "type": "string",
+            "description": "Local base path or S3 bucket name"
+          },
+          "originalName": {
             "type": "string",
             "description": "Original filename"
           },
-          "content_type": {
+          "contentType": {
             "type": "string",
-            "description": "MIME type of the file"
+            "description": "MIME type"
           },
-          "size_bytes": {
+          "sizeBytes": {
             "type": "integer",
             "format": "int64",
             "description": "File size in bytes"
+          },
+          "checksum": {
+            "type": "string",
+            "nullable": true,
+            "description": "SHA-256 checksum of the file"
+          },
+          "collectionName": {
+            "type": "string",
+            "description": "Collection the file belongs to"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UploadedFile": {
+        "type": "object",
+        "required": [
+          "key",
+          "backend"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Storage key/path of the uploaded file"
+          },
+          "backend": {
+            "$ref": "#/components/schemas/StorageBackend"
+          },
+          "record": {
+            "$ref": "#/components/schemas/FileRecord",
+            "nullable": true,
+            "description": "Database metadata record for the uploaded file"
           }
         }
       },
       "FileUploadResponse": {
         "type": "object",
-        "required": ["status"],
+        "required": [
+          "files"
+        ],
         "properties": {
-          "status": {
-            "type": "string",
-            "example": "success"
-          },
           "files": {
             "type": "array",
+            "description": "Stored metadata records for every uploaded file, in request order. In the rare case an object is stored but its metadata row cannot be written, an entry falls back to { id: null, key, backend, collectionName }.",
             "items": {
-              "$ref": "#/components/schemas/FileRef"
-            },
-            "description": "Uploaded files with metadata"
-          },
-          "keys": {
-            "type": "array",
-            "items": {
-              "oneOf": [
-                { "type": "string" },
-                { "$ref": "#/components/schemas/FileRef" }
-              ]
-            },
-            "description": "Storage keys or file references of the uploaded files"
+              "$ref": "#/components/schemas/FileRecord"
+            }
           }
         }
       }

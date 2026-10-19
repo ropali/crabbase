@@ -266,7 +266,7 @@ for ((i = 1; i <= COUNT; i++)); do
     " >/dev/null
 
     # Metadata schema including One-to-One (category_id) and One-to-Many (tag_ids) relations
-    fields_json="[{\"name\":\"name\",\"data_type\":\"PlainText\",\"index\":true},{\"name\":\"status\",\"data_type\":\"PlainText\",\"index\":true},{\"name\":\"score\",\"data_type\":\"Number\",\"index\":false},{\"name\":\"is_active\",\"data_type\":\"Bool\",\"index\":false},{\"name\":\"category_id\",\"data_type\":\"Relation\",\"related_to\":\"$cat_table\",\"multiple\":false,\"required\":false,\"index\":true},{\"name\":\"tag_ids\",\"data_type\":\"Relation\",\"related_to\":\"$tags_table\",\"multiple\":true,\"required\":false,\"index\":false}]"
+    fields_json="[{\"name\":\"name\",\"data_type\":\"PlainText\",\"index\":true},{\"name\":\"status\",\"data_type\":\"PlainText\",\"index\":true},{\"name\":\"score\",\"data_type\":\"Number\",\"index\":false},{\"name\":\"is_active\",\"data_type\":\"Bool\",\"index\":false},{\"name\":\"category_id\",\"data_type\":\"Relation\",\"related_to\":\"$cat_table\",\"required\":false,\"index\":true},{\"name\":\"tag_ids\",\"data_type\":\"Relation\",\"related_to\":\"$tags_table\",\"max\":10,\"required\":false,\"index\":false}]"
     indexes_json="[{\"name\":\"name\",\"data_type\":\"PlainText\",\"index\":true},{\"name\":\"status\",\"data_type\":\"PlainText\",\"index\":true},{\"name\":\"category_id\",\"data_type\":\"Relation\",\"index\":true}]"
 
     psql "$DB_URL" -c "

@@ -280,10 +280,23 @@ impl Default for LocalStorage {
 }
 
 impl LocalStorage {
-    pub fn new(base_path: impl AsRef<Path>) -> Self {
+    pub fn new(base_path: impl Into<PathBuf>) -> Self {
         Self {
-            base_path: base_path.as_ref().to_path_buf(),
+            base_path: base_path.into(),
         }
+    }
+
+    /// Keys reach here from API paths, so `..` components must never be joined
+    /// onto the base path. Rejected keys are reported as not-found.
+    fn object_path(&self, key: &str) -> Result<PathBuf, StorageError> {
+        let key = key.trim_start_matches('/');
+        if Path::new(key)
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+        {
+            return Err(StorageError::NotFound(key.to_string()));
+        }
+        Ok(self.base_path().join(key))
     }
 
     pub fn base_path(&self) -> PathBuf {
@@ -315,7 +328,7 @@ impl FileStorage for LocalStorage {
         data: Vec<u8>,
         _content_type: &str,
     ) -> Result<String, StorageError> {
-        let path = self.base_path().join(key.trim_start_matches('/'));
+        let path = self.object_path(key)?;
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -328,7 +341,7 @@ impl FileStorage for LocalStorage {
     }
 
     async fn get_object(&self, key: &str) -> Result<Vec<u8>, StorageError> {
-        let path = self.base_path().join(key.trim_start_matches('/'));
+        let path = self.object_path(key)?;
         tokio::fs::read(&path).await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 StorageError::NotFound(key.to_string())
@@ -339,7 +352,7 @@ impl FileStorage for LocalStorage {
     }
 
     async fn delete_object(&self, key: &str) -> Result<(), StorageError> {
-        let path = self.base_path().join(key.trim_start_matches('/'));
+        let path = self.object_path(key)?;
         if path.exists() {
             tokio::fs::remove_file(&path)
                 .await
@@ -394,6 +407,34 @@ mod tests {
         }
 
         // Cleanup
+        let _ = tokio::fs::remove_dir_all(temp_dir).await;
+    }
+
+    /// Keys are caller input on download/delete: `..` must never leave the root.
+    #[tokio::test]
+    async fn test_local_storage_rejects_path_traversal() {
+        let temp_dir = std::env::temp_dir().join(format!("crabbase-test-{}", uuid::Uuid::new_v4()));
+        let root = temp_dir.join("root");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = temp_dir.join("outside.txt");
+        std::fs::write(&outside, b"secret").unwrap();
+
+        let storage = LocalStorage::new(&root);
+        for key in ["../outside.txt", "/../outside.txt"] {
+            let err = storage.get_object(key).await.unwrap_err();
+            assert!(matches!(err, StorageError::NotFound(_)), "get: {err:?}");
+
+            let err = storage
+                .put_object(key, b"overwritten".to_vec(), "text/plain")
+                .await
+                .unwrap_err();
+            assert!(matches!(err, StorageError::NotFound(_)), "put: {err:?}");
+
+            let err = storage.delete_object(key).await.unwrap_err();
+            assert!(matches!(err, StorageError::NotFound(_)), "delete: {err:?}");
+        }
+
+        assert_eq!(std::fs::read(&outside).unwrap(), b"secret");
         let _ = tokio::fs::remove_dir_all(temp_dir).await;
     }
 

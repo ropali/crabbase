@@ -184,7 +184,7 @@ FEATURE_CHECKLIST = [
     (
         "🗄️ Collections & DDL",
         "test_create_collection_with_one_to_many_relation",
-        "Define one-to-many relation column (multiple: true)",
+        "Define one-to-many relation column (max > 1)",
         "feature",
     ),
     (

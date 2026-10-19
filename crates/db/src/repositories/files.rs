@@ -65,6 +65,7 @@ pub struct FileRecord {
     pub content_type: String,
     pub size_bytes: i64,
     pub checksum: Option<String>,
+    pub collection_name: String,
     pub created: DateTime<Utc>,
     pub updated: DateTime<Utc>,
 }
@@ -88,6 +89,37 @@ impl<'r> FromRow<'r, PgRow> for FileRecord {
             content_type: row.try_get("content_type")?,
             size_bytes: row.try_get("size_bytes")?,
             checksum: row.try_get("checksum")?,
+            collection_name: row.try_get("collection_name")?,
+            created: row.try_get::<DateTime<Utc>, _>("created")?,
+            updated: row.try_get::<DateTime<Utc>, _>("updated")?,
+        })
+    }
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FileResponse {
+    pub id: String,
+    pub original_name: String,
+    pub content_type: String,
+    pub size_bytes: i64,
+    pub collection_name: String,
+    pub created: DateTime<Utc>,
+    pub updated: DateTime<Utc>,
+}
+
+impl<'r> FromRow<'r, PgRow> for FileResponse {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        use sqlx::Row;
+
+
+        Ok(Self {
+            id: row.try_get::<Uuid, _>("id")?.to_string(),
+            original_name: row.try_get("original_name")?,
+            content_type: row.try_get("content_type")?,
+            size_bytes: row.try_get("size_bytes")?,
+            collection_name: row.try_get("collection_name")?,
             created: row.try_get::<DateTime<Utc>, _>("created")?,
             updated: row.try_get::<DateTime<Utc>, _>("updated")?,
         })
@@ -105,6 +137,7 @@ pub struct NewFile {
     pub content_type: String,
     pub size_bytes: i64,
     pub checksum: Option<String>,
+    pub collection_name: String,
 }
 
 /// Mutable metadata. Location changes go through
@@ -114,6 +147,7 @@ pub struct NewFile {
 pub struct FileUpdate {
     pub original_name: Option<String>,
     pub content_type: Option<String>,
+    pub collection_name: Option<String>,
 }
 
 /// Sort column for [`FilesRepository::list`].
@@ -140,6 +174,7 @@ impl FileSortKey {
 pub struct FileFilter {
     pub backend: Option<FileBackend>,
     pub container: Option<String>,
+    pub collection_name: Option<String>,
     /// Matches `key LIKE '<prefix>%'` — useful for resolving a whole
     /// `uploads/<uuid>/` subtree at once.
     pub key_prefix: Option<String>,
@@ -227,8 +262,8 @@ impl FilesRepository {
 
         let row = sqlx::query_as::<_, FileRecord>(
             r#"
-            INSERT INTO _files (key, backend, container, original_name, content_type, size_bytes, checksum)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO _files (key, backend, container, original_name, content_type, size_bytes, checksum, collection_name)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *
             "#,
         )
@@ -239,6 +274,7 @@ impl FilesRepository {
         .bind(&new_file.content_type)
         .bind(new_file.size_bytes)
         .bind(&new_file.checksum)
+        .bind(&new_file.collection_name)
         .fetch_one(&self.db)
         .await?;
 
@@ -273,6 +309,9 @@ impl FilesRepository {
         }
         if let Some(container) = &filter.container {
             qb.push(" AND container = ").push_bind(container);
+        }
+        if let Some(collection) = &filter.collection_name {
+            qb.push(" AND collection_name = ").push_bind(collection);
         }
         if let Some(prefix) = &filter.key_prefix {
             // Escape LIKE wildcards so a prefix is matched literally.
@@ -313,6 +352,18 @@ impl FilesRepository {
         Ok(rows)
     }
 
+    /// Returns all file records associated with a specific collection, newest first.
+    pub async fn list_by_collection(&self, collection_name: &str) -> Result<Vec<FileRecord>, RepositoryError> {
+        let rows = sqlx::query_as::<_, FileRecord>(
+            "SELECT * FROM _files WHERE collection_name = $1 ORDER BY created DESC, id ASC"
+        )
+        .bind(collection_name)
+        .fetch_all(&self.db)
+        .await?;
+
+        Ok(rows)
+    }
+
     pub async fn count(&self) -> Result<i64, RepositoryError> {
         let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM _files")
             .fetch_one(&self.db)
@@ -347,6 +398,9 @@ impl FilesRepository {
         }
         if let Some(content_type) = &update.content_type {
             qb.push(", content_type = ").push_bind(content_type);
+        }
+        if let Some(collection_name) = &update.collection_name {
+            qb.push(", collection_name = ").push_bind(collection_name);
         }
 
         qb.push(" WHERE id = ").push_bind(id);
@@ -491,6 +545,7 @@ mod tests {
             content_type: "application/pdf".to_string(),
             size_bytes: 2048,
             checksum: Some("abc123".to_string()),
+            collection_name: "test_col".to_string(),
         }
     }
 
@@ -853,7 +908,7 @@ mod tests {
                 &created.id,
                 &FileUpdate {
                     original_name: Some("renamed.pdf".to_string()),
-                    content_type: None,
+                    ..Default::default()
                 },
             )
             .await
@@ -878,7 +933,7 @@ mod tests {
                 "00000000-0000-0000-0000-000000000000",
                 &FileUpdate {
                     original_name: Some("x.pdf".to_string()),
-                    content_type: None,
+                    ..Default::default()
                 },
             )
             .await
@@ -1060,5 +1115,84 @@ mod tests {
         let after = repo.get_by_key(&s3_file.key).await.unwrap().unwrap();
         assert_eq!(after.backend, FileBackend::S3);
         assert_eq!(after.container, "crabbase-uploads");
+    }
+
+    #[tokio::test]
+    async fn test_create_with_collection_name_and_list_by_collection() {
+        let repo = make_repo(setup_pool("files_collection_name").await);
+
+        // Upload two files for collection "posts"
+        let f1 = repo
+            .create(&NewFile {
+                key: "uploads/posts/1.png".to_string(),
+                collection_name: "posts".to_string(),
+                ..sample_file("uploads/posts/1.png")
+            })
+            .await
+            .unwrap();
+
+        let f2 = repo
+            .create(&NewFile {
+                key: "uploads/posts/2.png".to_string(),
+                collection_name: "posts".to_string(),
+                ..sample_file("uploads/posts/2.png")
+            })
+            .await
+            .unwrap();
+
+        // Upload one file for collection "users"
+        let f3 = repo
+            .create(&NewFile {
+                key: "uploads/users/avatar.jpg".to_string(),
+                collection_name: "users".to_string(),
+                ..sample_file("uploads/users/avatar.jpg")
+            })
+            .await
+            .unwrap();
+
+        // Verify collection_name stored
+        assert_eq!(f1.collection_name, "posts");
+        assert_eq!(f2.collection_name, "posts");
+        assert_eq!(f3.collection_name, "users");
+
+        // list_by_collection for "posts"
+        let posts_files = repo.list_by_collection("posts").await.unwrap();
+        assert_eq!(posts_files.len(), 2);
+        let posts_keys: Vec<&str> = posts_files.iter().map(|f| f.key.as_str()).collect();
+        assert!(posts_keys.contains(&"uploads/posts/1.png"));
+        assert!(posts_keys.contains(&"uploads/posts/2.png"));
+
+        // list_by_collection for "users"
+        let users_files = repo.list_by_collection("users").await.unwrap();
+        assert_eq!(users_files.len(), 1);
+        assert_eq!(users_files[0].key, "uploads/users/avatar.jpg");
+
+        // list_by_collection for nonexistent collection returns empty
+        let empty_files = repo.list_by_collection("nonexistent").await.unwrap();
+        assert!(empty_files.is_empty());
+
+        // FileFilter by collection_name
+        let filtered = repo
+            .list(&FileFilter {
+                collection_name: Some("posts".to_string()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 2);
+
+        // Update collection_name
+        let updated = repo
+            .update(
+                &f3.id,
+                &FileUpdate {
+                    collection_name: Some("profiles".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(updated.collection_name, "profiles");
     }
 }

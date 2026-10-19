@@ -29,23 +29,89 @@ fn record_to_dynamic_row(r: Record, col: &CollectionModel) -> DynamicRow {
     for field in &col.fields {
         let cell_value = if let Some(val) = r.data.get(&field.name) {
             let is_json_field = field.data_type.to_lowercase() == "json";
-            match val {
-                serde_json::Value::Null => CellValue::Null,
-                serde_json::Value::Bool(b) => CellValue::Bool(*b),
-                serde_json::Value::Number(n) => CellValue::Number(n.as_f64().unwrap_or(0.0)),
-                serde_json::Value::String(s) => {
-                    if is_json_field {
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
-                            CellValue::Json(parsed)
+            let is_file_field = field.data_type.to_lowercase() == "file";
+            if is_file_field {
+                let name = r
+                    .data
+                    .get(&format!("{}_name", field.name))
+                    .and_then(|v| v.as_str());
+                let path = r
+                    .data
+                    .get(&format!("{}_path", field.name))
+                    .and_then(|v| v.as_str());
+                let ctype = r
+                    .data
+                    .get(&format!("{}_type", field.name))
+                    .and_then(|v| v.as_str());
+                match val {
+                    serde_json::Value::String(s) => CellValue::Json(serde_json::json!({
+                        "id": s,
+                        "name": name.unwrap_or(s),
+                        "path": path.unwrap_or(""),
+                        "type": ctype.unwrap_or("")
+                    })),
+                    serde_json::Value::Array(arr) => {
+                        let names = r
+                            .data
+                            .get(&format!("{}_name", field.name))
+                            .and_then(|v| v.as_array());
+                        let paths = r
+                            .data
+                            .get(&format!("{}_path", field.name))
+                            .and_then(|v| v.as_array());
+                        let ctypes = r
+                            .data
+                            .get(&format!("{}_type", field.name))
+                            .and_then(|v| v.as_array());
+                        let items: Vec<serde_json::Value> = arr
+                            .iter()
+                            .enumerate()
+                            .map(|(idx, item)| {
+                                let id = item
+                                    .as_str()
+                                    .or_else(|| item.get("id").and_then(|v| v.as_str()))
+                                    .unwrap_or_default();
+                                serde_json::json!({
+                                    "id": id,
+                                    "name": names
+                                        .and_then(|a| a.get(idx))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(id),
+                                    "path": paths
+                                        .and_then(|a| a.get(idx))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(""),
+                                    "type": ctypes
+                                        .and_then(|a| a.get(idx))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                })
+                            })
+                            .collect();
+                        CellValue::Json(serde_json::Value::Array(items))
+                    }
+                    serde_json::Value::Null => CellValue::Null,
+                    _ => CellValue::Json(val.clone()),
+                }
+            } else {
+                match val {
+                    serde_json::Value::Null => CellValue::Null,
+                    serde_json::Value::Bool(b) => CellValue::Bool(*b),
+                    serde_json::Value::Number(n) => CellValue::Number(n.as_f64().unwrap_or(0.0)),
+                    serde_json::Value::String(s) => {
+                        if is_json_field {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(s) {
+                                CellValue::Json(parsed)
+                            } else {
+                                CellValue::Text(s.clone())
+                            }
                         } else {
                             CellValue::Text(s.clone())
                         }
-                    } else {
-                        CellValue::Text(s.clone())
                     }
-                }
-                serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
-                    CellValue::Json(val.clone())
+                    serde_json::Value::Object(_) | serde_json::Value::Array(_) => {
+                        CellValue::Json(val.clone())
+                    }
                 }
             }
         } else {

@@ -1,15 +1,16 @@
 use axum::{
     Router,
     body::Body,
-    extract::{Multipart, Path, State},
+    extract::{Path, State},
     http::{StatusCode, header},
-    response::{Json, Response},
-    routing::{get, post},
+    middleware::from_fn_with_state,
+    response::Response,
+    routing::{delete, get},
 };
 use crabbase_core::errors::APIError;
 use serde::{Deserialize, Serialize};
 
-use crate::state::AppState;
+use crate::{middleware::auth::require_admin, state::AppState};
 
 #[derive(Deserialize)]
 pub struct PresignRequest {
@@ -24,51 +25,16 @@ pub struct PresignResponse {
 }
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
+    // Downloads are public (openapi marks GET as unauthenticated), while
+    // deleting stored bytes is an administrative operation.
+    let admin_delete = Router::new()
+        .route("/{*path}", delete(delete_file_handler))
+        .layer(from_fn_with_state(state.clone(), require_admin));
+
     Router::new()
-        .route("/upload", post(upload_file_handler))
-        .route(
-            "/{*path}",
-            get(download_file_handler).delete(delete_file_handler),
-        )
+        .route("/{*path}", get(download_file_handler))
+        .merge(admin_delete)
         .with_state(state)
-}
-
-pub async fn upload_file_handler(
-    State(state): State<AppState>,
-    mut multipart: Multipart,
-) -> Result<Json<serde_json::Value>, APIError> {
-    let mut uploaded_keys = Vec::new();
-
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|e| APIError::Validation {
-            message: format!("invalid multipart: {e}"),
-            details: serde_json::Value::Null,
-        })?
-    {
-        let file_name = field.file_name().unwrap_or("unnamed").to_string();
-        let content_type = field
-            .content_type()
-            .unwrap_or("application/octet-stream")
-            .to_string();
-        let bytes = field.bytes().await.map_err(|e| APIError::Validation {
-            message: format!("failed to read field: {e}"),
-            details: serde_json::Value::Null,
-        })?;
-
-        let key = state
-            .file_service()
-            .upload_bytes(&file_name, &content_type, bytes.to_vec())
-            .await?;
-
-        uploaded_keys.push(key);
-    }
-
-    Ok(Json(serde_json::json!({
-        "status": "success",
-        "keys": uploaded_keys
-    })))
 }
 
 pub async fn download_file_handler(

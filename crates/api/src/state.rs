@@ -22,6 +22,7 @@ impl AppState {
 
     pub fn records_repo(&self) -> RecordsRepository {
         RecordsRepository::new(self.db.clone())
+            .with_file_deleter(std::sync::Arc::new(self.file_service()))
     }
 
     pub fn user_repo(&self) -> UserRepository {

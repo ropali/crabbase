@@ -13,12 +13,44 @@ use crate::{FileStorage, StorageError};
 
 /// Result of a successful upload. `record` is `None` only when the metadata
 /// write failed after the bytes were already stored — see
-/// [`FileUploadService::upload_bytes`].
+/// [`FileUploadService::upload`].
 #[derive(Debug, Clone, Serialize)]
 pub struct UploadedFile {
     pub key: String,
     pub backend: FileBackend,
     pub record: Option<FileRecord>,
+}
+
+/// An input file to be stored via [`FileUploadService::upload`].
+#[derive(Debug, Clone)]
+pub struct UploadFileInput {
+    pub file_name: String,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
+}
+
+impl UploadFileInput {
+    pub fn new(
+        file_name: impl Into<String>,
+        content_type: impl Into<String>,
+        bytes: Vec<u8>,
+    ) -> Self {
+        Self {
+            file_name: file_name.into(),
+            content_type: content_type.into(),
+            bytes,
+        }
+    }
+}
+
+impl<S1: Into<String>, S2: Into<String>> From<(S1, S2, Vec<u8>)> for UploadFileInput {
+    fn from((file_name, content_type, bytes): (S1, S2, Vec<u8>)) -> Self {
+        Self {
+            file_name: file_name.into(),
+            content_type: content_type.into(),
+            bytes,
+        }
+    }
 }
 
 pub struct FileUploadService {
@@ -190,69 +222,135 @@ impl FileUploadService {
         Ok(candidates)
     }
 
-    /// Stores bytes and records where they went.
+    /// Stores uploaded objects for a collection, recording their metadata including `collection_name`.
+    /// Supports uploading multiple files at one go.
+    pub async fn upload(
+        &self,
+        collection_name: &str,
+        files: Vec<UploadFileInput>,
+    ) -> Result<Vec<UploadedFile>, APIError> {
+        let storage = self.resolve_storage().await?;
+        let backend = storage.backend();
+        let container = storage.container().into_owned();
+
+        let mut results = Vec::with_capacity(files.len());
+
+        for file in files {
+            let file_name = sanitize_file_name(&file.file_name);
+            let key = format!("uploads/{}/{}", Uuid::new_v4(), file_name);
+            let size_bytes = file.bytes.len() as i64;
+            let checksum = sha256_hex(&file.bytes);
+
+            // Bytes first: a row must never point at an object that isn't there.
+            storage
+                .put_object(&key, file.bytes, &file.content_type)
+                .await
+                .map_err(|e| APIError::Internal {
+                    message: format!("put_object failed: {e}"),
+                    details: serde_json::Value::Null,
+                })?;
+
+            // Best-effort metadata. Failing the request here would report an error
+            // for an upload that actually succeeded, and a retry would orphan the
+            // object we just stored. Instead log it: the object stays reachable and
+            // `locate_and_heal` adopts it on first read.
+            let record = match self
+                .files_repo
+                .create(&NewFile {
+                    key: key.clone(),
+                    backend,
+                    container: container.clone(),
+                    original_name: file_name,
+                    content_type: file.content_type,
+                    size_bytes,
+                    checksum: Some(checksum),
+                    collection_name: collection_name.to_string(),
+                })
+                .await
+            {
+                Ok(row) => Some(row),
+                Err(e) => {
+                    warn!(key = %key, error = %e, "stored object but failed to record its metadata");
+                    None
+                }
+            };
+
+            results.push(UploadedFile {
+                key,
+                backend,
+                record,
+            });
+        }
+
+        Ok(results)
+    }
+
+    /// Stores a single uploaded object for a collection.
+    pub async fn upload_one(
+        &self,
+        collection_name: &str,
+        file_name: &str,
+        content_type: &str,
+        bytes: Vec<u8>,
+    ) -> Result<UploadedFile, APIError> {
+        let mut results = self
+            .upload(
+                collection_name,
+                vec![UploadFileInput::new(file_name, content_type, bytes)],
+            )
+            .await?;
+        results.pop().ok_or_else(|| APIError::Internal {
+            message: "Upload produced no results".to_string(),
+            details: serde_json::Value::Null,
+        })
+    }
+
+    /// Stores a single uploaded object defaulting to the "default" collection.
     pub async fn upload_bytes(
         &self,
         file_name: &str,
         content_type: &str,
         bytes: Vec<u8>,
     ) -> Result<UploadedFile, APIError> {
-        let file_name = sanitize_file_name(file_name);
-        let storage = self.resolve_storage().await?;
-        let backend = storage.backend();
-        let container = storage.container().into_owned();
-
-        let key = format!("uploads/{}/{}", Uuid::new_v4(), file_name);
-        let size_bytes = bytes.len() as i64;
-        let checksum = sha256_hex(&bytes);
-
-        // Bytes first: a row must never point at an object that isn't there.
-        storage
-            .put_object(&key, bytes, content_type)
+        self.upload_one("default", file_name, content_type, bytes)
             .await
-            .map_err(|e| APIError::Internal {
-                message: format!("put_object failed: {e}"),
-                details: serde_json::Value::Null,
-            })?;
-
-        // Best-effort metadata. Failing the request here would report an error
-        // for an upload that actually succeeded, and a retry would orphan the
-        // object we just stored. Instead log it: the object stays reachable and
-        // `locate_and_heal` adopts it on first read.
-        let record = match self
-            .files_repo
-            .create(&NewFile {
-                key: key.clone(),
-                backend,
-                container,
-                original_name: file_name,
-                content_type: content_type.to_string(),
-                size_bytes,
-                checksum: Some(checksum),
-            })
-            .await
-        {
-            Ok(row) => Some(row),
-            Err(e) => {
-                warn!(key = %key, error = %e, "stored object but failed to record its metadata");
-                None
-            }
-        };
-
-        Ok(UploadedFile {
-            key,
-            backend,
-            record,
-        })
     }
 
-    /// Fetches a file's bytes, routing on its recorded location.
+    /// Returns all file records associated with a specific collection.
+    pub async fn list_by_collection(
+        &self,
+        collection_name: &str,
+    ) -> Result<Vec<FileRecord>, APIError> {
+        let files = self.files_repo.list_by_collection(collection_name).await?;
+        Ok(files)
+    }
+
+    /// Looks up a file record by its storage key or primary UUID id.
+    pub async fn get_record_by_id_or_key(
+        &self,
+        id_or_key: &str,
+    ) -> Result<Option<FileRecord>, APIError> {
+        if let Some(row) = self.files_repo.get_by_key(id_or_key).await? {
+            return Ok(Some(row));
+        }
+        if Uuid::parse_str(id_or_key).is_ok() {
+            if let Some(row) = self.files_repo.get_by_id(id_or_key).await? {
+                return Ok(Some(row));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Fetches a file's bytes, routing on its recorded location. Supports either storage key or file id.
     pub async fn download(&self, key: &str) -> Result<Vec<u8>, APIError> {
         let mut recorded_error: Option<StorageError> = None;
 
-        if let Some(row) = self.files_repo.get_by_key(key).await? {
-            match self.storage_for(&row).await {
-                Ok(storage) => match storage.get_object(key).await {
+        let row_opt = self.get_record_by_id_or_key(key).await?;
+
+        if let Some(ref row) = row_opt {
+            let storage_key = &row.key;
+            match self.storage_for(row).await {
+                Ok(storage) => match storage.get_object(storage_key).await {
                     Ok(bytes) => return Ok(bytes),
                     Err(e) => {
                         // Not just a missing object: a half-finished migration or
@@ -260,7 +358,7 @@ impl FileUploadService {
                         // too. Neither should cost the caller their file while
                         // another backend might still hold it.
                         warn!(
-                            key = %key,
+                            key = %storage_key,
                             backend = %row.backend,
                             container = %row.container,
                             error = %e,
@@ -271,7 +369,7 @@ impl FileUploadService {
                 },
                 Err(e) => {
                     warn!(
-                        key = %key,
+                        key = %storage_key,
                         backend = %row.backend,
                         error = ?e,
                         "recorded location is unusable, searching other backends"
@@ -281,10 +379,11 @@ impl FileUploadService {
             }
         }
 
-        match self
-            .locate_and_heal(key, self.files_repo.get_by_key(key).await?)
-            .await
-        {
+        let lookup_key = row_opt
+            .as_ref()
+            .map(|r| r.key.clone())
+            .unwrap_or_else(|| key.to_string());
+        match self.locate_and_heal(&lookup_key, row_opt).await {
             Ok(bytes) => Ok(bytes),
             // Surface why the recorded location failed rather than a bare 404.
             Err(_) => match recorded_error {
@@ -378,6 +477,7 @@ impl FileUploadService {
                         content_type,
                         size_bytes: bytes.len() as i64,
                         checksum: Some(sha256_hex(bytes)),
+                        collection_name: "default".to_string(),
                     })
                     .await
                 {
@@ -392,12 +492,20 @@ impl FileUploadService {
         }
     }
 
-    /// Removes a file. The row goes first so a failure mid-way leaves an
+    /// Removes a file. Supports either storage key or primary UUID id. The row goes first so a failure mid-way leaves an
     /// orphaned object (recoverable, and adopted by `locate_and_heal`) instead
     /// of a row pointing at bytes that are gone.
-    pub async fn delete(&self, key: &str) -> Result<(), APIError> {
-        if let Some(row) = self.files_repo.delete_by_key(key).await? {
-            match self.storage_for(&row).await?.delete_object(key).await {
+    pub async fn delete(&self, id_or_key: &str) -> Result<(), APIError> {
+        // 1. Try deleting from _files by key
+        let mut row_opt = self.files_repo.delete_by_key(id_or_key).await?;
+
+        // 2. If not found by key, try deleting from _files by primary id (UUID)
+        if row_opt.is_none() && uuid::Uuid::parse_str(id_or_key).is_ok() {
+            row_opt = self.files_repo.delete(id_or_key).await?;
+        }
+
+        if let Some(row) = row_opt {
+            match self.storage_for(&row).await?.delete_object(&row.key).await {
                 Ok(()) => return Ok(()),
                 // Already gone is a success as far as the caller is concerned.
                 Err(StorageError::NotFound(_)) => return Ok(()),
@@ -410,15 +518,15 @@ impl FileUploadService {
             }
         }
 
-        // Untracked (pre-table) file: still clear the bytes.
-        self.resolve_storage()
-            .await?
-            .delete_object(key)
-            .await
-            .map_err(|e| APIError::Internal {
+        // Untracked (pre-table) file: still clear the bytes. Already-gone is a
+        // success, matching the tracked-row arm above.
+        match self.resolve_storage().await?.delete_object(id_or_key).await {
+            Ok(()) | Err(StorageError::NotFound(_)) => Ok(()),
+            Err(e) => Err(APIError::Internal {
                 message: format!("delete_object failed: {e}"),
                 details: serde_json::Value::Null,
-            })
+            }),
+        }
     }
 
     pub async fn presigned_put_url(
@@ -432,6 +540,13 @@ impl FileUploadService {
             .presign_put(key, expires_in, content_type)
             .await
             .map_err(|e| map_storage_error("presigned_put_url", e))
+    }
+}
+
+#[async_trait::async_trait]
+impl crabbase_db::repositories::records::FileDeleter for FileUploadService {
+    async fn delete_file(&self, id_or_key: &str) -> Result<(), String> {
+        self.delete(id_or_key).await.map_err(|e| format!("{e:?}"))
     }
 }
 
@@ -599,9 +714,17 @@ mod tests {
 
         let uploaded = h
             .service
-            .upload_bytes("hello.txt", "text/plain", b"hello crabbase".to_vec())
+            .upload(
+                "default",
+                vec![UploadFileInput::new(
+                    "hello.txt",
+                    "text/plain",
+                    b"hello crabbase".to_vec(),
+                )],
+            )
             .await
             .unwrap();
+        let uploaded = &uploaded[0];
 
         assert!(uploaded.key.starts_with("uploads/"));
         assert!(uploaded.key.ends_with("/hello.txt"));
@@ -620,11 +743,19 @@ mod tests {
         let bytes = b"checksum me".to_vec();
         let uploaded = h
             .service
-            .upload_bytes("data.bin", "application/octet-stream", bytes.clone())
+            .upload(
+                "default",
+                vec![UploadFileInput::new(
+                    "data.bin",
+                    "application/octet-stream",
+                    bytes.clone(),
+                )],
+            )
             .await
             .unwrap();
+        let uploaded = &uploaded[0];
 
-        let row = uploaded.record.expect("metadata row");
+        let row = uploaded.record.as_ref().expect("metadata row");
         assert_eq!(row.key, uploaded.key);
         assert_eq!(row.backend, FileBackend::Local);
         assert_eq!(row.container, root.to_string_lossy());
@@ -642,9 +773,17 @@ mod tests {
         // A traversing filename must not land outside the configured root.
         let uploaded = h
             .service
-            .upload_bytes("../../../../tmp/pwned.txt", "text/plain", b"x".to_vec())
+            .upload(
+                "default",
+                vec![UploadFileInput::new(
+                    "../../../../tmp/pwned.txt",
+                    "text/plain",
+                    b"x".to_vec(),
+                )],
+            )
             .await
             .unwrap();
+        let uploaded = &uploaded[0];
 
         assert!(!uploaded.key.contains(".."));
         let written = root.join(&uploaded.key);
@@ -673,11 +812,19 @@ mod tests {
         let h = Harness::setup(root.clone()).await;
 
         // Uploaded while local was the active backend.
-        let local_file = h
+        let local_files = h
             .service
-            .upload_bytes("before.pdf", "application/pdf", b"old bytes".to_vec())
+            .upload(
+                "default",
+                vec![UploadFileInput::new(
+                    "before.pdf",
+                    "application/pdf",
+                    b"old bytes".to_vec(),
+                )],
+            )
             .await
             .unwrap();
+        let local_file = &local_files[0];
         assert_eq!(local_file.backend, FileBackend::Local);
 
         // Admin switches the active backend to S3. The default backend is now
@@ -728,6 +875,7 @@ mod tests {
                 content_type: "application/pdf".to_string(),
                 size_bytes: 3,
                 checksum: None,
+                collection_name: "test_col".to_string(),
             })
             .await
             .unwrap();
@@ -745,11 +893,19 @@ mod tests {
             .await
             .unwrap();
 
-        let fresh = h
+        let fresh_files = h
             .service
-            .upload_bytes("new.txt", "text/plain", b"new".to_vec())
+            .upload(
+                "default",
+                vec![UploadFileInput::new(
+                    "new.txt",
+                    "text/plain",
+                    b"new".to_vec(),
+                )],
+            )
             .await
             .unwrap();
+        let fresh = &fresh_files[0];
 
         assert_eq!(fresh.backend, FileBackend::Local);
         assert!(root.join(&fresh.key).exists());
@@ -814,6 +970,7 @@ mod tests {
                 content_type: "application/pdf".to_string(),
                 size_bytes: 5,
                 checksum: None,
+                collection_name: "test_col".to_string(),
             })
             .await
             .unwrap();
@@ -856,9 +1013,17 @@ mod tests {
 
         let uploaded = h
             .service
-            .upload_bytes("gone.txt", "text/plain", b"bye".to_vec())
+            .upload(
+                "default",
+                vec![UploadFileInput::new(
+                    "gone.txt",
+                    "text/plain",
+                    b"bye".to_vec(),
+                )],
+            )
             .await
             .unwrap();
+        let uploaded = &uploaded[0];
         let path = root.join(&uploaded.key);
         assert!(path.exists());
 
@@ -896,9 +1061,17 @@ mod tests {
 
         let uploaded = h
             .service
-            .upload_bytes("vanish.txt", "text/plain", b"x".to_vec())
+            .upload(
+                "default",
+                vec![UploadFileInput::new(
+                    "vanish.txt",
+                    "text/plain",
+                    b"x".to_vec(),
+                )],
+            )
             .await
             .unwrap();
+        let uploaded = &uploaded[0];
 
         // Yank the bytes out from under the row.
         std::fs::remove_file(h.root().join(&uploaded.key)).unwrap();
@@ -947,5 +1120,95 @@ mod tests {
         let storage = h.service.resolve_storage().await.unwrap();
         assert_eq!(storage.backend(), FileBackend::Local);
         assert_eq!(storage.container().into_owned(), h.root().to_string_lossy());
+    }
+
+    #[tokio::test]
+    async fn test_upload_bytes_for_collection_and_list_by_collection() {
+        let h = Harness::setup(temp_root("collection_files")).await;
+
+        let u_articles = h
+            .service
+            .upload(
+                "articles",
+                vec![
+                    UploadFileInput::new("doc1.pdf", "application/pdf", b"pdf1".to_vec()),
+                    UploadFileInput::new("doc2.pdf", "application/pdf", b"pdf2".to_vec()),
+                ],
+            )
+            .await
+            .unwrap();
+
+        let u_users = h
+            .service
+            .upload(
+                "users",
+                vec![UploadFileInput::new(
+                    "avatar.png",
+                    "image/png",
+                    b"png".to_vec(),
+                )],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(u_articles.len(), 2);
+        assert_eq!(
+            u_articles[0].record.as_ref().unwrap().collection_name,
+            "articles"
+        );
+        assert_eq!(
+            u_articles[1].record.as_ref().unwrap().collection_name,
+            "articles"
+        );
+        assert_eq!(u_users.len(), 1);
+        assert_eq!(u_users[0].record.as_ref().unwrap().collection_name, "users");
+
+        let article_files = h.service.list_by_collection("articles").await.unwrap();
+        assert_eq!(article_files.len(), 2);
+
+        let user_files = h.service.list_by_collection("users").await.unwrap();
+        assert_eq!(user_files.len(), 1);
+        assert_eq!(user_files[0].original_name, "avatar.png");
+
+        let empty = h.service.list_by_collection("empty").await.unwrap();
+        assert!(empty.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_upload_multiple_files_at_one_go() {
+        let h = Harness::setup(temp_root("multi_upload")).await;
+
+        let files = vec![
+            UploadFileInput::new("doc_a.txt", "text/plain", b"content a".to_vec()),
+            UploadFileInput::new(
+                "doc_b.json",
+                "application/json",
+                b"{\"key\":\"value\"}".to_vec(),
+            ),
+            UploadFileInput::new("doc_c.bin", "application/octet-stream", vec![1, 2, 3, 4, 5]),
+        ];
+
+        let uploaded = h.service.upload("projects", files).await.unwrap();
+        assert_eq!(uploaded.len(), 3);
+
+        for (i, (expected_name, expected_bytes)) in [
+            ("doc_a.txt", b"content a".as_slice()),
+            ("doc_b.json", b"{\"key\":\"value\"}".as_slice()),
+            ("doc_c.bin", &[1, 2, 3, 4, 5]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let u = &uploaded[i];
+            let row = u.record.as_ref().expect("record should exist");
+            assert_eq!(row.original_name, expected_name);
+            assert_eq!(row.collection_name, "projects");
+
+            let downloaded = h.service.download(&u.key).await.unwrap();
+            assert_eq!(downloaded, expected_bytes);
+        }
+
+        let listed = h.service.list_by_collection("projects").await.unwrap();
+        assert_eq!(listed.len(), 3);
     }
 }
