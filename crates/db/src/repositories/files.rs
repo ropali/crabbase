@@ -96,13 +96,13 @@ impl<'r> FromRow<'r, PgRow> for FileRecord {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct FileResponse {
     pub id: String,
     pub original_name: String,
     pub content_type: String,
+    pub key: String,
     pub size_bytes: i64,
     pub collection_name: String,
     pub created: DateTime<Utc>,
@@ -113,11 +113,11 @@ impl<'r> FromRow<'r, PgRow> for FileResponse {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         use sqlx::Row;
 
-
         Ok(Self {
             id: row.try_get::<Uuid, _>("id")?.to_string(),
             original_name: row.try_get("original_name")?,
             content_type: row.try_get("content_type")?,
+            key: row.try_get("key")?,
             size_bytes: row.try_get("size_bytes")?,
             collection_name: row.try_get("collection_name")?,
             created: row.try_get::<DateTime<Utc>, _>("created")?,
@@ -353,9 +353,12 @@ impl FilesRepository {
     }
 
     /// Returns all file records associated with a specific collection, newest first.
-    pub async fn list_by_collection(&self, collection_name: &str) -> Result<Vec<FileRecord>, RepositoryError> {
+    pub async fn list_by_collection(
+        &self,
+        collection_name: &str,
+    ) -> Result<Vec<FileRecord>, RepositoryError> {
         let rows = sqlx::query_as::<_, FileRecord>(
-            "SELECT * FROM _files WHERE collection_name = $1 ORDER BY created DESC, id ASC"
+            "SELECT * FROM _files WHERE collection_name = $1 ORDER BY created DESC, id ASC",
         )
         .bind(collection_name)
         .fetch_all(&self.db)
