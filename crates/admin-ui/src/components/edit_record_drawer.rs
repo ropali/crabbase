@@ -17,6 +17,34 @@ pub struct EditRecordDrawerProps {
     pub on_success: Callback<()>,
 }
 
+fn file_item_names(record: &DynamicRow, field: &str) -> HashMap<String, String> {
+    let mut names = HashMap::new();
+    if let CellValue::Json(val) = record.get(field) {
+        let mut add_name = |obj: &serde_json::Map<String, serde_json::Value>| {
+            if let (Some(id), Some(name)) = (
+                obj.get("id").and_then(|v| v.as_str()),
+                obj.get("name")
+                    .or_else(|| obj.get("originalName"))
+                    .and_then(|v| v.as_str()),
+            ) {
+                names.insert(id.to_string(), name.to_string());
+            }
+        };
+        match val {
+            serde_json::Value::Object(obj) => add_name(obj),
+            serde_json::Value::Array(arr) => {
+                for item in arr {
+                    if let Some(obj) = item.as_object() {
+                        add_name(obj);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
 #[function_component(EditRecordDrawer)]
 pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
     let record_id = props.record.get("id").as_str();
@@ -25,16 +53,54 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
 
     let fields = {
         let record = props.record.clone();
+        let collection_fields = props.collection_fields.clone();
         use_state(move || {
+            let file_fields: HashMap<String, bool> = collection_fields
+                .iter()
+                .filter(|f| f.data_type.eq_ignore_ascii_case("file"))
+                .map(|f| (f.name.clone(), f.is_multiple()))
+                .collect();
+
             let mut initial_fields = HashMap::<String, String>::new();
             for (k, v) in &record.values {
-                let str_val = match v {
-                    CellValue::Text(s) => s.clone(),
-                    CellValue::Number(n) => n.to_string(),
-                    CellValue::Bool(b) => b.to_string(),
-                    CellValue::Null => "".to_string(),
-                    CellValue::Json(val) => {
-                        serde_json::to_string_pretty(val).unwrap_or_else(|_| val.to_string())
+                let str_val = if let Some(&multiple) = file_fields.get(k) {
+                    match v {
+                        CellValue::Json(serde_json::Value::Object(obj)) => obj
+                            .get("id")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string(),
+                        CellValue::Json(serde_json::Value::Array(arr)) => {
+                            let ids: Vec<String> = arr
+                                .iter()
+                                .filter_map(|item| {
+                                    item.as_str()
+                                        .or_else(|| item.get("id").and_then(|x| x.as_str()))
+                                        .map(str::to_string)
+                                })
+                                .collect();
+                            serde_json::to_string(&ids).unwrap_or_else(|_| "[]".to_string())
+                        }
+                        CellValue::Json(val) => val.as_str().unwrap_or("").to_string(),
+                        CellValue::Text(s) => s.clone(),
+                        CellValue::Null => {
+                            if multiple {
+                                "[]".to_string()
+                            } else {
+                                "".to_string()
+                            }
+                        }
+                        _ => "".to_string(),
+                    }
+                } else {
+                    match v {
+                        CellValue::Text(s) => s.clone(),
+                        CellValue::Number(n) => n.to_string(),
+                        CellValue::Bool(b) => b.to_string(),
+                        CellValue::Null => "".to_string(),
+                        CellValue::Json(val) => {
+                            serde_json::to_string_pretty(val).unwrap_or_else(|_| val.to_string())
+                        }
                     }
                 };
                 initial_fields.insert(k.clone(), str_val);
@@ -265,7 +331,7 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                 }
                             }
                             "relation" => {
-                                if f.multiple {
+                                if f.is_multiple() {
                                     if val.trim().is_empty() || val == "[]" {
                                         serde_json::Value::Array(vec![])
                                     } else if let Ok(arr) = serde_json::from_str::<Vec<String>>(val)
@@ -290,6 +356,32 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                     } else {
                                         serde_json::Value::String(val.clone())
                                     }
+                                }
+                            }
+                            "file" => {
+                                if f.is_multiple() {
+                                    if val.trim().is_empty() || val == "[]" {
+                                        serde_json::Value::Array(vec![])
+                                    } else if let Ok(arr) = serde_json::from_str::<Vec<String>>(val)
+                                    {
+                                        let json_arr: Vec<serde_json::Value> = arr
+                                            .into_iter()
+                                            .map(serde_json::Value::String)
+                                            .collect();
+                                        serde_json::Value::Array(json_arr)
+                                    } else {
+                                        let list: Vec<serde_json::Value> = val
+                                            .split(',')
+                                            .map(|s| s.trim())
+                                            .filter(|s| !s.is_empty())
+                                            .map(|s| serde_json::Value::String(s.to_string()))
+                                            .collect();
+                                        serde_json::Value::Array(list)
+                                    }
+                                } else if val.trim().is_empty() && !f.required {
+                                    serde_json::Value::Null
+                                } else {
+                                    serde_json::Value::String(val.clone())
                                 }
                             }
                             _ => {
@@ -609,13 +701,33 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                             </div>
                                                         }
                                                     } else if dt == "file" {
+                                                        let on_file_change = {
+                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                            let key = key.clone();
+                                                            Callback::from(move |new_key: String| {
+                                                                on_dynamic_field_change.emit((key.clone(), new_key));
+                                                            })
+                                                        };
+                                                        let accept = f
+                                                            .mime_types
+                                                            .as_ref()
+                                                            .map(|types| types.join(","))
+                                                            .unwrap_or_default();
+                                                        let item_names = file_item_names(&props.record, &key);
                                                         html! {
-                                                            <div class="group" key={key.clone()}>
-                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
-                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
-                                                                </label>
-                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface outline-none focus:border-primary" placeholder="Enter file name or URL..." type="text" value={field_val} oninput={on_input} />
-                                                            </div>
+                                                            <crate::components::FileFieldInput
+                                                                key={key.clone()}
+                                                                label={label_text}
+                                                                value={field_val}
+                                                                collection_name={props.collection_name.clone()}
+                                                                field_name={key.clone()}
+                                                                required={f.required}
+                                                                multiple={f.is_multiple()}
+                                                                max_files={f.max}
+                                                                accept={accept}
+                                                                item_names={item_names}
+                                                                on_change={on_file_change}
+                                                            />
                                                         }
                                                     } else if dt == "json" {
                                                         let on_json_change = {
@@ -659,7 +771,7 @@ pub fn edit_record_drawer(props: &EditRecordDrawerProps) -> Html {
                                                         }
                                                     } else if dt == "relation" {
                                                         let rel_target = f.related_to.as_deref().unwrap_or("related");
-                                                        let is_multi = f.multiple;
+                                                        let is_multi = f.is_multiple();
                                                         let on_open_modal = {
                                                             let active_relation_modal = active_relation_modal.clone();
                                                             let key = key.clone();

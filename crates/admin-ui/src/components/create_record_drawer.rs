@@ -192,7 +192,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                 }
                             }
                             "relation" => {
-                                if f.multiple {
+                                if f.is_multiple() {
                                     if val.trim().is_empty() || val == "[]" {
                                         serde_json::Value::Array(vec![])
                                     } else if let Ok(arr) = serde_json::from_str::<Vec<String>>(val)
@@ -217,6 +217,32 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                     } else {
                                         serde_json::Value::String(val.clone())
                                     }
+                                }
+                            }
+                            "file" => {
+                                if f.is_multiple() {
+                                    if val.trim().is_empty() || val == "[]" {
+                                        serde_json::Value::Array(vec![])
+                                    } else if let Ok(arr) = serde_json::from_str::<Vec<String>>(val)
+                                    {
+                                        let json_arr: Vec<serde_json::Value> = arr
+                                            .into_iter()
+                                            .map(serde_json::Value::String)
+                                            .collect();
+                                        serde_json::Value::Array(json_arr)
+                                    } else {
+                                        let list: Vec<serde_json::Value> = val
+                                            .split(',')
+                                            .map(|s| s.trim())
+                                            .filter(|s| !s.is_empty())
+                                            .map(|s| serde_json::Value::String(s.to_string()))
+                                            .collect();
+                                        serde_json::Value::Array(list)
+                                    }
+                                } else if val.trim().is_empty() && !f.required {
+                                    serde_json::Value::Null
+                                } else {
+                                    serde_json::Value::String(val.clone())
                                 }
                             }
                             _ => {
@@ -527,13 +553,31 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                             </div>
                                                         }
                                                     } else if dt == "file" {
+                                                        let on_file_change = {
+                                                            let on_dynamic_field_change = on_dynamic_field_change.clone();
+                                                            let key = key.clone();
+                                                            Callback::from(move |new_key: String| {
+                                                                on_dynamic_field_change.emit((key.clone(), new_key));
+                                                            })
+                                                        };
+                                                        let accept = f
+                                                            .mime_types
+                                                            .as_ref()
+                                                            .map(|types| types.join(","))
+                                                            .unwrap_or_default();
                                                         html! {
-                                                            <div class="group" key={f.name.clone()}>
-                                                                <label class="block font-label-xs text-label-xs text-on-surface-variant mb-1 flex items-center gap-1">
-                                                                    <span class="material-symbols-outlined text-[14px]">{icon}</span> {label_text}
-                                                                </label>
-                                                                <input class="w-full bg-white border border-outline-variant rounded p-3 font-body-sm text-body-sm text-on-surface focus:ring-secondary focus:border-transparent outline-none" placeholder="Enter file name or URL..." type="text" value={current_val} oninput={on_input} />
-                                                            </div>
+                                                            <crate::components::FileFieldInput
+                                                                key={f.name.clone()}
+                                                                label={label_text}
+                                                                value={current_val}
+                                                                collection_name={props.collection_name.clone()}
+                                                                field_name={f.name.clone()}
+                                                                required={f.required}
+                                                                multiple={f.is_multiple()}
+                                                                max_files={f.max}
+                                                                accept={accept}
+                                                                on_change={on_file_change}
+                                                            />
                                                         }
                                                     } else if dt == "json" {
                                                         let on_json_change = {
@@ -573,7 +617,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                             </div>
                                                         }
                                                      } else if dt == "relation" {
-                                                         let is_multi = f.multiple;
+                                                         let is_multi = f.is_multiple();
                                                          let on_open_modal = {
                                                              let active_relation_modal = active_relation_modal.clone();
                                                              let key = key.clone();
@@ -591,7 +635,7 @@ pub fn create_record_drawer(props: &CreateRecordDrawerProps) -> Html {
                                                          };
                                                          let rel_target = f.related_to.as_deref().unwrap_or("related");
 
-                                                         if f.multiple {
+                                                         if f.is_multiple() {
                                                              let selected_ids: Vec<String> = serde_json::from_str::<Vec<String>>(&current_val)
                                                                  .unwrap_or_else(|_| {
                                                                      current_val

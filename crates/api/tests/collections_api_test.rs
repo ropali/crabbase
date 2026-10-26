@@ -394,7 +394,7 @@ async fn test_truncate_collection_removes_all_records() {
 
 // ─── One-to-many relation definition ──────────────────────────────────────────
 
-/// Create a collection defining a one-to-many relation column (`multiple: true`).
+/// Create a collection defining a one-to-many relation column (`max > 1`).
 /// Verifies that collections schema DDL accepts and preserves one-to-many relation definitions.
 ///
 /// Ref: MVP_ROADMAP.md §Phase 3.2
@@ -413,7 +413,7 @@ async fn test_create_collection_with_one_to_many_relation() {
                 "name": "articles_o2m",
                 "columns": [
                     { "name": "title", "type": "text" },
-                    { "name": "categories", "type": "relation", "related_to": "categories_o2m", "multiple": true }
+                    { "name": "categories", "type": "relation", "related_to": "categories_o2m", "max": 10 }
                 ]
             }),
             Some(&token),
@@ -432,8 +432,8 @@ async fn test_create_collection_with_one_to_many_relation() {
         "MVP Gap: relation column must record target collection"
     );
     assert_eq!(
-        cat_col["multiple"], true,
-        "MVP Gap: one-to-many relation definition must preserve multiple: true flag. Got: {:?}",
+        cat_col["max"], 10,
+        "MVP Gap: one-to-many relation definition must preserve the max: 10 constraint. Got: {:?}",
         cat_col
     );
 }

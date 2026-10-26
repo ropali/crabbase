@@ -1,6 +1,6 @@
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/crabbase
 
-.PHONY: validate run release build test test-unit test-db test-integration test-matrix test-raw test-raw-unit test-raw-integration cargo-test watch serve admin
+.PHONY: validate run release build test test-unit test-db test-integration test-matrix test-raw test-raw-unit test-raw-integration cargo-test watch serve admin db-drop db-reset drop-tables
 
 validate:
 	cargo check
@@ -132,3 +132,25 @@ watch-admin:
 
 watch-fe:
 	@cd crates/admin-ui && trunk serve
+
+# ==============================================================================
+# 🗄️ DATABASE MANAGEMENT
+# ==============================================================================
+
+# Drop all tables and reset database schemas
+# Usage:
+#   make db-drop
+#   make db-drop force=1
+#   make db-drop dry-run=1
+#   make db-drop db=postgres://user:pass@host:5432/dbname
+db-drop:
+	@./scripts/drop_tables.sh \
+		$(if $(db),--db-url $(db)) \
+		$(if $(config),--config $(config)) \
+		$(if $(schema),--schema $(schema)) \
+		$(if $(filter 1 true,$(force)),--force) \
+		$(if $(filter 1 true,$(dry-run)),--dry-run)
+
+# Aliases for db-drop
+db-reset: db-drop
+drop-tables: db-drop

@@ -15,3 +15,5 @@ crabbase.toml
 
 # Floci / local runtime data
 data/
+
+uploads/

@@ -17,7 +17,7 @@
 mod common;
 
 use axum::http::StatusCode;
-use common::{TestApp, create_record_api, expect, insert_superuser, login, text_col};
+use common::{TestApp, create_record_api, expect, file_col, insert_superuser, login, text_col};
 use serde_json::json;
 
 // ─── Setup helpers ────────────────────────────────────────────────────────────
@@ -483,4 +483,277 @@ async fn test_delete_rule_null_blocks_unauthenticated_delete() {
         "MVP Gap: delete_rule=null must return 403 FORBIDDEN for unauthenticated DELETE, but got {}",
         status
     );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Files API Unauthenticated Access Tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn test_files_api_download_public_delete_admin_only() {
+    let (app, token) = setup().await;
+
+    let state = crabbase_api::state::AppState {
+        db: app.db.pool.clone(),
+    };
+    let upload_result = state
+        .file_service()
+        .upload_bytes("public.txt", "text/plain", b"public file content".to_vec())
+        .await
+        .expect("upload file bytes");
+    let file_key = upload_result.key;
+
+    // Unauthenticated GET /api/files/{file_key} succeeds
+    let res = app.get(&format!("/api/files/{file_key}")).await;
+    assert_eq!(res.status(), StatusCode::OK);
+
+    // Unauthenticated DELETE /api/files/{file_key} is rejected
+    let del_res = app
+        .request(
+            axum::http::Request::builder()
+                .method(axum::http::Method::DELETE)
+                .uri(&format!("/api/files/{file_key}"))
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(del_res.status(), StatusCode::UNAUTHORIZED);
+
+    // Admin DELETE /api/files/{file_key} succeeds
+    let del_res = app
+        .request(
+            axum::http::Request::builder()
+                .method(axum::http::Method::DELETE)
+                .uri(&format!("/api/files/{file_key}"))
+                .header("Authorization", format!("Bearer {token}"))
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await;
+    assert_eq!(del_res.status(), StatusCode::NO_CONTENT);
+}
+
+/// The download key is caller input. `..` segments (literal or percent-encoded)
+/// must never escape the local storage root (`$HOME/crabbase/files/`), which
+/// would otherwise let anyone read arbitrary files as `$HOME/...`.
+#[tokio::test]
+async fn test_file_download_rejects_path_traversal() {
+    let app = TestApp::new("files_traversal").await;
+
+    let home = std::env::var("HOME").expect("HOME env");
+    let marker_dir = std::path::PathBuf::from(&home).join("crabbase");
+    std::fs::create_dir_all(&marker_dir).unwrap();
+    let marker = marker_dir.join("traversal-marker.txt");
+    std::fs::write(&marker, b"outside the storage root").unwrap();
+
+    for path in [
+        "/api/files/../traversal-marker.txt",
+        "/api/files/%2e%2e%2ftraversal-marker.txt",
+    ] {
+        let res = app.get(path).await;
+        let status = res.status();
+        let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "traversal via {path} must not serve a file outside the storage root"
+        );
+        assert!(
+            !body
+                .windows(b"outside the storage root".len())
+                .any(|w| w == b"outside the storage root"),
+            "traversal via {path} leaked file contents"
+        );
+    }
+
+    let _ = std::fs::remove_file(&marker);
+}
+
+#[tokio::test]
+async fn test_record_upload_enforces_collection_access_rules() {
+    let (app, token) = setup().await;
+
+    // 1. Create collection with create_rule = null (Admin-only)
+    let res = app
+        .post_json(
+            "/api/collections",
+            json!({
+                "name": "vault_docs",
+                "columns": [text_col("title"), file_col("document")]
+            }),
+            Some(&token),
+        )
+        .await;
+    expect(res, StatusCode::OK).await;
+
+    let patch_res = app
+        .patch_json(
+            "/api/collections/vault_docs",
+            json!({
+                "list_rule": "",
+                "view_rule": null,
+                "create_rule": null,
+                "update_rule": null,
+                "delete_rule": null,
+            }),
+            &token,
+        )
+        .await;
+    expect(patch_res, StatusCode::OK).await;
+
+    // 2. Unauthenticated upload to /api/collection/vault_docs/record/upload is BLOCKED (403 Forbidden)
+    // because caller does not have permission to create record for this collection
+    let unauth_upload_res = app
+        .post_multipart(
+            "/api/collection/vault_docs/record/upload",
+            "doc.pdf",
+            "application/pdf",
+            b"secret content",
+            None,
+        )
+        .await;
+    assert_eq!(unauth_upload_res.status(), StatusCode::FORBIDDEN);
+
+    // 3. Admin upload to /api/collection/vault_docs/record/upload SUCCEEDS
+    let admin_upload_res = app
+        .post_multipart(
+            "/api/collection/vault_docs/record/upload",
+            "doc.pdf",
+            "application/pdf",
+            b"secret content",
+            Some(&token),
+        )
+        .await;
+    let body = expect(admin_upload_res, StatusCode::OK).await;
+    let files = body["files"].as_array().expect("files array");
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0]["collectionName"], "vault_docs");
+    let file_id = files[0]["id"].as_str().expect("file id").to_string();
+    let file_path = format!("/api/collections/vault_docs/files/{file_id}");
+
+    // 4. Admin creates record referencing the uploaded file ID
+    let admin_record_res = app
+        .post_json(
+            "/api/collections/vault_docs/records",
+            json!({ "data": { "title": "Admin Doc", "document": file_id } }),
+            Some(&token),
+        )
+        .await;
+    let rec_body = expect(admin_record_res, StatusCode::OK).await;
+    assert_eq!(rec_body["data"]["document"]["id"], file_id);
+    assert_eq!(rec_body["data"]["document"]["originalName"], "doc.pdf");
+
+    // 5. Download via collection-scoped GET /api/collections/vault_docs/files/{file_id}
+    // view_rule is null -> unauthenticated download is 403 Forbidden
+    let unauth_download = app.get(&file_path).await;
+    assert_eq!(unauth_download.status(), StatusCode::FORBIDDEN);
+
+    // Authenticated download as admin succeeds
+    let auth_download = app.get_auth(&file_path, &token).await;
+    assert_eq!(auth_download.status(), StatusCode::OK);
+
+    // 6. Public collection with create_rule = "" allows unauthenticated upload
+    let pub_patch = app
+        .patch_json(
+            "/api/collections/vault_docs",
+            json!({
+                "view_rule": "",
+                "create_rule": "",
+            }),
+            &token,
+        )
+        .await;
+    expect(pub_patch, StatusCode::OK).await;
+
+    let pub_upload = app
+        .post_multipart(
+            "/api/collections/vault_docs/records/upload",
+            "public.txt",
+            "text/plain",
+            b"hello world",
+            None,
+        )
+        .await;
+    assert_eq!(pub_upload.status(), StatusCode::OK);
+    let pub_body = expect(pub_upload, StatusCode::OK).await;
+    let pub_file_id = pub_body["files"][0]["id"].as_str().expect("pub id");
+
+    // Public view_rule allows unauthenticated download
+    let pub_download = app
+        .get(&format!("/api/collections/vault_docs/files/{pub_file_id}"))
+        .await;
+    assert_eq!(pub_download.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn test_record_upload_nonexistent_collection_returns_404() {
+    let (app, _) = setup().await;
+
+    let res = app
+        .post_multipart(
+            "/api/collection/nonexistent_col/record/upload",
+            "avatar.png",
+            "image/png",
+            b"PNG IMAGE BYTES",
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn test_list_collection_files_enforces_access_rules() {
+    let (app, admin_token) = setup().await;
+
+    // 1. Create a collection with default null (admin-only) list_rule
+    let res = app
+        .post_json(
+            "/api/collections",
+            json!({
+                "name": "secure_vault",
+                "columns": [text_col("title"), file_col("doc")]
+            }),
+            Some(&admin_token),
+        )
+        .await;
+    expect(res, StatusCode::OK).await;
+
+    // Set create_rule to public so upload can succeed with or without admin
+    let patch_res = app
+        .patch_json(
+            "/api/collections/secure_vault",
+            json!({
+                "create_rule": ""
+            }),
+            &admin_token,
+        )
+        .await;
+    expect(patch_res, StatusCode::OK).await;
+
+    // 2. Upload file
+    let upload_res = app
+        .post_multipart(
+            "/api/collections/secure_vault/records/upload",
+            "secret.pdf",
+            "application/pdf",
+            b"top secret",
+            Some(&admin_token),
+        )
+        .await;
+    assert_eq!(upload_res.status(), StatusCode::OK);
+
+    // 3. Unauthenticated GET /api/collections/secure_vault/files is BLOCKED (403)
+    let unauth_list = app.get("/api/collections/secure_vault/files").await;
+    assert_eq!(unauth_list.status(), StatusCode::FORBIDDEN);
+
+    // 4. Admin GET /api/collections/secure_vault/files SUCCEEDS
+    let admin_list = app
+        .get_auth("/api/collections/secure_vault/files", &admin_token)
+        .await;
+    assert_eq!(admin_list.status(), StatusCode::OK);
+    let body = expect(admin_list, StatusCode::OK).await;
+    assert_eq!(body["totalItems"], 1);
+    assert_eq!(body["items"][0]["collectionName"], "secure_vault");
 }

@@ -1,6 +1,6 @@
 use crate::components::data_table::column::{
-    ColumnDef, bool_render, clipped_text_render, date_render, default_render, id_render,
-    json_render, relation_render, richtext_render,
+    ColumnDef, bool_render, clipped_text_render, date_render, default_render, file_render,
+    id_render, json_render, relation_render, richtext_render,
 };
 use crate::models::collection::Collection;
 
@@ -25,7 +25,7 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
         let key = field.name.clone();
         let header = field.name.clone();
         let data_type = field.data_type.clone();
-        let is_multiple = field.multiple;
+        let is_multiple = field.is_multiple();
 
         // Choose icon depending on data type
         let icon = match data_type.to_lowercase().as_str() {
@@ -51,6 +51,7 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
 
         let key_clone = key.clone();
         let dt_clone = data_type.clone();
+        let col_name = schema.name.clone();
 
         let mut col_def =
             ColumnDef::new(&key, &header)
@@ -61,6 +62,9 @@ pub fn columns_from_schema(schema: &Collection) -> Vec<ColumnDef> {
                         "number" => default_render(cell_val, on_view),
                         "relation" => relation_render(cell_val, is_multiple, on_view),
                         "datetime" | "autodatetime" | "autodate" => date_render(cell_val, on_view),
+                        "file" => {
+                            file_render(col_name.clone(), key_clone.clone(), cell_val, on_view)
+                        }
                         "json" => json_render(key_clone.clone(), cell_val, on_view),
                         "richtext" | "editor" => {
                             richtext_render(key_clone.clone(), cell_val, on_view)

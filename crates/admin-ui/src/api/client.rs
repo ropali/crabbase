@@ -8,6 +8,13 @@ use std::sync::Mutex;
 static TOKEN: Mutex<Option<String>> = Mutex::new(None);
 static BASE_URL: Mutex<Option<String>> = Mutex::new(None);
 
+struct CachedFileToken {
+    token: String,
+    expires_at_ms: f64,
+}
+
+static FILE_TOKEN: Mutex<Option<CachedFileToken>> = Mutex::new(None);
+
 pub struct ApiClient {
     base_url: String,
     token: Option<String>,
@@ -83,6 +90,9 @@ impl ApiClient {
     }
 
     pub fn set_token(token: Option<String>) {
+        if token.is_none() {
+            Self::clear_file_token();
+        }
         if let Ok(mut guard) = TOKEN.lock() {
             *guard = token.clone();
         }
@@ -110,6 +120,57 @@ impl ApiClient {
             }
         }
         None
+    }
+
+    /// Returns a cached file download token when it is still valid.
+    pub fn cached_file_token() -> Option<String> {
+        FILE_TOKEN.lock().ok().and_then(|guard| {
+            guard
+                .as_ref()
+                .filter(|cached| cached.expires_at_ms > js_sys::Date::now())
+                .map(|cached| cached.token.clone())
+        })
+    }
+
+    pub fn clear_file_token() {
+        if let Ok(mut guard) = FILE_TOKEN.lock() {
+            *guard = None;
+        }
+    }
+
+    /// Fetches a short-lived file token once and reuses it until shortly before
+    /// expiry. Protected file URLs must carry this token as `?token=`.
+    pub async fn get_file_token(&self) -> Result<String, gloo_net::Error> {
+        if let Some(token) = Self::cached_file_token() {
+            return Ok(token);
+        }
+
+        let res = self.request("POST", "/files/token").send().await?;
+        let body = Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        let token = body
+            .get("token")
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .ok_or_else(|| {
+                gloo_net::Error::GlooError(format!("No file token found in response: {body}"))
+            })?;
+        let expires_in = body
+            .get("expiresIn")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(180);
+
+        if let Ok(mut guard) = FILE_TOKEN.lock() {
+            *guard = Some(CachedFileToken {
+                token: token.clone(),
+                expires_at_ms: js_sys::Date::now() + expires_in.saturating_sub(15) as f64 * 1000.0,
+            });
+        }
+
+        Ok(token)
     }
 
     pub fn handle_401() {
@@ -363,6 +424,7 @@ impl ApiClient {
                 gloo_net::Error::GlooError(format!("No token found in response: {}", login_res))
             })?;
 
+        Self::clear_file_token();
         Self::set_token(Some(token.clone()));
         Ok(token)
     }
@@ -462,5 +524,113 @@ impl ApiClient {
             .await?;
         Self::check_response(res).await?;
         Ok(())
+    }
+
+    pub async fn get_storage_settings(&self) -> Result<Option<serde_json::Value>, gloo_net::Error> {
+        let res = self.request("GET", "/settings/storage").send().await?;
+        if res.status() == 204 {
+            return Ok(None);
+        }
+        let data = Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+        Ok(Some(data))
+    }
+
+    pub async fn save_storage_settings(
+        &self,
+        body: serde_json::Value,
+    ) -> Result<(), gloo_net::Error> {
+        let res = self
+            .request("POST", "/settings/storage")
+            .json(&body)?
+            .send()
+            .await?;
+        Self::check_response(res).await?;
+        Ok(())
+    }
+
+    pub async fn upload_files(
+        &self,
+        collection: &str,
+        form_data: web_sys::FormData,
+    ) -> Result<Vec<String>, gloo_net::Error> {
+        let res = self
+            .request("POST", &format!("/collections/{collection}/records/upload"))
+            .body(form_data)?
+            .send()
+            .await?;
+        let json = Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await?;
+
+        let extract = |value: Option<&serde_json::Value>| -> Vec<String> {
+            let Some(arr) = value.and_then(|v| v.as_array()) else {
+                return Vec::new();
+            };
+            arr.iter()
+                .filter_map(|item| {
+                    let id = item
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| item.get("key").and_then(|v| v.as_str()))
+                        .or_else(|| item.as_str())?;
+                    let trimmed = id.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    }
+                })
+                .collect()
+        };
+
+        let ids = extract(json.get("files"));
+
+        if ids.is_empty() {
+            return Err(gloo_net::Error::GlooError(
+                "Upload succeeded but no file id or storage key was returned".into(),
+            ));
+        }
+
+        Ok(ids)
+    }
+
+    pub async fn upload_file(
+        &self,
+        collection: &str,
+        form_data: web_sys::FormData,
+    ) -> Result<String, gloo_net::Error> {
+        self.upload_files(collection, form_data)
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                gloo_net::Error::GlooError(
+                    "Upload succeeded but no file id or storage key was returned".into(),
+                )
+            })
+    }
+
+    /// Appends a file token (and optionally `download=1`) to a file URL.
+    pub fn with_file_token(url: String, token: Option<&str>, download: bool) -> String {
+        let Some(token) = token.filter(|value| !value.trim().is_empty()) else {
+            return url;
+        };
+
+        let mut url = url;
+        let mut separator = if url.contains('?') { '&' } else { '?' };
+        if download {
+            url.push(separator);
+            url.push_str("download=1");
+            separator = '&';
+        }
+        url.push(separator);
+        url.push_str("token=");
+        let encoded: String = js_sys::encode_uri_component(token).into();
+        url.push_str(&encoded);
+        url
     }
 }

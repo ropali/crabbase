@@ -48,6 +48,15 @@ async fn test_settings_endpoints_require_admin() {
         "expected 401/403 for unauthenticated /api/settings/email-templates, got {}",
         tpl_res.status()
     );
+
+    // 4. Storage settings without token -> 401/403
+    let storage_res = app.get("/api/settings/storage").await;
+    assert!(
+        storage_res.status() == StatusCode::UNAUTHORIZED
+            || storage_res.status() == StatusCode::FORBIDDEN,
+        "expected 401/403 for unauthenticated /api/settings/storage, got {}",
+        storage_res.status()
+    );
 }
 
 // ─── Mail Settings ────────────────────────────────────────────────────────────
@@ -156,4 +165,50 @@ async fn test_email_templates_get_and_post() {
         body["userRegistration"]["subject"],
         "Welcome to {{app_name}}"
     );
+}
+
+// ─── Storage Settings ─────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_storage_settings_get_and_post() {
+    let (app, token) = setup().await;
+
+    // 1. Initial GET returns 200 or 204
+    let get_res = app.get_auth("/api/settings/storage", &token).await;
+    assert!(
+        get_res.status() == StatusCode::OK || get_res.status() == StatusCode::NO_CONTENT,
+        "unexpected status: {}",
+        get_res.status()
+    );
+
+    // 2. Save storage settings
+    let storage_payload = json!({
+        "storageType": "s3",
+        "local": {
+            "local_path": "$HOME/crabbase/files/"
+        },
+        "s3": {
+            "endpoint": "s3.amazonaws.com",
+            "bucket": "my-app-uploads",
+            "region": "us-west-2",
+            "accessKey": "TEST_KEY",
+            "secret": "TEST_SECRET",
+            "forcePathStyle": true
+        }
+    });
+
+    let post_res = app
+        .post_json("/api/settings/storage", storage_payload, Some(&token))
+        .await;
+    expect(post_res, StatusCode::OK).await;
+
+    // 3. Fetch again to verify persistence
+    let verify_res = app.get_auth("/api/settings/storage", &token).await;
+    let verify_body = expect(verify_res, StatusCode::OK).await;
+
+    assert_eq!(verify_body["storageType"], "s3");
+    assert_eq!(verify_body["s3"]["bucket"], "my-app-uploads");
+    assert_eq!(verify_body["s3"]["region"], "us-west-2");
+    assert_eq!(verify_body["s3"]["accessKey"], "TEST_KEY");
+    assert_eq!(verify_body["s3"]["forcePathStyle"], true);
 }

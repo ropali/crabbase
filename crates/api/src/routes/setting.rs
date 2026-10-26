@@ -8,6 +8,7 @@ use axum::{Json, Router};
 use crabbase_core::enums;
 use crabbase_core::errors::APIError;
 use crabbase_db::repositories::settings::{AppSettings, EmailTemplates, MailSettings};
+use crabbase_files::storage::StorageConfig;
 use serde_json::{Value, json};
 
 pub fn get_routes(state: AppState) -> Router<AppState> {
@@ -17,6 +18,10 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
         .route(
             "/email-templates",
             get(get_email_templates).post(save_email_templates),
+        )
+        .route(
+            "/storage",
+            get(get_storage_settings).post(save_storage_settings),
         )
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -84,4 +89,25 @@ async fn save_email_templates(
         .await?;
 
     Ok(Json(json!({"details": "Email templates saved."})))
+}
+
+async fn get_storage_settings(state: State<AppState>) -> Result<Json<StorageConfig>, APIError> {
+    let settings = state
+        .settings_repo()
+        .get::<StorageConfig>("storage")
+        .await?
+        .ok_or(APIError::NotFound {
+            resource: "storage".to_string(),
+        })?;
+
+    Ok(Json(settings))
+}
+
+async fn save_storage_settings(
+    state: State<AppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<Value>, APIError> {
+    state.settings_repo().set("storage", &payload).await?;
+
+    Ok(Json(json!({"details": "Storage settings saved."})))
 }

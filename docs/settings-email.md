@@ -5,6 +5,7 @@ Crabbase stores runtime configuration in a key/value settings table (`_settings`
 - **Settings → General** — app name, URL, contact email
 - **Settings → Mail** — SMTP host/port/credentials and sender identity
 - **Settings → Email Templates** — visual editors for the password-reset and registration emails (with preview)
+- **Settings → File storage** — local disk or S3-compatible upload backend (see [Files & uploads](files-and-uploads.md#storage-configuration))
 
 The REST endpoints below are the exact same operations the dashboard performs — useful for automation or scripted provisioning.
 
@@ -15,6 +16,7 @@ All endpoints in this doc require a **superuser** bearer token.
 | `GET` / `POST` | `/api/settings/mail` | SMTP / sender settings |
 | `GET` / `POST` | `/api/settings/app` | App name, URL, contact, registration flag |
 | `GET` / `POST` | `/api/settings/email-templates` | Password-reset + registration email templates |
+| `GET` / `POST` | `/api/settings/storage` | Local disk / S3 file storage settings |
 
 ## Mail settings
 

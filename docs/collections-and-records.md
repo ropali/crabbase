@@ -74,7 +74,7 @@ curl -X POST http://localhost:8989/api/collections \
 | `Url` | `TEXT` | |
 | `Datetime` | `TIMESTAMPTZ` | Returned as RFC-3339 strings |
 | `AutoDatetime` | `TIMESTAMPTZ DEFAULT now()` | Set automatically on insert. Pass as the legacy string `"autodate"` (or `"autodatetime"`) — the plain variant name is not accepted as a string |
-| `File` | `TEXT` | Stores a path/name string only — **no upload endpoint yet** |
+| `File` | `TEXT` | Stores the uploaded record ID or storage key from `/api/collections/{name}/records/upload`. See [Files & uploads](files-and-uploads.md) |
 | `Relation` | `UUID` + FK | Requires `"related_to": "<other-collection-name>"`; target must exist first |
 | `Select` | `TEXT` | |
 | `Json` | `TEXT` | JSON viewer in admin UI |
@@ -89,8 +89,9 @@ Legacy aliases are accepted for compatibility: `text`, `richtext`/`editor`, `int
 | `index` | `false` | Create a btree index on the column |
 | `hidden` | `false` | Mark field hidden |
 | `required` | `false` | Marked as required |
-| `min` / `max` | — | Size constraints |
-| `pattern` | — | Validation pattern |
+| `min` / `max` | — | Size constraints; for `File`, the number of files (see [Files & uploads](files-and-uploads.md#defining-file-columns)) |
+| `pattern` | — | Validation pattern; for `File`, matched against the uploaded file name |
+| `max_size` / `mime_types` | — | `File` only: per-file byte limit and allowed content types |
 | `related_to` | — | Target collection name (for `Relation`) |
 
 ### Built-in columns
@@ -167,6 +168,90 @@ curl -X DELETE http://localhost:8989/api/collections/products/records/<id>
 ```
 
 Pagination defaults: `page=1`, `per_page=20` (clamped to 1–100).
+
+## File Storage & Attachments
+
+Collections support `File` field types for storing file references (images, documents, archives). The file management workflow is integrated with collections. For the full reference — protected downloads, file tokens, storage backends, and client examples — see [Files & uploads](files-and-uploads.md).
+
+### 1. Uploading Files for a Collection
+Upload one or multiple files using multipart form data to `/api/collections/{name}/records/upload` (the only upload endpoint; `POST /api/collections/{name}/files` does not exist):
+```sh
+# Single file upload
+curl -X POST http://localhost:8989/api/collections/articles/records/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'file=@photo.png;type=image/png'
+
+# Multiple files at one go
+curl -X POST http://localhost:8989/api/collections/articles/records/upload \
+  -H "Authorization: Bearer $TOKEN" \
+  -F 'files=@photo1.png;type=image/png' \
+  -F 'files=@photo2.png;type=image/png'
+```
+
+- **Access Rules**: Governed by the collection's `create_rule`. Callers without create permission receive `403 Forbidden`.
+- **Target Collection (`{name}`)**: Must match an existing collection in the database (e.g. `articles`, `users`, `posts`). If the collection does not exist, a `404 Not Found` is returned.
+- **Collection Linkage**: Uploads record the `collection_name` in the `_files` metadata table, allowing multiple files to be tracked and retrieved per collection.
+- **Field-aware uploads**: When a multipart part is named after a `File` column of the collection (e.g. `-F 'cover=@photo.png'`), the column's `max_size` (bytes), `mime_types` (supports wildcards like `image/*` or `*/*`), and `pattern` (regex matched against the original file name, e.g. `\.(png|jpe?g)$`) are enforced. A single-file column (`max` unset or `max: 1`) rejects more than one part for the same field name; a multi-file column (`max > 1` or `min > 1`) accepts up to `max` parts. Parts that do not match a column name are stored without field-level constraints.
+- **Request size limit**: multipart bodies are capped at 100 MB per request.
+- **Response**: the `files` array mirrors the stored `_files` metadata rows:
+  ```json
+  {
+    "files": [
+      {
+        "id": "e97669ba-...",
+        "key": "uploads/.../photo1.png",
+        "backend": "local",
+        "container": "$HOME/crabbase/files/",
+        "originalName": "photo1.png",
+        "contentType": "image/png",
+        "sizeBytes": 10240,
+        "checksum": "9f86d081884c7d65...",
+        "collectionName": "articles",
+        "created": "2026-10-18T15:42:32.888198Z",
+        "updated": "2026-10-18T15:42:32.888198Z"
+      }
+    ]
+  }
+  ```
+  Use the returned `id` (or `key`) when linking files to records.
+
+### 2. Creating or Updating Records with Files
+Use the returned file ID or storage key when creating or updating records:
+```sh
+# Single file
+curl -X POST http://localhost:8989/api/collections/articles/records \
+  -H 'Content-Type: application/json' \
+  -d '{"data": {"title": "My Article", "cover": "e97669ba-..."}}'
+
+# Multiple files (the "photos" field must declare "max": >1, e.g. "max": 10)
+curl -X POST http://localhost:8989/api/collections/articles/records \
+  -H 'Content-Type: application/json' \
+  -d '{"data": {"title": "Gallery Post", "photos": ["e97669ba-...", "f1284abc-..."]}}'
+```
+
+Single-file columns (`max` unset or `max: 1`) accept only a string (an array is rejected with `400`), while multi-file columns (`max > 1` or `min > 1`) require an array of file IDs/keys and enforce `min`/`max` item counts on save. In API responses, each stored ID/key is replaced by its `_files` record (`id`, `key`, `originalName`, `contentType`, `sizeBytes`, …); multi-file fields return an array of such records. IDs/keys without a metadata row are left as-is, and removing an item on update deletes the corresponding file.
+
+### 3. Automatic Cleanup
+- **Update**: If a file field is replaced with a new file or cleared, the old file record and its storage bytes are automatically purged from the backend.
+- **Delete**: When a record is deleted, all files attached to its file fields are automatically removed from disk/S3 and the `_files` metadata table.
+
+### 4. Listing Files in a Collection
+Retrieve all files belonging to a collection:
+```sh
+curl http://localhost:8989/api/collections/articles/files
+```
+Governed by the collection's `list_rule`.
+
+### 5. Downloading / Viewing Collection Files
+```sh
+curl http://localhost:8989/api/collections/articles/files/<file_id>
+```
+Governed by the collection's `view_rule`. Files can also be fetched from
+`/api/files/<file_id>`, where the file's own collection supplies the rule. For
+non-public collections, exchange a Bearer token for a short-lived file token at
+`POST /api/files/token` and append `?token=...`; see
+[Protected files](files-and-uploads.md#protected-files). Add `?download=1` to
+force an attachment.
 
 ## Dynamic record filtering (`?filter`)
 

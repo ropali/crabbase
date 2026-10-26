@@ -6,8 +6,11 @@ use axum::{
 };
 use serde_json::{Value, json};
 
-use crate::{middleware::auth::extract_auth_context, state::AppState};
-use crate::{middleware::auth::require_admin, routes::records};
+use crate::{
+    middleware::auth::{extract_auth_context, require_admin},
+    routes::records,
+    state::AppState,
+};
 use crabbase_core::{
     errors::APIError,
     models::{
@@ -20,6 +23,9 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
     let records_router = records::get_routes(state.clone())
         .layer(from_fn_with_state(state.clone(), extract_auth_context));
 
+    let file_routes = records::get_file_routes(state.clone())
+        .layer(from_fn_with_state(state.clone(), extract_auth_context));
+
     // Collection management: strictly admin only
     let collection_admin = Router::new()
         .route("/", get(list).post(create))
@@ -28,7 +34,9 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
         .layer(from_fn_with_state(state.clone(), require_admin));
 
     Router::new()
-        .nest("/{name}/records", records_router)
+        .nest("/{name}/records", records_router.clone())
+        .nest("/{name}/record", records_router)
+        .merge(file_routes)
         .merge(collection_admin)
         .with_state(state)
 }

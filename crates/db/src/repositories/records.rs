@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use serde_json::Value;
 use sqlx::{Pool, Postgres, Row};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
@@ -21,7 +23,14 @@ use crabbase_core::{
     utils::string_utils::{quote_ident, random_str},
 };
 
+use crate::repositories::files::{FileResponse};
 use bcrypt;
+
+/// Trait implemented by file storage services to delete files on disk and in database.
+#[async_trait::async_trait]
+pub trait FileDeleter: Send + Sync {
+    async fn delete_file(&self, id_or_key: &str) -> Result<(), String>;
+}
 
 pub fn coerce_field_value(
     fields: &[Column],
@@ -57,9 +66,10 @@ pub fn coerce_field_value(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RecordsRepository {
     db: Pool<Postgres>,
+    file_deleter: Option<Arc<dyn FileDeleter>>,
 }
 
 pub struct CompiledRule {
@@ -69,7 +79,15 @@ pub struct CompiledRule {
 
 impl RecordsRepository {
     pub fn new(db: Pool<Postgres>) -> Self {
-        Self { db }
+        Self {
+            db,
+            file_deleter: None,
+        }
+    }
+
+    pub fn with_file_deleter(mut self, deleter: Arc<dyn FileDeleter>) -> Self {
+        self.file_deleter = Some(deleter);
+        self
     }
 
     // Compiles a collection rule expression into a parameterized SQL WHERE clause.
@@ -115,6 +133,282 @@ impl RecordsRepository {
                     sql_clause,
                     bindings: compiler.bindings,
                 }))
+            }
+        }
+    }
+
+    /// Authorizes and prepares file upload for a collection.
+    pub async fn authorize_upload(
+        &self,
+        collection_name: &str,
+        sql_context: &SqlContext,
+    ) -> Result<Collection, RepositoryError> {
+        let col_repo = CollectionRepository::new(self.db.clone());
+        let col = col_repo.get_by_name(collection_name).await?;
+        self.check_upload_permission(&col.create_rule, sql_context)
+            .await?;
+        Ok(col)
+    }
+
+    /// Authorizes and prepares file viewing/downloading for a collection.
+    pub async fn authorize_view(
+        &self,
+        collection_name: &str,
+        sql_context: &SqlContext,
+    ) -> Result<Collection, RepositoryError> {
+        let col_repo = CollectionRepository::new(self.db.clone());
+        let col = col_repo.get_by_name(collection_name).await?;
+        self.check_view_permission(&col.view_rule, sql_context)
+            .await?;
+        Ok(col)
+    }
+
+    /// Authorizes and prepares listing files for a collection.
+    pub async fn authorize_list(
+        &self,
+        collection_name: &str,
+        sql_context: &SqlContext,
+    ) -> Result<Collection, RepositoryError> {
+        let col_repo = CollectionRepository::new(self.db.clone());
+        let col = col_repo.get_by_name(collection_name).await?;
+        self.check_list_permission(&col.list_rule, sql_context)
+            .await?;
+        Ok(col)
+    }
+
+    /// Checks if the caller has permission to list files for this collection
+    /// based on the collection's list_rule directly.
+    pub async fn check_list_permission(
+        &self,
+        list_rule: &Option<String>,
+        sql_context: &SqlContext,
+    ) -> Result<(), RepositoryError> {
+        self.check_rule_permission(list_rule, sql_context).await
+    }
+
+    /// Checks if the caller has permission to upload files for this collection
+    /// based on the collection's create_rule directly.
+    pub async fn check_upload_permission(
+        &self,
+        create_rule: &Option<String>,
+        sql_context: &SqlContext,
+    ) -> Result<(), RepositoryError> {
+        self.check_rule_permission(create_rule, sql_context).await
+    }
+
+    /// Checks if the caller has permission to view/download files for this collection
+    /// based on the collection's view_rule directly.
+    pub async fn check_view_permission(
+        &self,
+        view_rule: &Option<String>,
+        sql_context: &SqlContext,
+    ) -> Result<(), RepositoryError> {
+        self.check_rule_permission(view_rule, sql_context).await
+    }
+
+    /// Evaluates an access rule directly against the caller's SQL context.
+    pub async fn check_rule_permission(
+        &self,
+        rule: &Option<String>,
+        sql_context: &SqlContext,
+    ) -> Result<(), RepositoryError> {
+        if sql_context.is_admin() {
+            return Ok(());
+        }
+
+        match Self::compile_rule(rule, sql_context, 0)? {
+            None => Ok(()),
+            Some(compiled) => {
+                let check_sql = format!("SELECT ({})", compiled.sql_clause);
+                let mut query = sqlx::query_scalar::<_, bool>(&check_sql);
+                for b in &compiled.bindings {
+                    query = query.bind(b);
+                }
+                let allowed: bool = query.fetch_one(&self.db).await.unwrap_or(false);
+                if allowed {
+                    Ok(())
+                } else {
+                    Err(RepositoryError::Forbidden(
+                        "Only admin can perform this action".to_string(),
+                    ))
+                }
+            }
+        }
+    }
+
+    /// Extracts all file keys/IDs from record data for fields of type DataTypes::File.
+    pub fn extract_file_keys(
+        col: &Collection,
+        data: &serde_json::Map<String, Value>,
+    ) -> Vec<String> {
+        let mut keys = Vec::new();
+        for field in col.fields.iter().filter(|f| f.data_type == DataTypes::File) {
+            if let Some(val) = data.get(&field.name) {
+                match val {
+                    Value::String(s) => {
+                        let trimmed = s.trim();
+                        if !trimmed.is_empty() {
+                            keys.push(trimmed.to_string());
+                        }
+                    }
+                    Value::Array(arr) => {
+                        for item in arr {
+                            if let Some(s) = item.as_str() {
+                                let trimmed = s.trim();
+                                if !trimmed.is_empty() {
+                                    keys.push(trimmed.to_string());
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        keys
+    }
+
+    /// Determines which file keys/IDs are orphaned (replaced or cleared) when updating record data.
+    pub fn extract_replaced_file_keys(
+        col: &Collection,
+        old_data: &serde_json::Map<String, Value>,
+        new_data: &serde_json::Map<String, Value>,
+    ) -> Vec<String> {
+        let mut files_to_delete = Vec::new();
+        for field in col.fields.iter().filter(|f| f.data_type == DataTypes::File) {
+            if new_data.contains_key(&field.name) {
+                let old_val = old_data.get(&field.name);
+                let new_val = new_data.get(&field.name);
+
+                match (old_val, new_val) {
+                    (Some(Value::String(old_key)), Some(Value::String(new_key))) => {
+                        let old_trimmed = old_key.trim();
+                        let new_trimmed = new_key.trim();
+                        if !old_trimmed.is_empty() && old_trimmed != new_trimmed {
+                            files_to_delete.push(old_trimmed.to_string());
+                        }
+                    }
+                    (Some(Value::String(old_key)), Some(Value::Null)) => {
+                        let old_trimmed = old_key.trim();
+                        if !old_trimmed.is_empty() {
+                            files_to_delete.push(old_trimmed.to_string());
+                        }
+                    }
+                    (Some(Value::Array(old_arr)), Some(Value::Array(new_arr))) => {
+                        for old_item in old_arr {
+                            if let Some(old_str) = old_item.as_str() {
+                                let old_trimmed = old_str.trim();
+                                if !old_trimmed.is_empty()
+                                    && !new_arr.iter().any(|n| n.as_str() == Some(old_str))
+                                {
+                                    files_to_delete.push(old_trimmed.to_string());
+                                }
+                            }
+                        }
+                    }
+                    (Some(Value::Array(old_arr)), Some(Value::Null)) => {
+                        for old_item in old_arr {
+                            if let Some(old_str) = old_item.as_str() {
+                                let old_trimmed = old_str.trim();
+                                if !old_trimmed.is_empty() {
+                                    files_to_delete.push(old_trimmed.to_string());
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        files_to_delete
+    }
+
+    /// Replaces each file field's stored id/key in-place with its `_files`
+    /// record (an array of records for multi-file fields). Ids/keys with no
+    /// metadata row are left as-is so the value is never silently lost.
+    pub async fn enrich_file_fields(&self, records: &mut [Record], col: &Collection) {
+        let file_fields: Vec<&Column> = col
+            .fields
+            .iter()
+            .filter(|f| f.data_type == DataTypes::File)
+            .collect();
+
+        if file_fields.is_empty() || records.is_empty() {
+            return;
+        }
+
+        let mut file_ids = Vec::new();
+        for record in records.iter() {
+            for field in &file_fields {
+                match record.data.get(&field.name) {
+                    Some(Value::String(s)) if !s.trim().is_empty() => {
+                        file_ids.push(s.trim().to_string())
+                    }
+                    Some(Value::Array(arr)) => file_ids.extend(
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(str::to_string),
+                    ),
+                    _ => {}
+                }
+            }
+        }
+
+        if file_ids.is_empty() {
+            return;
+        }
+
+        let uuids: Vec<Uuid> = file_ids
+            .iter()
+            .filter_map(|s| Uuid::parse_str(s).ok())
+            .collect();
+
+        // Records may store either the file id or its storage key.
+        let Ok(rows) = sqlx::query_as::<_, FileResponse>(
+            "SELECT * FROM _files WHERE id = ANY($1) OR key = ANY($2)",
+        )
+        .bind(&uuids)
+        .bind(&file_ids)
+        .fetch_all(&self.db)
+        .await
+        else {
+            warn!("failed to load file metadata; leaving file references unexpanded");
+            return;
+        };
+
+        let meta_map: HashMap<&str, &FileResponse> = rows
+            .iter()
+            .flat_map(|r| [(r.id.as_str(), r), (r.original_name.as_str(), r)])
+            .collect();
+
+        let to_value = |id: &str| -> Option<Value> {
+            meta_map.get(id).and_then(|r| serde_json::to_value(r).ok())
+        };
+
+        for record in records.iter_mut() {
+            for field in &file_fields {
+                match record.data.get(&field.name).cloned() {
+                    Some(Value::String(s)) => {
+                        if let Some(file) = to_value(s.trim()) {
+                            record.data.insert(field.name.clone(), file);
+                        }
+                    }
+                    Some(Value::Array(arr)) => {
+                        let expanded: Vec<Value> = arr
+                            .iter()
+                            .map(|item| match item.as_str() {
+                                Some(s) => to_value(s.trim()).unwrap_or_else(|| item.clone()),
+                                None => item.clone(),
+                            })
+                            .collect();
+                        record
+                            .data
+                            .insert(field.name.clone(), Value::Array(expanded));
+                    }
+                    _ => {}
+                }
             }
         }
     }
@@ -174,7 +468,7 @@ impl RecordsRepository {
 
             for record in records.iter() {
                 if let Some(val) = record.data.get(&col.name) {
-                    if col.multiple {
+                    if col.is_multiple() {
                         if let Some(arr) = val.as_array() {
                             for item in arr {
                                 if let Some(id_str) = item.as_str() {
@@ -238,7 +532,7 @@ impl RecordsRepository {
             // Attach expanded records into record.expand["<col_name>"]
             for record in records.iter_mut() {
                 if let Some(val) = record.data.get(&col.name) {
-                    if col.multiple {
+                    if col.is_multiple() {
                         if let Some(arr) = val.as_array() {
                             let related_records: Vec<Value> = arr
                                 .iter()
@@ -436,6 +730,8 @@ impl RecordsRepository {
         self.expand_records(&mut items, &col, params.expand.as_deref(), &sql_context)
             .await?;
 
+        self.enrich_file_fields(&mut items, &col).await;
+
         for item in &mut items {
             Self::sanitize_record(item, &col, &sql_context);
         }
@@ -447,6 +743,22 @@ impl RecordsRepository {
             per_page,
             per_page_camel: per_page,
         })
+    }
+
+    /// Fetches a record exactly as stored, without rule checks, expansion or
+    /// file-field enrichment. Used internally where raw ids/keys are needed.
+    async fn get_record_raw(&self, collection: &str, id: &str) -> Result<Record, RepositoryError> {
+        let id_uuid = uuid::Uuid::parse_str(id).ok();
+        let sql = format!("SELECT * FROM {} WHERE id = $1", quote_ident(collection));
+        let mut query = sqlx::query(&sql);
+        query = if let Some(uuid) = id_uuid {
+            query.bind(uuid)
+        } else {
+            query.bind(id.to_string())
+        };
+
+        let row = query.fetch_one(&self.db).await?;
+        Ok(Record::from_row(&row)?)
     }
 
     pub async fn get_record(
@@ -490,6 +802,9 @@ impl RecordsRepository {
         self.expand_records(std::slice::from_mut(&mut record), &col, expand, sql_context)
             .await?;
 
+        self.enrich_file_fields(std::slice::from_mut(&mut record), &col)
+            .await;
+
         Self::sanitize_record(&mut record, &col, sql_context);
 
         Ok(record)
@@ -523,19 +838,8 @@ impl RecordsRepository {
             if sql_context.data.is_none() {
                 sql_context.data = Some(serde_json::Value::Object(obj.clone()));
             }
-            if let Some(compiled) = Self::compile_rule(&col.create_rule, &sql_context, 0)? {
-                let check_sql = format!("SELECT ({})", compiled.sql_clause);
-                let mut query = sqlx::query_scalar::<_, bool>(&check_sql);
-                for b in &compiled.bindings {
-                    query = query.bind(b);
-                }
-                let allowed: bool = query.fetch_one(&self.db).await.unwrap_or(false);
-                if !allowed {
-                    return Err(RepositoryError::Forbidden(
-                        "Only admin can perform this action".to_string(),
-                    ));
-                }
-            }
+            self.check_upload_permission(&col.create_rule, &sql_context)
+                .await?;
         }
 
         if col.collection_type.eq_ignore_ascii_case("auth") {
@@ -639,6 +943,8 @@ impl RecordsRepository {
                 }
 
                 Self::sanitize_record(&mut record, &col, &create_ctx);
+                self.enrich_file_fields(std::slice::from_mut(&mut record), &col)
+                    .await;
 
                 Ok(record)
             }
@@ -679,21 +985,30 @@ impl RecordsRepository {
         }
 
         // Validate record existence and return NotFound before attempting update.
-        // We use an internal admin context to bypass `view_rule`. Updates are governed
-        // by `update_rule`, so fetching the existing row internally for validation
-        // and password hash comparison should not be blocked if `view_rule` is locked down.
-        let existing_record = self
-            .get_record(collection, id, None, &SqlContext::admin())
-            .await?;
+        // Raw data is required so replaced file ids/keys are still plain strings.
+        let existing_record = self.get_record_raw(collection, id).await?;
+
+        // Determine if any File fields are being replaced or cleared
+        let files_to_delete = if self.file_deleter.is_some() {
+            Self::extract_replaced_file_keys(&col, &existing_record.data, &payload.data)
+        } else {
+            Vec::new()
+        };
 
         if col.collection_type.eq_ignore_ascii_case("auth") {
             if let Some(serde_json::Value::String(plain_pw)) = payload.data.get("password") {
-                let existing_pw_hash = existing_record
-                    .data
-                    .get("password")
-                    .and_then(|v| v.as_str());
+                let existing_pw_row: Option<(Option<String>,)> = sqlx::query_as(&format!(
+                    "SELECT password FROM {} WHERE id = $1::uuid",
+                    quote_ident(collection)
+                ))
+                .bind(id)
+                .fetch_optional(&self.db)
+                .await
+                .map_err(RepositoryError::from)?;
 
-                if existing_pw_hash != Some(plain_pw) {
+                let existing_pw_hash = existing_pw_row.and_then(|r| r.0);
+
+                if existing_pw_hash.as_deref() != Some(plain_pw.as_str()) {
                     let hashed_pw = bcrypt::hash(plain_pw, bcrypt::DEFAULT_COST).map_err(|e| {
                         RepositoryError::OtherError(format!("Failed to hash password: {e}"))
                     })?;
@@ -738,6 +1053,13 @@ impl RecordsRepository {
             return Err(RepositoryError::NotFound(format!("record {id}")));
         }
 
+        // Clean up orphaned files if file deleter is configured
+        if let Some(deleter) = &self.file_deleter {
+            for key in files_to_delete {
+                let _ = deleter.delete_file(&key).await;
+            }
+        }
+
         // Fetch and return the updated record using trusted internal admin context
         // so the return payload is not blocked if `view_rule` is restricted to admins.
         let mut updated_rec = self
@@ -762,6 +1084,14 @@ impl RecordsRepository {
         }
 
         let col = col_repo.get_by_name(collection).await?;
+
+        // If collection has File fields and file_deleter is set, fetch record before deleting
+        let has_file_fields = col.fields.iter().any(|f| f.data_type == DataTypes::File);
+        let existing_record = if has_file_fields && self.file_deleter.is_some() {
+            self.get_record_raw(collection, id).await.ok()
+        } else {
+            None
+        };
 
         // Enforce delete_rule
         let rule_clause = Self::compile_rule(&col.delete_rule, sql_context, 1)?;
@@ -789,6 +1119,14 @@ impl RecordsRepository {
         let res = query.execute(&self.db).await?;
         if res.rows_affected() == 0 {
             return Err(RepositoryError::NotFound(format!("record {id}")));
+        }
+
+        // Clean up associated files if file deleter is configured
+        if let (Some(existing), Some(deleter)) = (existing_record, &self.file_deleter) {
+            let files_to_delete = Self::extract_file_keys(&col, &existing.data);
+            for key in files_to_delete {
+                let _ = deleter.delete_file(&key).await;
+            }
         }
 
         Ok(true)
@@ -869,6 +1207,7 @@ mod tests {
             name: "articles".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -902,6 +1241,7 @@ mod tests {
             name: "items".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -936,6 +1276,7 @@ mod tests {
             name: "items".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -987,6 +1328,7 @@ mod tests {
             name: "users".into(),
             columns,
             collection_type: Some("auth".to_string()),
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -1006,13 +1348,13 @@ mod tests {
             .await
             .unwrap();
 
-        let first_pw_hash = created
-            .data
-            .get("password")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+        // Sensitive fields like password are stripped from the Record response, verify directly from DB
+        let row = sqlx::query("SELECT password FROM users WHERE id = $1::uuid")
+            .bind(&created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let first_pw_hash: String = row.get("password");
         assert_ne!(first_pw_hash, "mysecretpw");
         assert!(bcrypt::verify("mysecretpw", &first_pw_hash).unwrap());
 
@@ -1023,18 +1365,17 @@ mod tests {
             Value::String("newsecretpw".to_string()),
         );
         let upd = UpdateRecordRequest { data: upd_map };
-        let updated = repo
+        let _updated = repo
             .update_record("users", &created.id.to_string(), upd, &SqlContext::admin())
             .await
             .unwrap();
 
-        let second_pw_hash = updated
-            .data
-            .get("password")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+        let row = sqlx::query("SELECT password FROM users WHERE id = $1::uuid")
+            .bind(&created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let second_pw_hash: String = row.get("password");
         assert_ne!(second_pw_hash, "newsecretpw");
         assert_ne!(second_pw_hash, first_pw_hash);
         assert!(bcrypt::verify("newsecretpw", &second_pw_hash).unwrap());
@@ -1046,7 +1387,7 @@ mod tests {
             Value::String(second_pw_hash.clone()),
         );
         let upd_same = UpdateRecordRequest { data: upd_same_map };
-        let updated_same = repo
+        let _updated_same = repo
             .update_record(
                 "users",
                 &created.id.to_string(),
@@ -1056,13 +1397,12 @@ mod tests {
             .await
             .unwrap();
 
-        let third_pw_hash = updated_same
-            .data
-            .get("password")
-            .unwrap()
-            .as_str()
-            .unwrap()
-            .to_string();
+        let row = sqlx::query("SELECT password FROM users WHERE id = $1::uuid")
+            .bind(&created.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let third_pw_hash: String = row.get("password");
         assert_eq!(third_pw_hash, second_pw_hash);
         assert!(bcrypt::verify("newsecretpw", &third_pw_hash).unwrap());
     }
@@ -1091,6 +1431,7 @@ mod tests {
             name: "blogs".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 
@@ -1149,6 +1490,7 @@ mod tests {
             name: "trash".into(),
             columns: columns.clone(),
             collection_type: None,
+            ..Default::default()
         };
         col_repo.create(create_col).await.unwrap();
 

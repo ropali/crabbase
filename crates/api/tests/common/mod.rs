@@ -153,6 +153,119 @@ impl TestApp {
             .await
     }
 
+    /// POST multipart/form-data body
+    pub async fn post_multipart(
+        &self,
+        path: &str,
+        file_name: &str,
+        content_type: &str,
+        bytes: &[u8],
+        token: Option<&str>,
+    ) -> Response<axum::body::Body> {
+        let boundary = "---------------------------974767299852498929531610575";
+        let mut body = Vec::new();
+        body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+        body.extend_from_slice(
+            format!(
+                "Content-Disposition: form-data; name=\"file\"; filename=\"{file_name}\"\r\nContent-Type: {content_type}\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(bytes);
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+
+        let uri = safe_uri(path);
+        let mut b = Request::builder().method(Method::POST).uri(uri).header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        );
+        if let Some(t) = token {
+            b = b.header("Authorization", format!("Bearer {t}"));
+        }
+        self.request(b.body(Body::from(body)).unwrap()).await
+    }
+
+    /// POST multipart/form-data body with multiple files
+    pub async fn post_multipart_files(
+        &self,
+        path: &str,
+        files: &[(&str, &str, &[u8])],
+        token: Option<&str>,
+    ) -> Response<axum::body::Body> {
+        let boundary = "---------------------------974767299852498929531610575";
+        let mut body = Vec::new();
+        for (file_name, content_type, bytes) in files {
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"files\"; filename=\"{file_name}\"\r\nContent-Type: {content_type}\r\n\r\n"
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(bytes);
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+        let uri = safe_uri(path);
+        let mut b = Request::builder().method(Method::POST).uri(uri).header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        );
+        if let Some(t) = token {
+            b = b.header("Authorization", format!("Bearer {t}"));
+        }
+        self.request(b.body(Body::from(body)).unwrap()).await
+    }
+
+    /// POST multipart/form-data with a custom part name (field-aware uploads).
+    pub async fn post_multipart_as(
+        &self,
+        path: &str,
+        part_name: &str,
+        file_name: &str,
+        content_type: &str,
+        bytes: &[u8],
+        token: Option<&str>,
+    ) -> Response<axum::body::Body> {
+        self.post_multipart_many_as(path, part_name, &[(file_name, content_type, bytes)], token)
+            .await
+    }
+
+    /// POST multipart/form-data with several files under one custom part name.
+    pub async fn post_multipart_many_as(
+        &self,
+        path: &str,
+        part_name: &str,
+        files: &[(&str, &str, &[u8])],
+        token: Option<&str>,
+    ) -> Response<axum::body::Body> {
+        let boundary = "---------------------------974767299852498929531610575";
+        let mut body = Vec::new();
+        for (file_name, content_type, bytes) in files {
+            body.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+            body.extend_from_slice(
+                format!(
+                    "Content-Disposition: form-data; name=\"{part_name}\"; filename=\"{file_name}\"\r\nContent-Type: {content_type}\r\n\r\n"
+                )
+                .as_bytes(),
+            );
+            body.extend_from_slice(bytes);
+            body.extend_from_slice(b"\r\n");
+        }
+        body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+        let uri = safe_uri(path);
+        let mut b = Request::builder().method(Method::POST).uri(uri).header(
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        );
+        if let Some(t) = token {
+            b = b.header("Authorization", format!("Bearer {t}"));
+        }
+        self.request(b.body(Body::from(body)).unwrap()).await
+    }
+
     /// PATCH JSON body with Bearer token
     pub async fn patch_json(
         &self,
@@ -368,4 +481,12 @@ pub fn number_col(name: &str) -> Value {
 
 pub fn bool_col(name: &str) -> Value {
     json!({ "name": name, "type": "bool", "index": false })
+}
+
+pub fn file_col(name: &str) -> Value {
+    json!({ "name": name, "type": "file", "index": false })
+}
+
+pub fn file_col_multi(name: &str) -> Value {
+    json!({ "name": name, "type": "file", "index": false, "max": 10 })
 }

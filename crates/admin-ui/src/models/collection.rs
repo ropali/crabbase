@@ -8,8 +8,6 @@ pub struct Field {
     pub index: bool,
     pub related_to: Option<String>,
     #[serde(default)]
-    pub multiple: bool,
-    #[serde(default)]
     pub required: bool,
     #[serde(default)]
     pub hidden: bool,
@@ -21,6 +19,19 @@ pub struct Field {
     pub max: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pattern: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_size: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_types: Option<Vec<String>>,
+}
+
+impl Field {
+    /// File and Relation fields hold an array when their min/max constraints
+    /// describe a range above one (`max > 1` or `min > 1`).
+    pub fn is_multiple(&self) -> bool {
+        let above_one = |v: Option<usize>| v.map(|n| n > 1).unwrap_or(false);
+        above_one(self.min) || above_one(self.max)
+    }
 }
 
 fn deserialize_data_type<'de, D>(deserializer: D) -> Result<String, D::Error>

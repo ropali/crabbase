@@ -13,7 +13,7 @@ What that means in practice:
 
 You create "collections" (real Postgres tables) through the admin dashboard or the collections API, and Crabbase immediately exposes production-style CRUD endpoints, JWT authentication per collection, password-reset flows with OTP over email, and a settings system — so your frontend can talk to a complete backend without you writing a single custom route.
 
-> **Status: evolving / pre-1.0.** Core features (collections, records, auth, settings, email) work; file storage, realtime, and hooks are not implemented yet (see [Roadmap & limitations](#roadmap--limitations)). Expect breaking changes between versions.
+> **Status: evolving / pre-1.0.** Core features (collections, records, auth, settings, email, file uploads) work; realtime and hooks are not implemented yet (see [Roadmap & limitations](#roadmap--limitations)). Expect breaking changes between versions.
 
 ---
 
@@ -25,7 +25,8 @@ You create "collections" (real Postgres tables) through the admin dashboard or t
 - **Instant CRUD REST API** — every collection automatically gets list/create/read/update/delete endpoints at `/api/collections/{name}/records`.
 - **Dynamic record filtering (`?filter`)** — PocketBase-compatible client filtering syntax (`status='active' && price < 100`, `title ~ 'pocket'`, etc.) compiled to parameterized SQL.
 - **Relation expansion (`?expand`)** — batch-expand foreign-key relations inline across list and single-record endpoints (e.g. `?expand=author,category`) in 1 query per relation without N+1 queries.
-- **Rich field types** — text, rich text, number, bool, email, URL, datetime, auto-datetime, JSON, select, file (path), geo point, and relations between collections.
+- **File uploads & storage** — `File` columns with per-column size/MIME/name constraints, multipart uploads, local-disk or S3-compatible storage, and protected downloads via short-lived file tokens.
+- **Rich field types** — text, rich text, number, bool, email, URL, datetime, auto-datetime, JSON, select, file, geo point, and relations between collections.
 - **Per-collection auth** — mark a collection as an `auth` collection and its records can log in. Passwords are bcrypt-hashed and JWT secrets are generated automatically.
 - **JWT sessions with rotation** — access + refresh tokens, refresh-token rotation with reuse detection and family revocation.
 - **Password reset via email OTP** — templated emails rendered from configurable templates (`{{otp}}`, `{{link}}`, `{{app_name}}`, ...).
@@ -42,7 +43,7 @@ crates/
   db/                Repositories: dynamic collections, records, auth, settings
   api/               Axum REST router (all HTTP endpoints)
   auth/              JWT service, refresh-token rotation, OTP/password reset
-  files/             (placeholder) File storage
+  files/             File storage (local disk / S3-compatible)
   realtime/          (placeholder) WebSockets / sync
   hooks/             (placeholder) Background hooks
   admin-ui/          Yew admin dashboard, embedded into the binary
@@ -243,6 +244,7 @@ docker compose down
 | [Getting started](docs/getting-started.md) | Installation, configuration, env vars, running, Makefile targets |
 | [Collections & records](docs/collections-and-records.md) | Field types, creating/updating schemas, CRUD endpoints, dynamic `?filter`, relation `?expand`, API rules |
 | [Authentication](docs/authentication.md) | Auth collections, login/refresh/logout, password reset, superusers |
+| [Files & uploads](docs/files-and-uploads.md) | File columns, multipart uploads, attaching files to records, protected downloads/file tokens, storage backends |
 | [Settings & email](docs/settings-email.md) | App/mail settings, SMTP setup, email templates |
 | **Interactive API docs** | Run the server → `GET /api/docs` (Swagger UI), spec at `/api/openapi.json` |
 
@@ -295,11 +297,11 @@ Implemented and working:
 - Records CRUD with pagination, client `?filter` dynamic query evaluation, batch relation expansion (`?expand`), and `list_rule` / `view_rule` enforcement
 - Auth collections, JWT login/refresh/logout, password reset with emailed OTP
 - Superusers, settings APIs, email templates, admin dashboard (with real-time records filter search)
+- File uploads/storage with per-column constraints, local disk or S3-compatible backends, automatic cleanup, and protected downloads via file tokens
 - Swagger UI / OpenAPI
 
 Not yet (placeholders exist in the codebase):
 
-- **File uploads/storage** — the `File` column type stores a path string only; there is no upload endpoint.
 - **Realtime** — no websockets/SSE subscriptions.
 - **Hooks** — no background triggers.
 - **Public registration / email verification endpoints** — create users by POSTing records to an auth collection; the `allowPublicUserRegistration` setting exists but is not enforced yet.
