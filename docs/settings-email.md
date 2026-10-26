@@ -50,7 +50,7 @@ TLS behavior: implicit TLS is used on port 465; otherwise STARTTLS. Once saved, 
 ```json
 {
   "appName": "Crabbase",
-  "appUrl": "http://localhost:8080",
+  "appUrl": "http://localhost:9898",
   "contactEmail": "admin@crabbase.local",
   "allowPublicUserRegistration": false
 }
@@ -95,4 +95,4 @@ Example snippet:
 
 Save via `POST /api/settings/email-templates` with the full `EmailTemplates` payload you got from the `GET`.
 
-The admin dashboard provides editors for all of these under **Settings → General / Mail / Email Templates**.
+The admin dashboard provides editors for all of these under **Settings → General / Mail / File storage / Email Templates**.

@@ -365,7 +365,7 @@ allowed to view. It is an identity token, not a per-file capability.
 
 - Default lifetime: **180 seconds**.
 - Reuse it until it expires; request a new one when a download returns `401`.
-- Changing the user's password or token key invalidates outstanding file tokens.
+- Changing the user's `token_key` (or resetting the password, which rotates it) invalidates outstanding file tokens.
 - A file token only authenticates file downloads. It cannot call records,
   settings, or admin endpoints.
 - An expired or invalid token returns `401`; a valid token whose user fails the

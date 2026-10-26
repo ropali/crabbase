@@ -70,8 +70,7 @@
         "operationId": "listCollections",
         "security": [
           {
-            "bearerAuth": [],
-            "requireAdmin": []
+            "bearerAuth": []
           }
         ],
         "parameters": [
@@ -136,8 +135,7 @@
         "operationId": "createCollection",
         "security": [
           {
-            "bearerAuth": [],
-            "requireAdmin": []
+            "bearerAuth": []
           }
         ],
         "requestBody": {
@@ -274,8 +272,7 @@
         "operationId": "getCollection",
         "security": [
           {
-            "bearerAuth": [],
-            "requireAdmin": []
+            "bearerAuth": []
           }
         ],
         "parameters": [
@@ -425,8 +422,7 @@
         "operationId": "deleteCollection",
         "security": [
           {
-            "bearerAuth": [],
-            "requireAdmin": []
+            "bearerAuth": []
           }
         ],
         "parameters": [
@@ -477,8 +473,7 @@
         "operationId": "truncateCollection",
         "security": [
           {
-            "bearerAuth": [],
-            "requireAdmin": []
+            "bearerAuth": []
           }
         ],
         "parameters": [
@@ -1989,6 +1984,56 @@
         }
       }
     },
+    "/files/token": {
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "summary": "Issue a short-lived file token",
+        "operationId": "issueFileToken",
+        "description": "Exchanges a bearer access token for a short-lived (180s) token that can be passed as ?token=... when downloading protected files.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File token issued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "token",
+                    "expiresIn"
+                  ],
+                  "properties": {
+                    "token": {
+                      "type": "string"
+                    },
+                    "expiresIn": {
+                      "type": "integer",
+                      "example": 180
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - valid access token required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/files/{path}": {
       "get": {
         "tags": [
@@ -2006,6 +2051,30 @@
             "description": "Storage path of the file (e.g. uploads/uuid/file.png)",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "description": "Short-lived file token from POST /files/token. Used when no Bearer token is sent.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "description": "Set to 1/true to force an attachment download; otherwise the file is served inline.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1",
+                "true",
+                "TRUE",
+                "yes"
+              ]
             }
           }
         ],
@@ -2040,6 +2109,26 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Unauthorized - file is protected by the owning collection's view_rule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden - view_rule denies access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
           }
         }
       },
@@ -2052,8 +2141,7 @@
         "description": "Deletes a stored file by its storage path. Admin-only: requires a bearer token for a _superusers account.",
         "security": [
           {
-            "bearerAuth": [],
-            "requireAdmin": []
+            "bearerAuth": []
           }
         ],
         "parameters": [
@@ -2121,12 +2209,6 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
-      },
-      "requireAdmin": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-Require-Admin",
-        "description": "Requires admin privileges to access this endpoint"
       }
     },
     "schemas": {
@@ -2275,6 +2357,31 @@
             "items": {
               "$ref": "#/components/schemas/Column"
             }
+          },
+          "list_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rule for listing records in this collection"
+          },
+          "view_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rule for viewing individual records in this collection"
+          },
+          "create_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rule for creating records in this collection"
+          },
+          "update_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rule for updating records in this collection"
+          },
+          "delete_rule": {
+            "type": "string",
+            "nullable": true,
+            "description": "Rule for deleting records in this collection"
           }
         }
       },

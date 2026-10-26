@@ -4,7 +4,7 @@ Collections are the heart of Crabbase. A collection is a real PostgreSQL table t
 
 ## The easy way: the admin dashboard
 
-Everything in this document can be done from the admin dashboard (`crabbase admin`, default `http://localhost:8181`) — no curl required:
+Everything in this document can be done from the admin dashboard (`crabbase admin`, default `http://localhost:9898`) — no curl required:
 
 | Task | Where in the UI |
 |---|---|
@@ -17,7 +17,7 @@ Everything in this document can be done from the admin dashboard (`crabbase admi
 
 The dashboard talks to the exact same REST endpoints documented below — use whichever fits your workflow (clicks for day-to-day work, API for automation/CI).
 
-Collection management requires a **superuser** login (dashboard) or superuser JWT (API). Record endpoints are public by default unless restricted with an API rule.
+Collection management requires a **superuser** login (dashboard) or superuser JWT (API). Record access is controlled per operation by API rules: with no rule set, only superusers are allowed. Set list/view to `""` (public) after creating a collection if you want unauthenticated reads.
 
 ## Endpoints
 
@@ -30,12 +30,12 @@ Collection management requires a **superuser** login (dashboard) or superuser JW
 | `DELETE` | `/api/collections/{name}` | superuser | Delete collection **and drop its table** |
 | `POST` | `/api/collections/{name}/truncate` | superuser | Delete all records |
 | `GET` | `/api/collections/{name}/records?page=1&per_page=20&filter=&expand=` | rules apply | List records (with pagination, dynamic filtering, & relation expansion) |
-| `POST` | `/api/collections/{name}/records` | open* | Create record |
+| `POST` | `/api/collections/{name}/records` | rules apply* | Create record |
 | `GET` | `/api/collections/{name}/records/{id}?expand=` | rules apply* | Get record (with optional relation expansion; `view_rule` enforced) |
-| `PATCH` | `/api/collections/{name}/records/{id}` | open* | Update record |
-| `DELETE` | `/api/collections/{name}/records/{id}` | open* | Delete record |
+| `PATCH` | `/api/collections/{name}/records/{id}` | rules apply* | Update record |
+| `DELETE` | `/api/collections/{name}/records/{id}` | rules apply* | Delete record |
 
-\* Record endpoints enforce collection rules where implemented: `list_rule` is enforced on list, and `view_rule` is enforced on single-record fetch and relation expansion queries. See [API rules](#api-rules).
+\* Record endpoints enforce collection rules: `list_rule` on list, `view_rule` on single-record fetch and relation expansion, `create_rule` on create/upload, and `delete_rule` on delete. `update_rule` rejects non-admins when it is null, but expressions are not applied to rows yet (an empty string allows all non-admins). See [API rules](#api-rules).
 
 ## Creating a collection
 
@@ -58,9 +58,14 @@ curl -X POST http://localhost:8989/api/collections \
       { "name": "meta",    "data_type": "Json" },
       { "name": "status",  "data_type": "Select" },
       { "name": "category_id", "data_type": "Relation", "related_to": "categories" }
-    ]
+    ],
+    "list_rule": "",
+    "view_rule": "",
+    "create_rule": ""
   }'
 ```
+
+The `Relation` field requires the `categories` collection to exist first; create it before running this example, or drop that field.
 
 ### Field types (`data_type`)
 
@@ -158,13 +163,15 @@ curl http://localhost:8989/api/collections/products/records/<id>
 # Get one with expanded relations
 curl 'http://localhost:8989/api/collections/books/records/<id>?expand=author'
 
-# Update
+# Update (admin token, unless update_rule allows the caller)
 curl -X PATCH http://localhost:8989/api/collections/products/records/<id> \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"data": {"price": 1299}}'
 
-# Delete
-curl -X DELETE http://localhost:8989/api/collections/products/records/<id>
+# Delete (admin token, unless delete_rule allows the caller)
+curl -X DELETE http://localhost:8989/api/collections/products/records/<id> \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 Pagination defaults: `page=1`, `per_page=20` (clamped to 1–100).
@@ -561,4 +568,4 @@ curl -X PATCH http://localhost:8989/api/collections/tasks \
   -d '{ "list_rule": "owner = @request.auth.id && done = false" }'
 ```
 
-> **Rule Enforcement Status:** `list_rule` (enforced on `GET /records`) and `view_rule` (enforced on `GET /records/{id}` and on target collections during `?expand` relation queries) are actively evaluated. `create_rule`, `update_rule`, and `delete_rule` are stored in the schema and will be enforced in upcoming releases.
+> **Rule Enforcement Status:** `list_rule` (list), `view_rule` (single-record fetch and `?expand` targets), `create_rule` (create/upload), and `delete_rule` (delete) are enforced. `update_rule` rejects non-admins when it is null, but expressions are not applied to update rows yet (an empty string allows all non-admins).
