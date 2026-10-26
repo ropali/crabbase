@@ -88,6 +88,21 @@ curl http://localhost:8989/api/auth/profile \
 
 The middleware resolves the collection's secret plus your per-user `token_key`, validates the JWT, and loads your full record so API rules can reference it via `@request.auth.*`. Superuser-only endpoints (collections management, settings) reject any token whose claims are not from `_superusers`.
 
+### File tokens
+
+Protected file downloads often happen in `<img>` or `<a>` tags, where you cannot
+set an `Authorization` header. Exchange the access token for a short-lived file
+token (`POST /api/files/token`, valid 180 seconds) and pass it as `?token=...` on
+the file URL:
+
+```sh
+curl -X POST http://localhost:8989/api/files/token \
+  -H "Authorization: Bearer <accessToken>"
+```
+
+File tokens only unlock file downloads — they cannot authenticate normal API
+requests. See [Files & uploads](files-and-uploads.md#protected-files).
+
 ### Refreshing tokens
 
 Refresh uses **rotation with reuse detection**: every refresh invalidates the old token and issues a new pair; reusing an already-rotated token revokes the whole session family. A short grace window tolerates concurrent refreshes.

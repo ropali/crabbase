@@ -1,4 +1,6 @@
 use super::cell_value::CellValue;
+use crate::api::client::ApiClient;
+use crate::api::use_file_token;
 use std::rc::Rc;
 use yew::prelude::*;
 
@@ -322,13 +324,20 @@ impl FileItemRender {
         }
     }
 
-    fn file_url(&self, base_trimmed: &str, collection_name: &str) -> String {
+    fn file_url(
+        &self,
+        base_trimmed: &str,
+        collection_name: &str,
+        token: Option<&str>,
+        download: bool,
+    ) -> String {
         if self.path.starts_with("http://") || self.path.starts_with("https://") {
-            self.path.clone()
-        } else if self.path.starts_with('/') {
+            return self.path.clone();
+        }
+        let url = if self.path.starts_with('/') {
             format!("{}{}", base_trimmed, self.path)
         } else if self.key.starts_with("http://") || self.key.starts_with("https://") {
-            self.key.clone()
+            return self.key.clone();
         } else if self.key.starts_with('/') {
             format!("{}{}", base_trimmed, self.key)
         } else if !collection_name.trim().is_empty() {
@@ -338,23 +347,25 @@ impl FileItemRender {
             )
         } else {
             format!("{}/files/{}", base_trimmed, self.key)
-        }
+        };
+        ApiClient::with_file_token(url, token, download)
     }
 
-    fn api_url(&self, base_trimmed: &str) -> String {
+    fn api_url(&self, base_trimmed: &str, token: Option<&str>, download: bool) -> String {
         let key = if !self.key.trim().is_empty() {
             self.key.trim()
         } else {
             self.path.trim()
         };
-        if key.starts_with("http://") || key.starts_with("https://") {
-            key.to_string()
+        let url = if key.starts_with("http://") || key.starts_with("https://") {
+            return key.to_string();
         } else if key.starts_with('/') {
             format!("{}{}", base_trimmed, key)
         } else {
             let encoded: String = js_sys::encode_uri_component(key).into();
             format!("{}/files/{}", base_trimmed, encoded)
-        }
+        };
+        ApiClient::with_file_token(url, token, download)
     }
 
     fn is_image(&self) -> bool {
@@ -425,10 +436,11 @@ fn render_file_chip(
     collection_name: &str,
     base_trimmed: &str,
     stop_prop: &Callback<MouseEvent>,
+    token: Option<&str>,
 ) -> Html {
     let filename = item.filename();
-    let file_url = item.file_url(base_trimmed, collection_name);
-    let api_url = item.api_url(base_trimmed);
+    let file_url = item.file_url(base_trimmed, collection_name, token, true);
+    let api_url = item.api_url(base_trimmed, token, false);
     let display_name = if filename.chars().count() > 18 {
         format!("{}...", filename.chars().take(15).collect::<String>())
     } else {
@@ -494,6 +506,30 @@ fn render_file_chip(
 }
 
 #[derive(Properties, PartialEq)]
+struct FileChipProps {
+    item: FileItemRender,
+    collection_name: String,
+}
+
+#[function_component(FileChip)]
+fn file_chip(props: &FileChipProps) -> Html {
+    let token = use_file_token();
+    let base_url = ApiClient::get_base_url();
+    let base_trimmed = base_url.trim_end_matches('/').to_string();
+    let stop_prop = Callback::from(|e: MouseEvent| {
+        e.stop_propagation();
+    });
+
+    render_file_chip(
+        &props.item,
+        &props.collection_name,
+        &base_trimmed,
+        &stop_prop,
+        token.as_deref(),
+    )
+}
+
+#[derive(Properties, PartialEq)]
 struct FileGalleryProps {
     collection_name: String,
     field_name: String,
@@ -503,7 +539,8 @@ struct FileGalleryProps {
 #[function_component(FileGallery)]
 fn file_gallery(props: &FileGalleryProps) -> Html {
     let open = use_state(|| false);
-    let base_url = crate::api::client::ApiClient::get_base_url();
+    let token = use_file_token();
+    let base_url = ApiClient::get_base_url();
     let base_trimmed = base_url.trim_end_matches('/').to_string();
 
     let stop_prop = Callback::from(|e: MouseEvent| {
@@ -543,7 +580,13 @@ fn file_gallery(props: &FileGalleryProps) -> Html {
         <>
             <div class="flex items-center gap-1.5 flex-wrap cursor-pointer" title={tooltip} onclick={on_open}>
                 if let Some(first) = first {
-                    { render_file_chip(&first, &props.collection_name, &base_trimmed, &stop_prop) }
+                    { render_file_chip(
+                        &first,
+                        &props.collection_name,
+                        &base_trimmed,
+                        &stop_prop,
+                        token.as_deref(),
+                    ) }
                 }
                 <span class="text-xs text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded font-mono hover:bg-surface-container-high hover:text-primary transition-colors">
                     { format!("+{extra}") }
@@ -577,7 +620,8 @@ fn file_gallery(props: &FileGalleryProps) -> Html {
                         <div class="flex-1 p-4 overflow-y-auto bg-surface-container-lowest custom-scrollbar grid grid-cols-2 sm:grid-cols-3 gap-3 content-start">
                             { for props.items.iter().map(|item| {
                                 let filename = item.filename();
-                                let api_url = item.api_url(&base_trimmed);
+                                let view_url = item.api_url(&base_trimmed, token.as_deref(), false);
+                                let download_url = item.api_url(&base_trimmed, token.as_deref(), true);
                                 let is_image = item.is_image();
                                 let size = format_size(item.size_bytes);
                                 let meta = match (item.ctype.trim(), size) {
@@ -591,14 +635,14 @@ fn file_gallery(props: &FileGalleryProps) -> Html {
                                     <div class="flex flex-col rounded-xl border border-outline-variant/60 bg-surface-container-lowest hover:border-primary/40 hover:bg-surface-container-low transition-colors overflow-hidden">
                                         if is_image {
                                             <a
-                                                href={api_url.clone()}
+                                                href={view_url.clone()}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 class="block shrink-0"
                                                 title={format!("View {}", filename)}
                                             >
                                                 <img
-                                                    src={api_url.clone()}
+                                                    src={view_url.clone()}
                                                     alt={filename.clone()}
                                                     class="w-full h-32 object-cover bg-surface-container-high"
                                                 />
@@ -620,7 +664,7 @@ fn file_gallery(props: &FileGalleryProps) -> Html {
                                                 </p>
                                             </div>
                                             <a
-                                                href={api_url}
+                                                href={download_url}
                                                 download={filename.clone()}
                                                 onclick={stop_prop.clone()}
                                                 class="mt-auto w-full px-3 py-1.5 rounded-lg border border-outline-variant hover:bg-surface-container-high hover:text-primary transition-colors font-label-xs text-label-xs flex items-center justify-center gap-1.5 text-on-surface"
@@ -662,13 +706,6 @@ pub fn file_render(
     if v.is_null() {
         return na();
     }
-
-    let base_url = crate::api::client::ApiClient::get_base_url();
-    let base_trimmed = base_url.trim_end_matches('/');
-
-    let stop_prop = Callback::from(|e: MouseEvent| {
-        e.stop_propagation();
-    });
 
     let make_item = |value: &serde_json::Value| -> Option<FileItemRender> {
         if let Some(obj) = value.as_object() {
@@ -745,7 +782,9 @@ pub fn file_render(
     }
 
     if items.len() == 1 {
-        render_file_chip(&items[0], &collection_name, base_trimmed, &stop_prop)
+        html! {
+            <FileChip item={items[0].clone()} collection_name={collection_name} />
+        }
     } else {
         html! {
             <FileGallery

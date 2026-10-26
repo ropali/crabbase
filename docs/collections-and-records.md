@@ -74,7 +74,7 @@ curl -X POST http://localhost:8989/api/collections \
 | `Url` | `TEXT` | |
 | `Datetime` | `TIMESTAMPTZ` | Returned as RFC-3339 strings |
 | `AutoDatetime` | `TIMESTAMPTZ DEFAULT now()` | Set automatically on insert. Pass as the legacy string `"autodate"` (or `"autodatetime"`) — the plain variant name is not accepted as a string |
-| `File` | `TEXT` | Stores the file uploaded record ID or storage key from `/api/collections/{name}/records/upload`. See [COLLECTION_FILE_STORAGE.md](../COLLECTION_FILE_STORAGE.md) |
+| `File` | `TEXT` | Stores the uploaded record ID or storage key from `/api/collections/{name}/records/upload`. See [Files & uploads](files-and-uploads.md) |
 | `Relation` | `UUID` + FK | Requires `"related_to": "<other-collection-name>"`; target must exist first |
 | `Select` | `TEXT` | |
 | `Json` | `TEXT` | JSON viewer in admin UI |
@@ -89,8 +89,9 @@ Legacy aliases are accepted for compatibility: `text`, `richtext`/`editor`, `int
 | `index` | `false` | Create a btree index on the column |
 | `hidden` | `false` | Mark field hidden |
 | `required` | `false` | Marked as required |
-| `min` / `max` | — | Size constraints |
-| `pattern` | — | Validation pattern |
+| `min` / `max` | — | Size constraints; for `File`, the number of files (see [Files & uploads](files-and-uploads.md#defining-file-columns)) |
+| `pattern` | — | Validation pattern; for `File`, matched against the uploaded file name |
+| `max_size` / `mime_types` | — | `File` only: per-file byte limit and allowed content types |
 | `related_to` | — | Target collection name (for `Relation`) |
 
 ### Built-in columns
@@ -170,7 +171,7 @@ Pagination defaults: `page=1`, `per_page=20` (clamped to 1–100).
 
 ## File Storage & Attachments
 
-Collections support `File` field types for storing file references (images, documents, archives). The file management workflow is integrated with collections:
+Collections support `File` field types for storing file references (images, documents, archives). The file management workflow is integrated with collections. For the full reference — protected downloads, file tokens, storage backends, and client examples — see [Files & uploads](files-and-uploads.md).
 
 ### 1. Uploading Files for a Collection
 Upload one or multiple files using multipart form data to `/api/collections/{name}/records/upload` (the only upload endpoint; `POST /api/collections/{name}/files` does not exist):
@@ -245,7 +246,12 @@ Governed by the collection's `list_rule`.
 ```sh
 curl http://localhost:8989/api/collections/articles/files/<file_id>
 ```
-Governed by the collection's `view_rule`.
+Governed by the collection's `view_rule`. Files can also be fetched from
+`/api/files/<file_id>`, where the file's own collection supplies the rule. For
+non-public collections, exchange a Bearer token for a short-lived file token at
+`POST /api/files/token` and append `?token=...`; see
+[Protected files](files-and-uploads.md#protected-files). Add `?download=1` to
+force an attachment.
 
 ## Dynamic record filtering (`?filter`)
 

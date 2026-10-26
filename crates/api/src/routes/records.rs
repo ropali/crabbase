@@ -10,7 +10,11 @@ use serde_json::{Value, json};
 
 use std::collections::HashMap;
 
-use crate::{middleware::auth::RequestContext, state::AppState};
+use crate::{
+    middleware::auth::{RequestContext, resolve_file_token},
+    routes::files::{FileQuery, content_disposition, is_truthy},
+    state::AppState,
+};
 use crabbase_core::{
     errors::APIError,
     models::{
@@ -269,40 +273,45 @@ pub async fn list_collection_files(
 pub async fn download_collection_file(
     Path((name, file_id)): Path<(String, String)>,
     State(state): State<AppState>,
+    Query(query): Query<FileQuery>,
     RequestContext(sql_context): RequestContext,
 ) -> Result<Response, APIError> {
-    // 1. Authorize view_rule and load collection metadata
+    let file_rec = state
+        .file_service()
+        .get_record_by_id_or_key(&file_id)
+        .await?
+        .ok_or_else(|| APIError::NotFound {
+            resource: format!("File {file_id}"),
+        })?;
+
+    // A file id/key is globally unique; never let it be fetched through a
+    // different collection's path.
+    if file_rec.collection_name != name {
+        return Err(APIError::NotFound {
+            resource: format!("File {file_id}"),
+        });
+    }
+
+    let sql_context = resolve_file_token(&state, query.token.as_deref(), sql_context).await?;
+
     state
         .records_repo()
         .authorize_view(&name, &sql_context)
         .await
         .map_err(APIError::from)?;
 
-    // 2. Lookup file metadata if available
-    let file_rec = state
-        .file_service()
-        .get_record_by_id_or_key(&file_id)
-        .await?;
-
-    let (content_type, filename) = match &file_rec {
-        Some(rec) => (rec.content_type.clone(), rec.original_name.clone()),
-        None => {
-            let mime = mime_guess::from_path(&file_id)
-                .first_or_octet_stream()
-                .to_string();
-            let fname = file_id.rsplit('/').next().unwrap_or("file").to_string();
-            (mime, fname)
-        }
+    let bytes = state.file_service().download(&file_rec.key).await?;
+    let kind = if is_truthy(query.download.as_deref()) {
+        "attachment"
+    } else {
+        "inline"
     };
 
-    // 3. Fetch file bytes
-    let bytes = state.file_service().download(&file_id).await?;
-
     Response::builder()
-        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_TYPE, file_rec.content_type)
         .header(
             header::CONTENT_DISPOSITION,
-            format!("inline; filename=\"{}\"", filename),
+            content_disposition(kind, &file_rec.original_name),
         )
         .body(Body::from(bytes))
         .map_err(|e| APIError::Internal {

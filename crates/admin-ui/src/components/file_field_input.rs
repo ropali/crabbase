@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::api::client::ApiClient;
+use crate::api::use_file_token;
 use web_sys::HtmlInputElement;
 use yew::prelude::*;
 
@@ -71,12 +72,13 @@ fn is_image_name(name: &str) -> bool {
         .any(|ext| lower.ends_with(ext))
 }
 
-fn resolve_file_url(collection_name: &str, value: &str) -> String {
+fn resolve_file_url(collection_name: &str, value: &str, token: Option<&str>) -> String {
     let base_url = ApiClient::get_base_url();
     let base_trimmed = base_url.trim_end_matches('/');
     if value.starts_with("http://") || value.starts_with("https://") {
-        value.to_string()
-    } else if value.starts_with('/') {
+        return value.to_string();
+    }
+    let url = if value.starts_with('/') {
         format!("{}{}", base_trimmed, value)
     } else if !collection_name.trim().is_empty() {
         format!(
@@ -85,7 +87,8 @@ fn resolve_file_url(collection_name: &str, value: &str) -> String {
         )
     } else {
         format!("{}/files/{}", base_trimmed, value)
-    }
+    };
+    ApiClient::with_file_token(url, token, false)
 }
 
 fn display_name(id: &str) -> String {
@@ -94,6 +97,7 @@ fn display_name(id: &str) -> String {
 
 #[function_component(FileFieldInput)]
 pub fn file_field_input(props: &FileFieldInputProps) -> Html {
+    let file_token = use_file_token();
     let is_uploading = use_state(|| false);
     let upload_error = use_state(|| None::<String>);
     let local_names = use_state(HashMap::<String, String>::new);
@@ -300,7 +304,11 @@ pub fn file_field_input(props: &FileFieldInputProps) -> Html {
             return Some(preview.clone());
         }
         if is_image_name(&render_name(id)) {
-            return Some(resolve_file_url(&props.collection_name, id));
+            return Some(resolve_file_url(
+                &props.collection_name,
+                id,
+                file_token.as_deref(),
+            ));
         }
         None
     };
@@ -353,7 +361,11 @@ pub fn file_field_input(props: &FileFieldInputProps) -> Html {
                             let id = id.clone();
                             let preview = render_preview(&id);
                             let name = render_name(&id);
-                            let url = resolve_file_url(&props.collection_name, &id);
+                            let url = resolve_file_url(
+                                &props.collection_name,
+                                &id,
+                                file_token.as_deref(),
+                            );
                             let on_remove = on_remove.clone();
                             let remove_id = id.clone();
                             html! {

@@ -328,7 +328,9 @@ fn app() -> Html {
                     }
                 } else {
                     html! {
-                        <AppMain on_logout={on_logout} />
+                        <api::FileTokenProvider>
+                            <AppMain on_logout={on_logout} />
+                        </api::FileTokenProvider>
                     }
                 }
             }
