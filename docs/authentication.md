@@ -14,11 +14,14 @@ curl -X POST http://localhost:8989/api/collections \
     "collection_type": "auth",
     "columns": [
       { "name": "name", "data_type": "PlainText" }
-    ]
+    ],
+    "create_rule": ""
   }'
 ```
 
-Auth collections expect these system-managed columns (created automatically for the seeded `_superusers`; when designing your own, keep them in mind):
+Setting `create_rule` to `""` makes signup public; leave it unset to keep user creation admin-only. The server injects the system columns (`email`, `password`, `token_key`, `verified`) automatically for auth collections.
+
+Auth collections get these system-managed columns automatically (the seeded `_superusers` collection has them too):
 
 - `email` — unique identifier for login
 - `password` — automatically **bcrypt-hashed** on record create
@@ -29,17 +32,18 @@ Each auth collection also gets its own random signing secret (`options.authToken
 
 ## Registering users
 
-There is no dedicated registration endpoint yet. The easiest way to create users is **through the admin dashboard**: open the auth collection in the sidebar and use its create-record drawer — enter an email, password, and any custom fields. Passwords are hashed automatically on save.
+There is no dedicated registration endpoint yet. The easiest way to create users is **through the admin dashboard**: open the auth collection in the sidebar and use its create-record drawer — enter an email, password, and any custom fields, and toggle **Verified** on. Passwords are hashed automatically on save; unverified users cannot log in.
 
-Via API, create users by POSTing records to the auth collection:
+Via API, create users by POSTing records to the auth collection (as a superuser, or publicly if `create_rule` is `""`):
 
 ```sh
 curl -X POST http://localhost:8989/api/collections/users/records \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"data": {"email": "jane@example.com", "password": "secret123", "name": "Jane"}}'
+  -d '{"data": {"email": "jane@example.com", "password": "secret123", "name": "Jane", "verified": true}}'
 ```
 
-The plaintext `password` you send is hashed before storage; never returned afterwards. (`AppSettings.allowPublicUserRegistration` exists as a setting but is not enforced yet.)
+The plaintext `password` you send is hashed before storage; never returned afterwards. For public signup, set the auth collection's `create_rule` to `""` and omit the `Authorization` header and `verified` flag; the account starts unverified. There is no verification flow yet, so an admin must review the account. (`verified` is not yet write-protected for non-admin callers, and `AppSettings.allowPublicUserRegistration` exists but is not enforced.)
 
 ## Endpoints
 
@@ -71,7 +75,9 @@ Response:
 }
 ```
 
-Access tokens default to ~1 hour (or the duration configured on the collection; seeded collections use 5 days). Refresh tokens last ~7 days.
+Access tokens default to 1 hour; collections created through the API get a 5-day `duration` in their options (the seeded `_superusers` collection uses the 1-hour default). Refresh tokens last 7 days.
+
+Login returns `403 Forbidden` if the user's `verified` flag is false.
 
 ### Calling authenticated endpoints
 
@@ -150,8 +156,8 @@ OTPs are stored HMAC-hashed server-side. Templates for these emails are editable
 
 ## Superusers
 
-- The `_superusers` collection is seeded by migrations and repaired at boot.
-- Its credentials come from `ADMIN_USERNAME` / `ADMIN_PASSWORD` env vars.
+- The `_superusers` collection is created by migrations; missing `[[initial_users]]` entries are created at boot (existing emails are left untouched).
+- Its credentials come from `[[initial_users]]` in `crabbase.toml`; passwords can reference environment variables with `$`, e.g. `$ADMIN_PASSWORD`.
 - Log in against it like any auth collection (this is exactly what the dashboard's login page does):
 
   ```sh

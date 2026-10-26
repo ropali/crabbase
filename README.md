@@ -1,46 +1,37 @@
 # Crabbase
 
-**A backend-as-a-service in a single binary. PocketBase's simplicity, PostgreSQL's power.**
+<div align="center">
+  <img src="assets/banner.png" height="150" width="100%" alt="stats graph"  />
+</div>
 
-Crabbase follows one philosophy: **the whole backend in one static binary — but bring your own PostgreSQL.** You get the same "unzip, run, done" experience as [PocketBase](https://pocketbase.io), with none of its scaling ceiling: instead of an embedded SQLite file, Crabbase runs entirely on a Postgres server *you* choose and operate.
+**The simplicity of PocketBase. The flexibility of PostgreSQL.**
 
-What that means in practice:
+Crabbase is a self-hosted backend-as-a-service that turns a PostgreSQL database into a ready-to-use backend. Define your collections, get REST APIs and authentication out of the box, and manage everything through a built-in admin dashboard — all from a single binary.
 
-- **Single binary, zero code.** Define collections through the admin dashboard or REST API, and instant CRUD endpoints, JWT auth, password-reset emails, and settings appear — no custom routes, no redeployments.
-- **Bring your own PostgreSQL.** Set the `[database]` section in `crabbase.toml` to point at any Postgres you already run — local, managed (RDS, Cloud SQL, Supabase, Neon), or self-hosted. Your data lives in ordinary Postgres tables you can inspect, back up, and query with `psql` at any time.
-- **Scales like your database.** Because state lives in Postgres, scaling is the solved problem of scaling Postgres: vertical sizing, read replicas, connection poolers (PgBouncer), managed backups and HA — not bespoke tooling. Run multiple Crabbase instances against the same database; they share everything by construction.
-- **No lock-in.** Every collection is a real table, every record a real row. Leave whenever you want — your schema and data are already portable standard SQL.
+Unlike backends built around an embedded database, Crabbase connects to a PostgreSQL server you choose and control. Your data stays in standard PostgreSQL tables, accessible through familiar tools and SQL, while your backend remains lightweight and easy to deploy.
 
-You create "collections" (real Postgres tables) through the admin dashboard or the collections API, and Crabbase immediately exposes production-style CRUD endpoints, JWT authentication per collection, password-reset flows with OTP over email, and a settings system — so your frontend can talk to a complete backend without you writing a single custom route.
+**Why Crabbase?**
 
-> **Status: evolving / pre-1.0.** Core features (collections, records, auth, settings, email, file uploads) work; realtime and hooks are not implemented yet (see [Roadmap & limitations](#roadmap--limitations)). Expect breaking changes between versions.
+- **One binary, ready-to-use backend.** Run the API server and admin dashboard without assembling a stack of separate services.
+- **PostgreSQL at the core.** Use your own local, self-hosted, or managed PostgreSQL instance. Your data remains in a database you control.
+- **APIs without boilerplate.** Create collections dynamically and get CRUD endpoints, authentication, filtering, and access rules without writing custom routes.
+- **Deploy on your terms.** Run Crabbase on your own infrastructure or alongside a managed PostgreSQL service.
+- **Your data stays yours.** Work with real PostgreSQL tables and rows using SQL and your existing database tools.
 
----
+Crabbase is for developers who want the convenience of a backend-as-a-service without giving up the flexibility and portability of PostgreSQL.
 
-## Features
+*Self-hosted. PostgreSQL-powered.*
 
-- **Single static binary** — API server, admin dashboard, migrations, and email templating all compiled into one executable. Deploy = copy a file.
-- **Bring your own PostgreSQL** — the only infrastructure dependency. Works with any Postgres 14+, local or managed. All state (data, auth sessions, settings, logs) lives in your database.
-- **Dynamic collections** — create Postgres tables at runtime via admin UI or API. Schema changes (add/drop/rename/retype columns, indexes) are applied live.
-- **Instant CRUD REST API** — every collection automatically gets list/create/read/update/delete endpoints at `/api/collections/{name}/records`.
-- **Dynamic record filtering (`?filter`)** — PocketBase-compatible client filtering syntax (`status='active' && price < 100`, `title ~ 'pocket'`, etc.) compiled to parameterized SQL.
-- **Relation expansion (`?expand`)** — batch-expand foreign-key relations inline across list and single-record endpoints (e.g. `?expand=author,category`) in 1 query per relation without N+1 queries.
-- **File uploads & storage** — `File` columns with per-column size/MIME/name constraints, multipart uploads, local-disk or S3-compatible storage, and protected downloads via short-lived file tokens.
-- **Rich field types** — text, rich text, number, bool, email, URL, datetime, auto-datetime, JSON, select, file, geo point, and relations between collections.
-- **Per-collection auth** — mark a collection as an `auth` collection and its records can log in. Passwords are bcrypt-hashed and JWT secrets are generated automatically.
-- **JWT sessions with rotation** — access + refresh tokens, refresh-token rotation with reuse detection and family revocation.
-- **Password reset via email OTP** — templated emails rendered from configurable templates (`{{otp}}`, `{{link}}`, `{{app_name}}`, ...).
-- **API rules** — PocketBase-style filter rules (`owner = @request.auth.id && status = 'active'`) compiled into safe parameterized SQL.
-- **Admin dashboard** — embedded Yew/WASM SPA for managing collections, records (including search/filtering and user creation), schemas, API rules, settings, email templates, and logs. Runs bundled with the API or as its own process.
-- **OpenAPI + Swagger UI** — machine-readable spec at `/api/openapi.json`, browsable docs at `/api/docs`.
+**Status:** Pre-1.0 and under active development. Some features are still in progress; see the roadmap and limitations below.
+
 
 ## Architecture
 
 ```
 crabbase/            Main binary (CLI: serve | admin)
 crates/
-  core/              Config, models, filter-rule parser/compiler, logging
-  db/                Repositories: dynamic collections, records, auth, settings
+  core/              Models, filter-rule parser/compiler, logging
+  db/                Repositories: collections, records, auth, settings, files
   api/               Axum REST router (all HTTP endpoints)
   auth/              JWT service, refresh-token rotation, OTP/password reset
   files/             File storage (local disk / S3-compatible)
@@ -50,7 +41,7 @@ crates/
 migrations/          SQL migrations (embedded in the binary, run at boot)
 ```
 
-Everything is compiled into one statically-linked binary — the only external dependency is a PostgreSQL server. The `admin` command serves both the dashboard and the full API on one port.
+Everything is compiled into one self-contained binary — the only required external service is PostgreSQL (S3-compatible storage is optional). The `admin` command serves both the dashboard and the full API on one port.
 
 ```
 ┌───────────────────────┐        ┌──────────────────────────┐
@@ -61,7 +52,7 @@ Everything is compiled into one statically-linked binary — the only external d
 └───────────────────────┘        └──────────────────────────┘
 ```
 
-Because all state lives in Postgres (data, sessions, settings, logs), scaling Crabbase means scaling Postgres — and you can run several Crabbase instances against the same database with no extra coordination.
+Because records, sessions, and settings live in Postgres, scaling Crabbase means scaling Postgres — and you can run several Crabbase instances against the same database with no extra coordination. Uploaded files are the exception: use S3-compatible storage (or a shared volume) when running more than one replica with local-disk storage.
 
 ## Quickstart
 
@@ -69,19 +60,19 @@ Because all state lives in Postgres (data, sessions, settings, logs), scaling Cr
 
 - Rust (stable) — <https://rustup.rs> (only for building; a release binary needs nothing)
 - **Any PostgreSQL 14+ server** — local, Docker, or a managed instance. This is the whole infrastructure requirement.
-- `psql` CLI available on PATH
+- `psql` CLI (optional — only the helper scripts use it)
 
-For the prebuilt admin dashboard flow you only need `cargo`; rebuilding the dashboard additionally needs [Trunk](https://trunkrs.dev) and the WASM target.
+The dashboard's compiled JS/WASM assets are build artifacts (only the HTML shell is committed), so build them once with [Trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target: `cd crates/admin-ui && trunk build` (or `make release`). After that, `cargo` is enough to run either command; the API-only `serve` command never needs the dashboard assets.
 
 ### 1. Configure with `crabbase.toml`
 
 Crabbase is configured entirely through a **TOML file** (default: `crabbase.toml` in the project root). Copy the example and edit it:
 
 ```sh
-cp exampl.crabbase.toml crabbase.toml
+cp example.crabbase.toml crabbase.toml
 ```
 
-The file has four sections:
+The file has three sections, plus optional `[[initial_users]]` entries:
 
 ```toml
 [database]
@@ -94,23 +85,21 @@ schema = "crabbase"
 max_connections = 10
 
 [server]
-api_host = "0.0.0.0"
-api_port = 8989
-admin_host = "0.0.0.0"
-admin_port = 9898
+host = "0.0.0.0"
+port = 8989
 
 [admin]
 host = "0.0.0.0"
 port = 9898
 
-# Superusers to create/ensure on first boot (array of tables)
+# Superusers to create if missing on first boot (array of tables)
 [[initial_users]]
 email = "admin@crabbase.local"
 name = "admin"
-password = "change-me"   # or $ADMIN_PASSWORD to pull from env
+password = "admin123"   # or $ADMIN_PASSWORD to pull from env
 ```
 
-**Secret values** — any string value that starts with `$` is treated as an environment variable reference. For example:
+**Secret values** — the `password` fields (`[database]` and each `[[initial_users]]` entry) treat a value starting with `$` as an environment variable reference. For example:
 
 ```toml
 password = "$DB_PASSWORD"   # reads the DB_PASSWORD env var at startup
@@ -128,32 +117,37 @@ cargo run -- admin --config /etc/crabbase/prod.toml
 ### 2. Run
 
 ```sh
-make serve        # API server  →  http://0.0.0.0:8989
-make admin        # Admin dashboard + API  →  http://0.0.0.0:9898
+# Terminal 1 — admin dashboard (also serves its own API on :9898)
+make admin
+
+# Terminal 2 — standalone public API on :8989 (used by the curl examples below)
+make serve
 ```
+
+If this is a fresh checkout, build the dashboard assets once (see above) before using `make admin`. Both processes share the same Postgres database.
 
 Or directly (the `--config` flag defaults to `crabbase.toml` in the current directory):
 
 ```sh
-cargo run -- serve --config crabbase.toml
 cargo run -- admin --config crabbase.toml
+cargo run -- serve --config crabbase.toml
 ```
 
-On startup Crabbase reads the TOML file, connects to Postgres, runs all pending migrations, ensures the `initial_users` superusers exist, and prints the banner.
+On startup Crabbase reads the TOML file, connects to Postgres, runs all pending migrations, creates any missing `initial_users` superusers, and prints the banner.
 
 ### 3. Open the dashboard
 
-Visit `http://localhost:9898` and log in with the superuser credentials (`admin@crabbase.local` / your `ADMIN_PASSWORD`). **Almost everything can be done here without touching curl or code:**
+Visit `http://localhost:9898` and log in with the email/password you configured in `[[initial_users]]`. **Almost everything can be done here without touching curl or code:**
 
 - **Create collections** — pick a name, type (`base`/`auth`), add fields of any type, toggle indexes
 - **Manage records** — browse, create, edit, delete data in any collection; this includes **creating users** in auth collections
 - **Edit schemas live** — add/remove/retype fields, set API rules per collection
-- **Configure the app** — general settings, SMTP mail settings, email templates
-- **View logs** — activity logs
+- **Configure the app** — general settings, SMTP mail settings, file storage, email templates
+- **View logs** — activity logs page (currently sample data; no logs API yet)
 
-The dashboard is a client of the same REST API your apps use — anything you click in the UI is also doable over HTTP.
+The dashboard is a client of the same REST API your apps use — everything backed by the API is also doable over HTTP.
 
-> The admin command runs the dashboard *and* the full API on one port, so it can be your only process. But since both are stateless against Postgres, you can also run `admin` separately — e.g. keep the dashboard on an internal port/host while public traffic hits `serve`.
+> The admin command runs the dashboard *and* the full API on one port (9898), so it can be your only process — use `http://localhost:9898/api` for API calls in that setup. But since both keep application state in Postgres, you can also run `serve` separately — e.g. keep the dashboard on an internal port/host while public traffic hits `serve` on 8989.
 
 ### 4. Or use pure curl
 
@@ -161,7 +155,7 @@ The dashboard is a client of the same REST API your apps use — anything you cl
 # Login as superuser
 TOKEN=$(curl -s -X POST http://localhost:8989/api/auth/_superusers/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@crabbase.local","password":"change-me"}' \
+  -d '{"email":"admin@crabbase.local","password":"admin123"}' \
   | jq -r .tokens.accessToken)
 
 # Create a collection -> a real table + instant REST endpoints
@@ -173,7 +167,10 @@ curl -X POST http://localhost:8989/api/collections \
       { "name": "title",  "data_type": "PlainText", "index": true },
       { "name": "price",  "data_type": "Number" },
       { "name": "active", "data_type": "Bool" }
-    ]
+    ],
+    "list_rule": "",
+    "view_rule": "",
+    "create_rule": ""
   }'
 
 # Create a record — no deployment, no code
@@ -227,7 +224,7 @@ cargo run -- admin --config crabbase.toml
 cargo run -- serve --config crabbase.toml
 ```
 
-Crabbase connects to `localhost:5432`, applies pending SQL migrations automatically, creates the initial superuser, and starts serving.
+Crabbase connects to `localhost:5432`, applies pending SQL migrations automatically, creates any missing initial superusers, and starts serving.
 
 ### 3. Stop the backing services
 
@@ -241,19 +238,19 @@ docker compose down
 
 | Doc | Contents |
 |---|---|
-| [Getting started](docs/getting-started.md) | Installation, configuration, env vars, running, Makefile targets |
+| [Getting started](docs/getting-started.md) | Installation, configuration, running, Makefile targets |
 | [Collections & records](docs/collections-and-records.md) | Field types, creating/updating schemas, CRUD endpoints, dynamic `?filter`, relation `?expand`, API rules |
 | [Authentication](docs/authentication.md) | Auth collections, login/refresh/logout, password reset, superusers |
 | [Files & uploads](docs/files-and-uploads.md) | File columns, multipart uploads, attaching files to records, protected downloads/file tokens, storage backends |
-| [Settings & email](docs/settings-email.md) | App/mail settings, SMTP setup, email templates |
-| **Interactive API docs** | Run the server → `GET /api/docs` (Swagger UI), spec at `/api/openapi.json` |
+| [Settings & email](docs/settings-email.md) | App/mail/storage settings, SMTP setup, email templates |
+| **Interactive API docs** | Debug builds → `GET /api/docs` (Swagger UI), spec at `/api/openapi.json` (excluded from release builds) |
 
 ## Using Crabbase as your backend
 
 The intended workflow requires **no custom REST code** — and for most of it, no curl either. The admin dashboard is the primary tool:
 
 1. **Model your data as collections** — in the dashboard's Create Collection drawer (or `POST /api/collections`). Relations are first-class.
-2. **Create users and seed data** — open an auth collection in the dashboard and add user records directly; passwords are hashed for you. Same for any other collection's initial data.
+2. **Create users and seed data** — open an auth collection in the dashboard and add user records directly; passwords are hashed for you, and remember to toggle **Verified** so the user can log in. Same for any other collection's initial data.
 3. **Consume the generated endpoints** from your frontend/mobile app:
    - `GET/POST /api/collections/{name}/records`, `GET/PATCH/DELETE .../records/{id}` (with `?filter=...` and `?expand=...` support)
    - For auth collections: `POST /api/auth/{collection}/login`, `/auth-refresh`, `/logout`
@@ -264,10 +261,10 @@ Every step has a REST equivalent documented in [docs/](docs/) if you prefer auto
 
 ## Deploying & scaling
 
-Because Crabbase is stateless and delegates all persistent state to PostgreSQL, deployment and scaling are straightforward:
+Because Crabbase delegates application state (records, sessions, settings) to PostgreSQL, deployment and scaling are straightforward:
 
-- **Container Deployment**: Run the Docker container on AWS ECS, Fly.io, Google Cloud Run, Render, or Kubernetes pointing to any managed PostgreSQL instance (Supabase, Neon, AWS RDS, Cloud SQL).
-- **Horizontal Scaling**: Run multiple Crabbase containers behind any reverse proxy or load balancer (Nginx, Traefik, Caddy, Cloudflare). Since authentication tokens, collections, and settings live in Postgres, multiple replicas share all state with zero coordination.
+- **Container Deployment**: Package the release binary in a container image (no Dockerfile ships yet) and run it on AWS ECS, Fly.io, Google Cloud Run, Render, or Kubernetes against any managed PostgreSQL instance (Supabase, Neon, AWS RDS, Cloud SQL).
+- **Horizontal Scaling**: Run multiple Crabbase containers behind any reverse proxy or load balancer (Nginx, Traefik, Caddy, Cloudflare). Since collections, settings, and refresh-token sessions live in Postgres, multiple replicas share application state with zero coordination; point them at the same S3 bucket (or shared volume) for uploaded files.
 - **Connection Pooling**: Place PgBouncer between Crabbase instances and PostgreSQL when scaling to handle thousands of concurrent client connections.
 - **Admin & API Separation**: Deploy `crabbase admin` on an internal/VPN-protected port for administration, while exposing `crabbase serve` containers for public client traffic.
 
@@ -275,8 +272,11 @@ Because Crabbase is stateless and delegates all persistent state to PostgreSQL, 
 
 ```sh
 make build                  # debug build
-make test                   # cargo test --workspace
-make test crate=db          # tests for a single crate
+make test                   # full suite: unit + DB + HTTP API (needs Postgres)
+make test-unit              # fast unit tests (no database)
+make test-db                # DB repository tests
+make test-integration       # HTTP API integration tests
+make test crate=db          # a single suite (e.g. db, records, auth)
 make watch                  # bacon watch + auto-reload (serve)
 make watch-fe               # trunk dev server for the admin UI
 make release                # optimized release build (builds admin UI first)
@@ -294,21 +294,23 @@ scripts/pg_seed.sh --table _logs --rows 500                # seed any table
 Implemented and working:
 
 - Collections (create/update/delete/truncate, live schema migration, indexes)
-- Records CRUD with pagination, client `?filter` dynamic query evaluation, batch relation expansion (`?expand`), and `list_rule` / `view_rule` enforcement
+- Records CRUD with pagination, client `?filter` dynamic query evaluation, batch relation expansion (`?expand`), and `list_rule` / `view_rule` / `create_rule` / `delete_rule` enforcement
 - Auth collections, JWT login/refresh/logout, password reset with emailed OTP
 - Superusers, settings APIs, email templates, admin dashboard (with real-time records filter search)
-- File uploads/storage with per-column constraints, local disk or S3-compatible backends, automatic cleanup, and protected downloads via file tokens
-- Swagger UI / OpenAPI
+- File uploads/storage with per-column constraints, local disk or S3-compatible backends, cleanup on record update/delete, and protected downloads via file tokens
+- Swagger UI / OpenAPI (debug builds only)
 
 Not yet (placeholders exist in the codebase):
 
 - **Realtime** — no websockets/SSE subscriptions.
 - **Hooks** — no background triggers.
-- **Public registration / email verification endpoints** — create users by POSTing records to an auth collection; the `allowPublicUserRegistration` setting exists but is not enforced yet.
-- `create_rule`, `update_rule`, and `delete_rule` are stored but not evaluated yet (`list_rule` and `view_rule` are enforced).
+- **Dedicated registration & email-verification endpoints** — public signup works by setting `create_rule = ""` on an auth collection and POSTing a record; `allowPublicUserRegistration` exists but is not enforced, and there is no verification flow.
+- **Logs API** — the dashboard's logs page shows sample data; the `_logs` table exists but is not read or written by the API.
+- **Backups & cron settings** — the dashboard pages are UI placeholders with no backend.
+- `update_rule` expressions are not applied to rows yet: a null rule blocks non-admins, while an empty string allows everyone. `list_rule`, `view_rule`, `create_rule`, and `delete_rule` are enforced.
 
 Security notes while the project evolves:
 
 - Rotate the seeded `_superusers` token secret (migration `00001` seeds a hardcoded value).
 - CORS is fully permissive in the current API server — tighten before exposing publicly.
-- Change `ADMIN_PASSWORD` immediately after first boot.
+- Change the seeded superuser password immediately after first boot (in the dashboard or via the API — editing `[[initial_users]]` later does not update an existing account).
