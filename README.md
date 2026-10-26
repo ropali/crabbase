@@ -1,7 +1,7 @@
 # Crabbase
 
 <div align="center">
-  <img src="assets/banner.png" height="150" width="100%" alt="stats graph"  />
+  <img src="assets/banner.png" height="100%" width="100%" alt="stats graph"  />
 </div>
 
 **The simplicity of PocketBase. The flexibility of PostgreSQL.**
