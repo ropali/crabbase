@@ -1,6 +1,14 @@
 # Crabbase
 
 <div align="center">
+
+[![Tests](https://github.com/ropali/crabbase/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/ropali/crabbase/actions/workflows/test.yml)
+[![GitHub Release](https://img.shields.io/github/v/release/ropali/crabbase?sort=semver)](https://github.com/ropali/crabbase/releases)
+[![built_with-Rust](https://img.shields.io/badge/built_with-Rust-dca282.svg?style=flat-square)](https://www.rust-lang.org/)
+
+</div>
+
+<div align="center">
   <img src="assets/banner.png" height="100%" width="100%" alt="stats graph"  />
 </div>
 
