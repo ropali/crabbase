@@ -380,7 +380,13 @@ impl RecordsRepository {
 
         let meta_map: HashMap<&str, &FileResponse> = rows
             .iter()
-            .flat_map(|r| [(r.id.as_str(), r), (r.original_name.as_str(), r)])
+            .flat_map(|r| {
+                [
+                    (r.id.as_str(), r),
+                    (r.key.as_str(), r),
+                    (r.original_name.as_str(), r),
+                ]
+            })
             .collect();
 
         let to_value = |id: &str| -> Option<Value> {
