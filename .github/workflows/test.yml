@@ -40,12 +40,14 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      # The main binary and admin UI are excluded because they are not needed
-      # for the test suite and the UI requires a Trunk/WASM build first.
+      # The main binary and admin UI are excluded here because they are covered
+      # by the build and smoke-test steps below.
       - name: Run tests
         run: >
           cargo test
@@ -54,3 +56,60 @@ jobs:
           --exclude crabbase_admin_ui
           --locked
           --no-fail-fast
+
+      - name: Install Trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk@0.21.14
+
+      - name: Build admin UI
+        working-directory: crates/admin-ui
+        env:
+          CRABBASE_API_URL: /api
+        run: trunk build --release
+
+      - name: Build crabbase binary
+        run: cargo build --locked -p crabbase
+
+      - name: Smoke test admin dashboard
+        run: |
+          tmpdir="$(mktemp -d)"
+          cat > "$tmpdir/ci.toml" <<'EOF'
+          [database]
+          host = "localhost"
+          port = 5432
+          user = "postgres"
+          password = "postgres"
+          database = "crabbase"
+          schema = "public"
+          max_connections = 5
+
+          [server]
+          host = "127.0.0.1"
+          port = 8989
+
+          [admin]
+          host = "127.0.0.1"
+          port = 9898
+          EOF
+
+          ./target/debug/crabbase admin --config "$tmpdir/ci.toml" > "$tmpdir/admin.log" 2>&1 &
+          admin_pid=$!
+          trap 'kill "$admin_pid" 2>/dev/null || true; rm -rf "$tmpdir"' EXIT
+
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:9898/ > "$tmpdir/index.html" 2>/dev/null; then
+              break
+            fi
+            if ! kill -0 "$admin_pid" 2>/dev/null; then
+              cat "$tmpdir/admin.log"
+              exit 1
+            fi
+            sleep 1
+          done
+
+          grep -q "Crabbase Admin Console" "$tmpdir/index.html"
+          wasm="$(grep -oE 'crabbase_admin_ui-[a-f0-9]+_bg\.wasm' "$tmpdir/index.html" | head -n1)"
+          test -n "$wasm"
+          curl -fsS "http://127.0.0.1:9898/$wasm" -o /dev/null
+          curl -fsS http://127.0.0.1:9898/api/openapi.json -o /dev/null
