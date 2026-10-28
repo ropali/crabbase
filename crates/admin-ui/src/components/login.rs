@@ -279,52 +279,8 @@ pub fn login(props: &LoginProps) -> Html {
                 <div class="w-full max-w-[440px]">
                     <div class="text-center mb-8 relative">
                         <div class="flex flex-col items-center gap-4">
-                            <div class="w-full h-24 relative overflow-hidden flex items-center justify-center">
-                                <div class="w-32 h-24">
-                                    <div class="w-full h-full" id="animated-svg-ANIMATION_32" style="display:block;">
-                                        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-                                            <style>
-                                                {r#"
-                                                    @keyframes scuttle-back-and-forth {
-                                                        0%, 100% { transform: translateX(-40px) rotate(-2deg); }
-                                                        50% { transform: translateX(40px) rotate(2deg); }
-                                                    }
-                                                    @keyframes wave-claw {
-                                                        0%, 100% { transform: rotate(0deg); }
-                                                        50% { transform: rotate(-15deg); }
-                                                    }
-                                                    @keyframes blink {
-                                                        0%, 90%, 100% { transform: scaleY(1); }
-                                                        95% { transform: scaleY(0.1); }
-                                                    }
-                                                    .crab-body { fill: #ce412b; }
-                                                    .crab-eye { fill: white; }
-                                                    .crab-pupil { fill: black; }
-                                                    .crab-leg { fill: #ce412b; transform-origin: center; }
-                                                    .animate-crab {
-                                                        animation: scuttle-back-and-forth 6s ease-in-out infinite;
-                                                        transform-origin: center;
-                                                    }
-                                                    .claw-l { animation: wave-claw 2s ease-in-out infinite; transform-origin: 30px 35px; }
-                                                    .eye-blink { animation: blink 4s infinite; transform-origin: center; }
-                                                "#}
-                                            </style>
-                                            <g class="animate-crab">
-                                                <path class="crab-leg" d="M20,50 L5,40 M20,60 L5,70 M20,70 L10,85" stroke="#ce412b" stroke-linecap="round" stroke-width="4"></path>
-                                                <path class="crab-leg" d="M80,50 L95,40 M80,60 L95,70 M80,70 L90,85" stroke="#ce412b" stroke-linecap="round" stroke-width="4"></path>
-                                                <path class="crab-body claw-l" d="M30,30 Q20,10 10,30 Q20,40 30,35 Z"></path>
-                                                <path class="crab-body" d="M70,30 Q80,10 90,30 Q80,40 70,35 Z"></path>
-                                                <ellipse class="crab-body" cx="50" cy="55" rx="35" ry="25"></ellipse>
-                                                <g class="eye-blink">
-                                                    <circle class="crab-eye" cx="40" cy="35" r="5"></circle>
-                                                    <circle class="crab-pupil" cx="40" cy="35" r="2"></circle>
-                                                    <circle class="crab-eye" cx="60" cy="35" r="5"></circle>
-                                                    <circle class="crab-pupil" cx="60" cy="35" r="2"></circle>
-                                                </g>
-                                            </g>
-                                        </svg>
-                                    </div>
-                                </div>
+                            <div class="flex items-center justify-center">
+                                <img src="/logo.png" alt="Crabbase Logo" class="w-20 h-20 object-contain drop-shadow-sm select-none" />
                             </div>
                             <div>
                                 <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight mb-1">{"Crabbase"}</h1>

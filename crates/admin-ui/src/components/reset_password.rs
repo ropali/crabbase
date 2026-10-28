@@ -239,8 +239,8 @@ pub fn reset_password() -> Html {
                     // ── Header ────────────────────────────────────────────────
                     <div class="text-center mb-8">
                         <div class="flex flex-col items-center gap-4">
-                            <div class="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center">
-                                <span class="material-symbols-outlined text-primary text-[32px]">{"lock_reset"}</span>
+                            <div class="flex items-center justify-center">
+                                <img src="/logo.png" alt="Crabbase Logo" class="w-16 h-16 object-contain drop-shadow-sm select-none" />
                             </div>
                             <div>
                                 <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight mb-1">{"Reset Password"}</h1>
