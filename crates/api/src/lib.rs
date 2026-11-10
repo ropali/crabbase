@@ -24,6 +24,9 @@ pub fn get_app_routes(state: AppState) -> Router {
         .nest("/auth", routes::auth::get_routes(state.clone()))
         .nest("/settings", routes::setting::get_routes(state.clone()))
         .nest("/files", routes::files::get_routes(state.clone()))
+        .nest("/backups", routes::backups::get_routes(state.clone()))
+        .nest("/crons", routes::crons::get_routes(state.clone()))
+        .nest("/jobs", routes::jobs::get_routes(state.clone()))
         .layer(DefaultBodyLimit::max(MAX_REQUEST_BODY_BYTES))
         .with_state(state);
 

@@ -1,0 +1,1 @@
+-- No-op: the repair only replaces invalid JSON with valid JSON.

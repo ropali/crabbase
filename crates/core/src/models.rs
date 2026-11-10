@@ -1306,7 +1306,10 @@ mod tests {
             ..Default::default()
         };
         assert!(col.validate_file_upload("a.png", "image/png", 1024).is_ok());
-        assert!(col.validate_file_upload("a.png", "image/png", 1025).is_err());
+        assert!(
+            col.validate_file_upload("a.png", "image/png", 1025)
+                .is_err()
+        );
     }
 
     #[test]
@@ -1319,7 +1322,10 @@ mod tests {
         };
         assert!(col.validate_file_upload("a.png", "image/png", 10).is_ok());
         assert!(col.validate_file_upload("b.jpg", "image/jpeg", 10).is_ok());
-        assert!(col.validate_file_upload("c.pdf", "application/pdf", 10).is_err());
+        assert!(
+            col.validate_file_upload("c.pdf", "application/pdf", 10)
+                .is_err()
+        );
 
         let wildcard = Column {
             name: "any".into(),
@@ -1342,9 +1348,18 @@ mod tests {
             pattern: Some(r"\.(png|jpe?g)$".into()),
             ..Default::default()
         };
-        assert!(col.validate_file_upload("photo.png", "image/png", 10).is_ok());
-        assert!(col.validate_file_upload("photo.JPG", "image/jpeg", 10).is_err());
-        assert!(col.validate_file_upload("notes.pdf", "application/pdf", 10).is_err());
+        assert!(
+            col.validate_file_upload("photo.png", "image/png", 10)
+                .is_ok()
+        );
+        assert!(
+            col.validate_file_upload("photo.JPG", "image/jpeg", 10)
+                .is_err()
+        );
+        assert!(
+            col.validate_file_upload("notes.pdf", "application/pdf", 10)
+                .is_err()
+        );
 
         // Invalid regexes are ignored rather than rejecting every upload
         let bad_re = Column {
@@ -1353,7 +1368,11 @@ mod tests {
             pattern: Some("[".into()),
             ..Default::default()
         };
-        assert!(bad_re.validate_file_upload("anything.bin", "application/octet-stream", 10).is_ok());
+        assert!(
+            bad_re
+                .validate_file_upload("anything.bin", "application/octet-stream", 10)
+                .is_ok()
+        );
     }
 
     #[test]

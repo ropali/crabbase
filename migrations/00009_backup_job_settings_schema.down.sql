@@ -1,0 +1,1 @@
+-- No-op: settings rows are data, not schema.

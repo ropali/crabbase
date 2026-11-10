@@ -8,6 +8,7 @@ crabbase_core = { workspace = true }
 crabbase_db = { workspace = true }
 crabbase_api = { workspace = true }
 crabbase_auth = { workspace = true }
+crabbase_jobs = { workspace = true }
 
 tokio = { workspace = true }
 axum = { workspace = true }

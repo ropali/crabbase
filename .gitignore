@@ -17,3 +17,6 @@ crabbase.toml
 data/
 
 uploads/
+
+# Local backup artifacts
+backups/

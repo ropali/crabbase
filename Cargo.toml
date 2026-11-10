@@ -37,6 +37,8 @@ serde_urlencoded = "0.7.1"
 dotenvy = "0.15.7"
 toml = "1.1.4"
 regex = "1.12"
+thiserror = "2.0"
+tokio-util = { version = "0.7", features = ["io", "rt"] }
 
 # Workspace local members
 crabbase_core = { path = "crates/core" }
@@ -46,6 +48,7 @@ crabbase_auth = { path = "crates/auth" }
 crabbase_files = { path = "crates/files" }
 crabbase_realtime = { path = "crates/realtime" }
 crabbase_hooks = { path = "crates/hooks" }
+crabbase_jobs = { path = "crates/jobs" }
 crabbase_admin = { path = "crates/admin" }
 
 [workspace.lints.rust]

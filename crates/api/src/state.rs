@@ -9,6 +9,7 @@ use crabbase_db::repositories::{
     auth::UserRepository, collections::CollectionRepository, files::FilesRepository,
     records::RecordsRepository, settings::SettingsRepository,
 };
+use crabbase_jobs::{BackupRepository, BackupService, CronRepository, JobRepository};
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -55,5 +56,21 @@ impl AppState {
     }
     pub fn file_service(&self) -> FileUploadService {
         FileUploadService::new(self.settings_repo(), self.files_repo())
+    }
+
+    pub fn jobs_repo(&self) -> JobRepository {
+        JobRepository::new(self.db.clone())
+    }
+
+    pub fn crons_repo(&self) -> CronRepository {
+        CronRepository::new(self.db.clone())
+    }
+
+    pub fn backups_repo(&self) -> BackupRepository {
+        BackupRepository::new(self.db.clone())
+    }
+
+    pub fn backup_service(&self) -> BackupService {
+        BackupService::new(self.db.clone())
     }
 }

@@ -23,6 +23,11 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
             "/storage",
             get(get_storage_settings).post(save_storage_settings),
         )
+        .route(
+            "/backups",
+            get(get_backups_settings).post(save_backups_settings),
+        )
+        .route("/jobs", get(get_jobs_settings).post(save_jobs_settings))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
             require_admin,
@@ -110,4 +115,32 @@ async fn save_storage_settings(
     state.settings_repo().set("storage", &payload).await?;
 
     Ok(Json(json!({"details": "Storage settings saved."})))
+}
+
+async fn get_backups_settings(
+    state: State<AppState>,
+) -> Result<Json<crabbase_jobs::BackupSettings>, APIError> {
+    Ok(Json(crabbase_jobs::load_backup_settings(&state.db).await?))
+}
+
+async fn save_backups_settings(
+    state: State<AppState>,
+    Json(payload): Json<crabbase_jobs::BackupSettings>,
+) -> Result<Json<Value>, APIError> {
+    state.settings_repo().set("backups", &payload).await?;
+    Ok(Json(json!({"details": "Backup settings saved."})))
+}
+
+async fn get_jobs_settings(
+    state: State<AppState>,
+) -> Result<Json<crabbase_jobs::JobsSettings>, APIError> {
+    Ok(Json(crabbase_jobs::load_jobs_settings(&state.db).await?))
+}
+
+async fn save_jobs_settings(
+    state: State<AppState>,
+    Json(payload): Json<crabbase_jobs::JobsSettings>,
+) -> Result<Json<Value>, APIError> {
+    state.settings_repo().set("jobs", &payload).await?;
+    Ok(Json(json!({"details": "Job settings saved."})))
 }

@@ -1,0 +1,1 @@
+-- No-op: schedule repair is intentionally irreversible.

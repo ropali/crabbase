@@ -25,7 +25,7 @@ pub struct FileConfig {
     pub initial_users: Option<Vec<InitialUser>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct DatabaseSection {
     pub host: String,
@@ -106,6 +106,7 @@ pub struct InitialUser {
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database_url: String,
+    pub database: DatabaseSection,
     pub server_bind_addr: String,
     pub max_db_conn: u32,
     pub admin_bind_addr: String,
@@ -135,6 +136,7 @@ impl Config {
 
         let cfg = Config {
             database_url: db.make_url(),
+            database: db.clone(),
             server_bind_addr: format!("{}:{}", server.host, server.port),
             max_db_conn: db.max_connections,
             admin_bind_addr: format!("{}:{}", admin.host, admin.port),

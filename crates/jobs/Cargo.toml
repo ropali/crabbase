@@ -1,0 +1,25 @@
+[package]
+name = "crabbase_jobs"
+version = "0.1.0"
+edition = "2024"
+
+
+[dependencies]
+# Inherit shared dependencies defined in root Cargo.toml
+crabbase_core = { workspace = true }
+crabbase_db = { workspace = true }
+crabbase_files = { workspace = true }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio-util = { workspace = true }
+croner = "4.0.2"

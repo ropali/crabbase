@@ -1,99 +1,176 @@
+use wasm_bindgen::JsCast;
+use wasm_bindgen_futures::spawn_local;
 use yew::prelude::*;
+
+use crate::api::client::ApiClient;
+use crate::models::backup::Backup;
 
 #[function_component(SettingsBackups)]
 pub fn settings_backups() -> Html {
-    let auto_backups_enabled = use_state(|| true);
-    let s3_backups_enabled = use_state(|| false);
-    let is_backup_options_open = use_state(|| true);
+    let backups = use_state(Vec::<Backup>::new);
+    let loading = use_state(|| true);
     let is_initializing = use_state(|| false);
-    let is_backup_complete = use_state(|| false);
-    let is_saved = use_state(|| false);
+    let error = use_state(|| Option::<String>::None);
+    let auto_backups_enabled = use_state(|| false);
+    let is_backup_options_open = use_state(|| true);
 
-    let toggle_auto_backups = {
+    let reload = {
+        let backups = backups.clone();
+        let loading = loading.clone();
+        let error = error.clone();
         let auto_backups_enabled = auto_backups_enabled.clone();
         Callback::from(move |_| {
-            auto_backups_enabled.set(!*auto_backups_enabled);
+            let backups = backups.clone();
+            let loading = loading.clone();
+            let error = error.clone();
+            let auto_backups_enabled = auto_backups_enabled.clone();
+            loading.set(true);
+            spawn_local(async move {
+                let client = ApiClient::default();
+                match client.list_backups().await {
+                    Ok(resp) => {
+                        backups.set(resp.items);
+                        error.set(None);
+                    }
+                    Err(e) => error.set(Some(e.to_string())),
+                }
+                if let Ok(crons) = client.list_crons().await {
+                    if let Some(cron) = crons.iter().find(|c| c.name == "db.backup") {
+                        auto_backups_enabled.set(cron.enabled);
+                    }
+                }
+                loading.set(false);
+            });
         })
     };
 
-    let toggle_s3_backups = {
-        let s3_backups_enabled = s3_backups_enabled.clone();
+    {
+        let reload = reload.clone();
+        use_effect_with((), move |_| {
+            reload.emit(());
+            || ()
+        });
+    }
+
+    let initialize_backup = {
+        let is_initializing = is_initializing.clone();
+        let error = error.clone();
+        let backups = backups.clone();
+        let loading = loading.clone();
         Callback::from(move |_| {
-            s3_backups_enabled.set(!*s3_backups_enabled);
+            let is_initializing = is_initializing.clone();
+            let error = error.clone();
+            let backups = backups.clone();
+            let loading = loading.clone();
+            is_initializing.set(true);
+            error.set(None);
+            spawn_local(async move {
+                let client = ApiClient::default();
+                if let Err(e) = client.create_backup().await {
+                    error.set(Some(e.to_string()));
+                    is_initializing.set(false);
+                    return;
+                }
+
+                // Poll while the worker is dumping.
+                for _ in 0..60 {
+                    gloo_timers::future::TimeoutFuture::new(2000).await;
+                    if let Ok(resp) = client.list_backups().await {
+                        let active = resp
+                            .items
+                            .iter()
+                            .any(|b| b.status == "pending" || b.status == "running");
+                        backups.set(resp.items);
+                        if !active {
+                            break;
+                        }
+                    }
+                }
+
+                loading.set(false);
+                is_initializing.set(false);
+            });
+        })
+    };
+
+    let toggle_auto_backups = {
+        let auto_backups_enabled = auto_backups_enabled.clone();
+        let error = error.clone();
+        Callback::from(move |_| {
+            let next = !*auto_backups_enabled;
+            auto_backups_enabled.set(next);
+            let error = error.clone();
+            spawn_local(async move {
+                let client = ApiClient::default();
+                match client.list_crons().await {
+                    Ok(crons) => {
+                        if let Some(cron) = crons.iter().find(|c| c.name == "db.backup") {
+                            if let Err(e) = client.update_cron(&cron.id, None, Some(next)).await {
+                                error.set(Some(e.to_string()));
+                            }
+                        } else {
+                            error.set(Some("db.backup cron is missing".to_string()));
+                        }
+                    }
+                    Err(e) => error.set(Some(e.to_string())),
+                }
+            });
         })
     };
 
     let toggle_options_panel = {
         let is_backup_options_open = is_backup_options_open.clone();
-        Callback::from(move |_| {
-            is_backup_options_open.set(!*is_backup_options_open);
-        })
+        Callback::from(move |_| is_backup_options_open.set(!*is_backup_options_open))
     };
 
-    let initialize_backup = {
-        let is_initializing = is_initializing.clone();
-        let is_backup_complete = is_backup_complete.clone();
-        Callback::from(move |_| {
-            is_initializing.set(true);
-            let is_initializing = is_initializing.clone();
-            let is_backup_complete = is_backup_complete.clone();
-            gloo_timers::callback::Timeout::new(1500, move || {
-                is_initializing.set(false);
-                is_backup_complete.set(true);
-            })
-            .forget();
-        })
-    };
-
-    let on_save = {
-        let is_saved = is_saved.clone();
-        Callback::from(move |_| {
-            is_saved.set(true);
-        })
-    };
+    let manual_count = backups
+        .iter()
+        .filter(|b| b.triggered_by == "manual")
+        .count();
+    let scheduled_count = backups
+        .iter()
+        .filter(|b| b.triggered_by != "manual")
+        .count();
+    let last_snapshot = backups
+        .iter()
+        .find(|b| b.status == "completed")
+        .map(|b| short_time(&b.created))
+        .unwrap_or_else(|| "--/--/--".to_string());
+    let has_active = backups
+        .iter()
+        .any(|b| b.status == "pending" || b.status == "running");
 
     html! {
         <main class="flex-1 overflow-y-auto p-margin_page bg-surface">
             <div class="max-w-5xl mx-auto space-y-8">
-                /* Breadcrumbs */
                 <div class="flex items-center gap-2 font-label-xs text-label-xs text-outline">
                     <a class="hover:text-primary transition-colors" href="#">{"Settings"}</a>
                     <span class="material-symbols-outlined text-[14px]">{"chevron_right"}</span>
                     <span class="text-on-surface">{"Backups"}</span>
                 </div>
 
-                /* Page Title Area */
                 <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div>
                         <h2 class="font-headline-lg text-headline-lg text-on-surface mb-1">{"Backup and restore your data"}</h2>
-                        <p class="font-body-md text-body-md text-on-surface-variant">{"Manage snapshot schedules and cloud persistence for your Crabbase clusters."}</p>
+                        <p class="font-body-md text-body-md text-on-surface-variant">{"Manage snapshot schedules and local persistence for your Crabbase cluster."}</p>
                     </div>
                     <div class="flex items-center gap-2">
-                        <button class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface-variant hover:bg-surface-container transition-all text-body-sm cursor-pointer active:scale-95">
+                        <button
+                            onclick={let reload = reload.clone(); move |_| reload.emit(())}
+                            class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface-variant hover:bg-surface-container transition-all text-body-sm cursor-pointer active:scale-95"
+                        >
                             <span class="material-symbols-outlined text-[18px]">{"refresh"}</span>
                             <span>{"Refresh"}</span>
-                        </button>
-                        <button class="flex items-center gap-2 px-3 py-2 bg-surface-container-low border border-outline-variant rounded-lg text-on-surface-variant hover:bg-surface-container transition-all text-body-sm cursor-pointer active:scale-95">
-                            <span class="material-symbols-outlined text-[18px]">{"cloud"}</span>
-                            <span>{"Connect Storage"}</span>
                         </button>
                     </div>
                 </div>
 
                 {
-                    if *is_saved {
+                    if let Some(message) = (*error).clone() {
                         html! {
-                            <div class="p-4 bg-primary-container/10 border border-primary-container/30 text-primary rounded-lg flex items-center justify-between transition-all">
-                                <div class="flex items-center gap-2">
-                                    <span class="material-symbols-outlined">{"check_circle"}</span>
-                                    <span class="font-body-sm text-body-sm font-bold">{"Backup settings saved successfully!"}</span>
-                                </div>
-                                <button onclick={
-                                    let is_saved = is_saved.clone();
-                                    move |_| is_saved.set(false)
-                                } class="text-primary hover:opacity-80">
-                                    <span class="material-symbols-outlined text-sm">{"close"}</span>
-                                </button>
+                            <div class="p-4 bg-red-50 border border-red-200 text-red-800 rounded-lg flex items-center gap-2">
+                                <span class="material-symbols-outlined">{"error"}</span>
+                                <span class="font-body-sm text-body-sm font-bold">{message}</span>
                             </div>
                         }
                     } else {
@@ -101,67 +178,41 @@ pub fn settings_backups() -> Html {
                     }
                 }
 
-                /* Bento Grid - Backup Overview */
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    /* Main Backup Interface Card */
                     <div class="md:col-span-2 bg-surface-container-lowest border border-outline-variant rounded-xl p-6 flex flex-col justify-center min-h-[300px] relative overflow-hidden shadow-sm">
                         <div class="absolute -right-12 -top-12 opacity-5 pointer-events-none">
                             <span class="material-symbols-outlined text-[240px]">{"database"}</span>
                         </div>
                         <div class="relative z-10 flex flex-col items-center text-center">
-                            {
-                                if *is_backup_complete {
-                                    html! {
-                                        <>
-                                            <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4 text-green-700">
-                                                <span class="material-symbols-outlined text-[32px]">{"check_circle"}</span>
-                                            </div>
-                                            <h3 class="font-headline-md text-headline-md mb-2 text-on-surface">{"Snapshot Created Successfully!"}</h3>
-                                            <p class="font-body-sm text-body-sm text-on-surface-variant mb-6 max-w-xs">
-                                                {"System snapshot snapshot_latest.zip has been generated and saved locally."}
-                                            </p>
-                                            <button
-                                                onclick={initialize_backup}
-                                                class="bg-primary text-white font-body-md text-body-md px-8 py-3 rounded-lg font-bold flex items-center gap-2 hover:opacity-90 active:scale-95 transition-all shadow-sm cursor-pointer"
-                                            >
-                                                <span class="material-symbols-outlined text-[20px]">{"refresh"}</span>
-                                                {"Create another backup"}
-                                            </button>
-                                        </>
-                                    }
-                                } else {
-                                    html! {
-                                        <>
-                                            <div class="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mb-4 text-on-surface-variant">
-                                                <span class="material-symbols-outlined text-[32px]">{"folder_off"}</span>
-                                            </div>
-                                            <h3 class="font-headline-md text-headline-md mb-2 text-on-surface">{"No backups found."}</h3>
-                                            <p class="font-body-sm text-body-sm text-on-surface-variant mb-6 max-w-xs">
-                                                {"You haven't created any manual or scheduled backups yet. Start by initializing your first system snapshot."}
-                                            </p>
-                                            <button
-                                                onclick={initialize_backup}
-                                                disabled={*is_initializing}
-                                                class={classes!(
-                                                    "bg-primary", "text-white", "font-body-md", "text-body-md", "px-8", "py-3",
-                                                    "rounded-lg", "font-bold", "flex", "items-center", "gap-2",
-                                                    "transition-all", "shadow-sm", "cursor-pointer",
-                                                    if *is_initializing { "opacity-70 cursor-not-allowed" } else { "hover:opacity-90 active:scale-95" }
-                                                )}
-                                            >
-                                                <span class={classes!("material-symbols-outlined", "text-[20px]", if *is_initializing { "animate-spin" } else { "" })}>
-                                                    {if *is_initializing { "sync" } else { "play_circle" }}
-                                                </span>
-                                                {if *is_initializing { "Creating snapshot..." } else { "Initialize new backup" }}
-                                            </button>
-                                        </>
-                                    }
-                                }
-                            }
+                            <div class="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mb-4 text-on-surface-variant">
+                                <span class="material-symbols-outlined text-[32px]">
+                                    {if has_active { "sync" } else { "database" }}
+                                </span>
+                            </div>
+                            <h3 class="font-headline-md text-headline-md mb-2 text-on-surface">
+                                {if has_active { "Backup in progress..." } else { "Create a new backup" }}
+                            </h3>
+                            <p class="font-body-sm text-body-sm text-on-surface-variant mb-6 max-w-xs">
+                                {"A pg_dump custom-format snapshot will be generated and stored in the local backup directory."}
+                            </p>
+                            <button
+                                onclick={initialize_backup}
+                                disabled={*is_initializing || has_active}
+                                class={classes!(
+                                    "bg-primary", "text-white", "font-body-md", "text-body-md", "px-8", "py-3",
+                                    "rounded-lg", "font-bold", "flex", "items-center", "gap-2",
+                                    "transition-all", "shadow-sm", "cursor-pointer",
+                                    if *is_initializing || has_active { "opacity-70 cursor-not-allowed" } else { "hover:opacity-90 active:scale-95" }
+                                )}
+                            >
+                                <span class={classes!("material-symbols-outlined", "text-[20px]", if *is_initializing || has_active { "animate-spin" } else { "" })}>
+                                    {if *is_initializing || has_active { "sync" } else { "play_circle" }}
+                                </span>
+                                {if *is_initializing || has_active { "Creating snapshot..." } else { "Initialize new backup" }}
+                            </button>
                         </div>
                     </div>
 
-                    /* Stats/Quick Info Sidebar */
                     <div class="space-y-6">
                         <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm">
                             <h4 class="font-label-xs text-label-xs text-outline uppercase mb-4 tracking-wider">{"Health Status"}</h4>
@@ -174,23 +225,24 @@ pub fn settings_backups() -> Html {
                             </div>
                             <div class="flex items-center justify-between">
                                 <span class="font-body-sm text-body-sm">{"Last Snapshot"}</span>
-                                <span class="font-code-md text-code-md text-on-surface-variant">
-                                    {if *is_backup_complete { "Just now" } else { "--/--/--" }}
-                                </span>
+                                <span class="font-code-md text-code-md text-on-surface-variant">{last_snapshot}</span>
                             </div>
                         </div>
 
-                        <div class="bg-primary-container/10 border border-primary-container/20 rounded-xl p-5 shadow-sm">
-                            <h4 class="font-label-xs text-label-xs text-primary-container uppercase mb-2 tracking-wider font-bold">{"System Recommendation"}</h4>
-                            <p class="font-body-sm text-body-sm text-on-surface mb-3 leading-relaxed">
-                                {"Consider enabling automated S3 backups to prevent data loss during hardware failures."}
-                            </p>
-                            <a class="font-label-xs text-label-xs text-primary font-bold hover:underline" href="#">{"Learn more about redundancy"}</a>
+                        <div class="bg-surface-container-lowest border border-outline-variant rounded-xl p-5 shadow-sm">
+                            <h4 class="font-label-xs text-label-xs text-outline uppercase mb-3 tracking-wider">{"Totals"}</h4>
+                            <div class="flex items-center justify-between text-body-sm">
+                                <span>{"Manual"}</span>
+                                <span class="font-bold">{manual_count}</span>
+                            </div>
+                            <div class="flex items-center justify-between text-body-sm mt-2">
+                                <span>{"Automatic"}</span>
+                                <span class="font-bold">{scheduled_count}</span>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                /* Configuration Section */
                 <div class="bg-surface-container-lowest border border-outline-variant rounded-xl overflow-hidden shadow-sm">
                     <div
                         onclick={toggle_options_panel}
@@ -209,11 +261,10 @@ pub fn settings_backups() -> Html {
                         if *is_backup_options_open {
                             html! {
                                 <div class="p-6 space-y-8">
-                                    /* Toggle 1: Auto Backups */
                                     <div class="flex items-center justify-between">
                                         <div class="max-w-md">
                                             <h5 class="font-body-md text-body-md font-bold mb-1">{"Enable auto backups"}</h5>
-                                            <p class="font-body-sm text-body-sm text-on-surface-variant">{"Automatically create a system snapshot every 24 hours at midnight UTC. Includes all collections and schema definitions."}</p>
+                                            <p class="font-body-sm text-body-sm text-on-surface-variant">{"Runs the db.backup cron (02:00 UTC by default). You can change the schedule from the Crons page."}</p>
                                         </div>
                                         <button
                                             type="button"
@@ -238,60 +289,12 @@ pub fn settings_backups() -> Html {
 
                                     <div class="h-[1px] bg-outline-variant w-full"></div>
 
-                                    /* Toggle 2: S3 Backups */
-                                    <div class="flex items-center justify-between">
+                                    <div class="flex items-center justify-between opacity-60">
                                         <div class="max-w-md">
                                             <h5 class="font-body-md text-body-md font-bold mb-1">{"Store backups in S3 storage"}</h5>
-                                            <p class="font-body-sm text-body-sm text-on-surface-variant">{"Encrypt and upload completed backups to a remote Amazon S3, MinIO, or Google Cloud bucket for geographic redundancy."}</p>
+                                            <p class="font-body-sm text-body-sm text-on-surface-variant">{"S3 backup upload requires streaming multipart and is not part of the MVP. Backups are stored on local disk."}</p>
                                         </div>
-                                        <button
-                                            type="button"
-                                            onclick={toggle_s3_backups}
-                                            class={classes!(
-                                                "relative", "inline-flex", "h-6", "w-11", "shrink-0", "cursor-pointer",
-                                                "rounded-full", "border-2", "border-transparent", "transition-colors",
-                                                "duration-200", "ease-in-out", "focus:outline-none",
-                                                if *s3_backups_enabled { "bg-primary" } else { "bg-outline-variant" }
-                                            )}
-                                        >
-                                            <span
-                                                class={classes!(
-                                                    "pointer-events-none", "inline-block", "h-5", "w-5", "transform",
-                                                    "rounded-full", "bg-white", "shadow", "ring-0", "transition",
-                                                    "duration-200", "ease-in-out",
-                                                    if *s3_backups_enabled { "translate-x-5" } else { "translate-x-0" }
-                                                )}
-                                            />
-                                        </button>
-                                    </div>
-
-                                    {
-                                        if *s3_backups_enabled {
-                                            html! {
-                                                <div class="bg-surface-container p-4 rounded-lg flex items-start gap-3 border border-outline-variant/30">
-                                                    <span class="material-symbols-outlined text-primary text-[20px]">{"info"}</span>
-                                                    <div>
-                                                        <p class="font-body-sm text-body-sm font-bold text-on-surface">{"Configuration Required"}</p>
-                                                        <p class="font-body-sm text-body-sm text-on-surface-variant">
-                                                            {"S3 storage requires credentials (Access Key, Secret Key, Endpoint) to be configured in the File storage section before activation."}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            }
-                                        } else {
-                                            html! {}
-                                        }
-                                    }
-
-                                    /* Footer Actions */
-                                    <div class="pt-4 border-t border-outline-variant flex justify-end">
-                                        <button
-                                            type="button"
-                                            onclick={on_save}
-                                            class="bg-primary text-white font-body-md text-body-md px-6 py-2 rounded-lg font-bold hover:opacity-90 active:scale-95 transition-all cursor-pointer"
-                                        >
-                                            {"Save changes"}
-                                        </button>
+                                        <span class="px-2 py-0.5 bg-surface-container rounded font-label-xs text-label-xs font-bold">{"Not available"}</span>
                                     </div>
                                 </div>
                             }
@@ -301,18 +304,17 @@ pub fn settings_backups() -> Html {
                     }
                 </div>
 
-                /* Backup History Table Section */
                 <div class="mt-8">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="font-headline-md text-headline-md font-bold text-on-surface">{"Backup History"}</h3>
                         <div class="flex items-center gap-4 text-outline font-label-xs text-label-xs">
                             <span class="flex items-center gap-1">
                                 <span class="w-2 h-2 rounded-full bg-primary"></span>
-                                {if *is_backup_complete { "1 Manual" } else { "0 Manual" }}
+                                {format!("{} Manual", manual_count)}
                             </span>
                             <span class="flex items-center gap-1">
                                 <span class="w-2 h-2 rounded-full bg-secondary"></span>
-                                {"0 Automated"}
+                                {format!("{} Automated", scheduled_count)}
                             </span>
                         </div>
                     </div>
@@ -321,7 +323,7 @@ pub fn settings_backups() -> Html {
                         <table class="w-full text-left border-collapse">
                             <thead>
                                 <tr class="bg-surface-container-low border-b border-outline-variant">
-                                    <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"ID / Filename"}</th>
+                                    <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Filename"}</th>
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Created"}</th>
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Size"}</th>
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Type"}</th>
@@ -331,26 +333,15 @@ pub fn settings_backups() -> Html {
                             </thead>
                             <tbody>
                                 {
-                                    if *is_backup_complete {
+                                    if *loading && backups.is_empty() {
                                         html! {
-                                            <tr class="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors">
-                                                <td class="px-cell_padding_h py-3 font-code-md text-code-md font-bold text-on-surface">{"snapshot_manual_latest.zip"}</td>
-                                                <td class="px-cell_padding_h py-3 font-body-sm text-body-sm text-on-surface-variant">{"Just now"}</td>
-                                                <td class="px-cell_padding_h py-3 font-code-md text-code-md text-on-surface-variant">{"1.2 MB"}</td>
-                                                <td class="px-cell_padding_h py-3 font-body-sm text-body-sm">
-                                                    <span class="px-2 py-0.5 bg-primary-container/10 text-primary rounded font-label-xs text-label-xs font-bold">{"Manual"}</span>
-                                                </td>
-                                                <td class="px-cell_padding_h py-3 font-body-sm text-body-sm">
-                                                    <span class="px-2 py-0.5 bg-green-100 text-green-800 rounded font-label-xs text-label-xs font-bold">{"Completed"}</span>
-                                                </td>
-                                                <td class="px-cell_padding_h py-3 text-right">
-                                                    <button class="px-3 py-1 bg-surface-container hover:bg-outline-variant rounded font-label-xs text-label-xs font-bold text-on-surface-variant transition-colors cursor-pointer">
-                                                        {"Download"}
-                                                    </button>
+                                            <tr>
+                                                <td class="px-cell_padding_h py-12 text-center" colspan="6">
+                                                    <span class="material-symbols-outlined animate-spin text-outline text-[32px]">{"sync"}</span>
                                                 </td>
                                             </tr>
                                         }
-                                    } else {
+                                    } else if backups.is_empty() {
                                         html! {
                                             <tr>
                                                 <td class="px-cell_padding_h py-12 text-center" colspan="6">
@@ -361,6 +352,82 @@ pub fn settings_backups() -> Html {
                                                 </td>
                                             </tr>
                                         }
+                                    } else {
+                                        html! {
+                                            <>
+                                                { for backups.iter().map(|backup| {
+                                                    let id_download = backup.id.clone();
+                                                    let filename = backup.filename.clone();
+                                                    let error_download = error.clone();
+                                                    let on_download = Callback::from(move |_| {
+                                                        let id = id_download.clone();
+                                                        let filename = filename.clone();
+                                                        let error = error_download.clone();
+                                                        spawn_local(async move {
+                                                            let client = ApiClient::default();
+                                                            match client.download_backup(&id).await {
+                                                                Ok(bytes) => trigger_download(&filename, bytes),
+                                                                Err(e) => error.set(Some(e.to_string())),
+                                                            }
+                                                        });
+                                                    });
+
+                                                    let id_delete = backup.id.clone();
+                                                    let error_delete = error.clone();
+                                                    let reload = reload.clone();
+                                                    let on_delete = Callback::from(move |_| {
+                                                        let id = id_delete.clone();
+                                                        let error = error_delete.clone();
+                                                        let reload = reload.clone();
+                                                        spawn_local(async move {
+                                                            let client = ApiClient::default();
+                                                            match client.delete_backup(&id).await {
+                                                                Ok(()) => reload.emit(()),
+                                                                Err(e) => error.set(Some(e.to_string())),
+                                                            }
+                                                        });
+                                                    });
+
+                                                    let completed = backup.status == "completed";
+
+                                                    html! {
+                                                        <tr class="border-b border-outline-variant/30 hover:bg-surface-container-low transition-colors">
+                                                            <td class="px-cell_padding_h py-3 font-code-md text-code-md font-bold text-on-surface">{&backup.filename}</td>
+                                                            <td class="px-cell_padding_h py-3 font-body-sm text-body-sm text-on-surface-variant">{short_time(&backup.created)}</td>
+                                                            <td class="px-cell_padding_h py-3 font-code-md text-code-md text-on-surface-variant">{format_size(backup.size_bytes)}</td>
+                                                            <td class="px-cell_padding_h py-3 font-body-sm text-body-sm">
+                                                                <span class="px-2 py-0.5 bg-primary-container/10 text-primary rounded font-label-xs text-label-xs font-bold">
+                                                                    {display_trigger(&backup.triggered_by)}
+                                                                </span>
+                                                            </td>
+                                                            <td class="px-cell_padding_h py-3 font-body-sm text-body-sm">
+                                                                <span class={classes!("px-2", "py-0.5", "rounded", "font-label-xs", "text-label-xs", "font-bold", status_class(&backup.status))}>
+                                                                    {&backup.status}
+                                                                </span>
+                                                            </td>
+                                                            <td class="px-cell_padding_h py-3 text-right space-x-2">
+                                                                <button
+                                                                    onclick={on_download}
+                                                                    disabled={!completed}
+                                                                    class={classes!(
+                                                                        "px-3", "py-1", "rounded", "font-label-xs", "text-label-xs", "font-bold", "transition-colors",
+                                                                        if completed { "bg-surface-container hover:bg-outline-variant text-on-surface-variant cursor-pointer" } else { "bg-surface-container text-outline cursor-not-allowed opacity-50" }
+                                                                    )}
+                                                                >
+                                                                    {"Download"}
+                                                                </button>
+                                                                <button
+                                                                    onclick={on_delete}
+                                                                    class="px-3 py-1 bg-red-50 hover:bg-red-100 text-red-700 rounded font-label-xs text-label-xs font-bold transition-colors cursor-pointer"
+                                                                >
+                                                                    {"Delete"}
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                }) }
+                                            </>
+                                        }
                                     }
                                 }
                             </tbody>
@@ -370,4 +437,81 @@ pub fn settings_backups() -> Html {
             </div>
         </main>
     }
+}
+
+fn short_time(value: &str) -> String {
+    value
+        .replace('T', " ")
+        .split('.')
+        .next()
+        .map(|s| s.trim_end_matches('Z').to_string())
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn format_size(bytes: Option<i64>) -> String {
+    let Some(bytes) = bytes else {
+        return "--".to_string();
+    };
+    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 {
+        format!("{} {}", bytes, UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
+fn display_trigger(value: &str) -> &str {
+    match value {
+        "manual" => "Manual",
+        "scheduled" => "Automated",
+        "cli" => "CLI",
+        other => other,
+    }
+}
+
+fn status_class(status: &str) -> &'static str {
+    match status {
+        "completed" => "bg-green-100 text-green-800",
+        "failed" => "bg-red-100 text-red-800",
+        "running" => "bg-blue-100 text-blue-800",
+        _ => "bg-yellow-100 text-yellow-800",
+    }
+}
+
+fn trigger_download(filename: &str, bytes: Vec<u8>) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+
+    let parts = js_sys::Array::new();
+    let data = js_sys::Uint8Array::from(bytes.as_slice());
+    parts.push(&data);
+
+    let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(parts.as_ref()) else {
+        return;
+    };
+    let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) else {
+        return;
+    };
+
+    if let Some(anchor) = document
+        .create_element("a")
+        .ok()
+        .and_then(|el| el.dyn_into::<web_sys::HtmlAnchorElement>().ok())
+    {
+        anchor.set_href(&url);
+        anchor.set_download(filename);
+        anchor.click();
+    }
+
+    let _ = web_sys::Url::revoke_object_url(&url);
 }

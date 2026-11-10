@@ -23,7 +23,7 @@ use crabbase_core::{
     utils::string_utils::{quote_ident, random_str},
 };
 
-use crate::repositories::files::{FileResponse};
+use crate::repositories::files::FileResponse;
 use bcrypt;
 
 /// Trait implemented by file storage services to delete files on disk and in database.

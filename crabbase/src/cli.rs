@@ -24,4 +24,10 @@ pub enum Commands {
         #[arg(long, value_name = "FILE", default_value = "crabbase.toml")]
         config: PathBuf,
     },
+    /// Run only the job scheduler/worker (no HTTP server)
+    Worker {
+        /// Config file location
+        #[arg(long, value_name = "FILE", default_value = "crabbase.toml")]
+        config: PathBuf,
+    },
 }
