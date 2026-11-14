@@ -551,6 +551,27 @@ impl ApiClient {
         Ok(())
     }
 
+    pub async fn get_backup_settings(&self) -> Result<serde_json::Value, gloo_net::Error> {
+        let res = self.request("GET", "/settings/backups").send().await?;
+        Self::check_response(res)
+            .await?
+            .json::<serde_json::Value>()
+            .await
+    }
+
+    pub async fn save_backup_settings(
+        &self,
+        body: serde_json::Value,
+    ) -> Result<(), gloo_net::Error> {
+        let res = self
+            .request("POST", "/settings/backups")
+            .json(&body)?
+            .send()
+            .await?;
+        Self::check_response(res).await?;
+        Ok(())
+    }
+
     pub async fn upload_files(
         &self,
         collection: &str,

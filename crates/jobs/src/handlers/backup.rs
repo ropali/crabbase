@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use crabbase_db::repositories::{files::FilesRepository, settings::SettingsRepository};
+use crabbase_files::{FileStorage, FileUploadService};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::{io::AsyncReadExt, process::Command};
@@ -111,9 +113,15 @@ async fn dump_and_record(
         .await
         .map_err(|e| JobError::Retryable(format!("hash backup: {e}")))?;
 
+    let storage_backend = if &cfg.storage_type == "cloud" {
+        upload_backup(ctx, &backup.filename, &path).await?
+    } else {
+        "local".to_string()
+    };
+
     let version = pg_dump_version(&cfg.pg_dump_path).await?;
 
-    repo.mark_completed(backup.id, size, &checksum, &version)
+    repo.mark_completed(backup.id, size, &checksum, &version, &storage_backend)
         .await
         .map_err(|e| JobError::Retryable(e.to_string()))?;
 
@@ -123,6 +131,41 @@ async fn dump_and_record(
         "sizeBytes": size,
         "checksum": checksum,
     }))
+}
+
+async fn resolve_storage(ctx: &JobContext) -> Result<Box<dyn FileStorage>, JobError> {
+    let service = FileUploadService::new(
+        SettingsRepository::new(ctx.pool.clone()),
+        FilesRepository::new(ctx.pool.clone()),
+    );
+
+    service
+        .resolve_storage()
+        .await
+        .map_err(|e| JobError::Retryable(format!("resolve backup storage: {e:?}")))
+}
+
+async fn upload_backup(
+    ctx: &JobContext,
+    filename: &str,
+    path: &PathBuf,
+) -> Result<String, JobError> {
+    let storage = resolve_storage(ctx).await?;
+
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| JobError::Retryable(format!("read backup for upload: {e}")))?;
+
+    storage
+        .put_object(
+            &crate::repository::backup_object_key(filename),
+            bytes,
+            "application/octet-stream",
+        )
+        .await
+        .map_err(|e| JobError::Retryable(format!("upload backup: {e}")))?;
+
+    Ok(storage.backend().to_string())
 }
 
 async fn dump_database(
@@ -243,14 +286,34 @@ impl JobHandler for BackupPruneHandler {
             .await
             .map_err(|e| JobError::Retryable(e.to_string()))?;
 
-        for filename in &removed {
+        let needs_cloud = removed.iter().any(|(_, backend)| backend == "cloud");
+        let storage = if needs_cloud {
+            Some(resolve_storage(ctx).await?)
+        } else {
+            None
+        };
+
+        for (filename, backend) in &removed {
             let _ = tokio::fs::remove_file(cfg.dir.join(filename)).await;
+
+            if backend == "cloud" {
+                if let Some(storage) = &storage {
+                    if let Err(e) = storage
+                        .delete_object(&crate::repository::backup_object_key(filename))
+                        .await
+                    {
+                        tracing::warn!(backup = %filename, error = %e, "failed to delete cloud backup");
+                    }
+                }
+            }
         }
+
+        let filenames: Vec<&String> = removed.iter().map(|(filename, _)| filename).collect();
 
         Ok(json!({
             "keepDays": keep_days,
             "removed": removed.len(),
-            "filenames": removed,
+            "filenames": filenames,
         }))
     }
 }

@@ -13,7 +13,7 @@ pub use models::{Backup, Cron, Job};
 pub use registry::Registry;
 pub use repository::{
     BackupListResponse, BackupRepository, BackupService, CronRepository, JobListResponse,
-    JobRepository, NewJob, backup_filename, next_occurrence,
+    JobRepository, NewJob, backup_filename, backup_object_key, next_occurrence,
 };
 pub use runtime::{JobRuntime, preflight, start};
 pub use settings::{

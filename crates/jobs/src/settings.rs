@@ -11,6 +11,7 @@ use tracing::warn;
 pub struct BackupSettings {
     pub enabled: bool,
     pub dir: PathBuf,
+    pub storage_type: String,
     pub pg_dump_path: String,
     pub retention_days: i64,
     pub max_concurrent: usize,
@@ -23,6 +24,7 @@ impl Default for BackupSettings {
         Self {
             enabled: true,
             dir: PathBuf::from("./backups"),
+            storage_type: String::from("local"),
             pg_dump_path: "pg_dump".to_string(),
             retention_days: 14,
             max_concurrent: 1,

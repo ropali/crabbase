@@ -2,8 +2,10 @@ use std::{str::FromStr, time::Duration};
 
 use chrono::{DateTime, Utc};
 use crabbase_core::errors::RepositoryError;
+use crabbase_db::repositories::{files::FilesRepository, settings::SettingsRepository};
+use crabbase_files::FileUploadService;
 use croner::Cron as CronExpr;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 use tracing::warn;
@@ -77,6 +79,11 @@ pub fn backup_filename() -> String {
         Utc::now().format("%Y%m%dT%H%M%SZ"),
         Uuid::new_v4().simple()
     )
+}
+
+/// Object key used when a backup is uploaded to remote storage.
+pub fn backup_object_key(filename: &str) -> String {
+    format!("backups/{filename}")
 }
 
 #[derive(Debug, Clone)]
@@ -640,12 +647,14 @@ impl BackupRepository {
         size_bytes: i64,
         checksum: &str,
         pg_dump_version: &str,
+        storage_backend: &str,
     ) -> Result<(), RepositoryError> {
         sqlx::query(
             r#"
             UPDATE _backups
             SET status = 'completed', size_bytes = $2, checksum = $3,
-                pg_dump_version = $4, finished = now(), error = NULL
+                pg_dump_version = $4, finished = now(), error = NULL,
+                storage_backend = $5
             WHERE id = $1
             "#,
         )
@@ -653,6 +662,7 @@ impl BackupRepository {
         .bind(size_bytes)
         .bind(checksum)
         .bind(pg_dump_version)
+        .bind(storage_backend)
         .execute(&self.db)
         .await?;
         Ok(())
@@ -706,7 +716,7 @@ impl BackupRepository {
         })
     }
 
-    pub async fn delete_row(&self, id: Uuid) -> Result<(), RepositoryError> {
+    pub async fn delete(&self, id: Uuid) -> Result<(), RepositoryError> {
         sqlx::query("DELETE FROM _backups WHERE id = $1")
             .bind(id)
             .execute(&self.db)
@@ -715,9 +725,10 @@ impl BackupRepository {
     }
 
     /// Deletes completed backups older than `keep_days`, but always keeps the
-    /// newest successful backup. Returns the filenames that were removed.
-    pub async fn prune(&self, keep_days: i64) -> Result<Vec<String>, RepositoryError> {
-        let removed = sqlx::query_scalar::<_, String>(
+    /// newest successful backup. Returns the filename and storage backend of
+    /// each removed backup so the caller can clean up the artifact.
+    pub async fn prune(&self, keep_days: i64) -> Result<Vec<(String, String)>, RepositoryError> {
+        let removed = sqlx::query_as::<_, (String, String)>(
             r#"
             DELETE FROM _backups
             WHERE status = 'completed'
@@ -728,7 +739,7 @@ impl BackupRepository {
                   ORDER BY created DESC
                   LIMIT 1
               )
-            RETURNING filename
+            RETURNING filename, storage_backend
             "#,
         )
         .bind(keep_days)
@@ -738,10 +749,6 @@ impl BackupRepository {
         Ok(removed)
     }
 }
-
-// ============================================================
-// Backup service (API-facing)
-// ============================================================
 
 #[derive(Debug, Clone)]
 pub struct BackupService {
@@ -798,7 +805,7 @@ impl BackupService {
             .await?
             .ok_or_else(|| RepositoryError::NotFound("backup".to_string()))?;
 
-        repo.delete_row(id).await?;
+        repo.delete(id).await?;
 
         // Delete the artifact after the row. An orphan file is recoverable; a
         // catalog row pointing at a deleted file is not.
@@ -807,6 +814,27 @@ impl BackupService {
             .map(|settings| settings.dir)
             .unwrap_or_default();
         let _ = tokio::fs::remove_file(dir.join(&backup.filename)).await;
+
+        if backup.storage_backend == "s3" {
+            let service = FileUploadService::new(
+                SettingsRepository::new(self.db.clone()),
+                FilesRepository::new(self.db.clone()),
+            );
+            match service.resolve_storage().await {
+                Ok(storage) => {
+                    if let Err(e) = storage
+                        .delete_object(&backup_object_key(&backup.filename))
+                        .await
+                    {
+                        warn!(backup = %backup.filename, error = %e, "failed to delete cloud backup");
+                    }
+                }
+                Err(e) => {
+                    warn!(backup = %backup.filename, error = ?e, "failed to resolve storage for backup delete")
+                }
+            }
+        }
+
         Ok(())
     }
 }

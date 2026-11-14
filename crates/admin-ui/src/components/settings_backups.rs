@@ -12,6 +12,8 @@ pub fn settings_backups() -> Html {
     let is_initializing = use_state(|| false);
     let error = use_state(|| Option::<String>::None);
     let auto_backups_enabled = use_state(|| false);
+    let backup_storage = use_state(|| "local".to_string());
+    let is_saving_storage = use_state(|| false);
     let is_backup_options_open = use_state(|| true);
 
     let reload = {
@@ -19,11 +21,13 @@ pub fn settings_backups() -> Html {
         let loading = loading.clone();
         let error = error.clone();
         let auto_backups_enabled = auto_backups_enabled.clone();
+        let backup_storage = backup_storage.clone();
         Callback::from(move |_| {
             let backups = backups.clone();
             let loading = loading.clone();
             let error = error.clone();
             let auto_backups_enabled = auto_backups_enabled.clone();
+            let backup_storage = backup_storage.clone();
             loading.set(true);
             spawn_local(async move {
                 let client = ApiClient::default();
@@ -37,6 +41,11 @@ pub fn settings_backups() -> Html {
                 if let Ok(crons) = client.list_crons().await {
                     if let Some(cron) = crons.iter().find(|c| c.name == "db.backup") {
                         auto_backups_enabled.set(cron.enabled);
+                    }
+                }
+                if let Ok(settings) = client.get_backup_settings().await {
+                    if let Some(storage) = settings.get("storageType").and_then(|v| v.as_str()) {
+                        backup_storage.set(storage.to_string());
                     }
                 }
                 loading.set(false);
@@ -118,6 +127,49 @@ pub fn settings_backups() -> Html {
         })
     };
 
+    let change_backup_storage = {
+        let backup_storage = backup_storage.clone();
+        let is_saving_storage = is_saving_storage.clone();
+        let error = error.clone();
+        Callback::from(move |e: Event| {
+            let Some(target) = e.target_dyn_into::<web_sys::HtmlSelectElement>() else {
+                return;
+            };
+            let next = target.value();
+            if next == *backup_storage {
+                return;
+            }
+
+            let previous = (*backup_storage).clone();
+            backup_storage.set(next.clone());
+            is_saving_storage.set(true);
+            error.set(None);
+
+            let backup_storage = backup_storage.clone();
+            let is_saving_storage = is_saving_storage.clone();
+            let error = error.clone();
+            spawn_local(async move {
+                let client = ApiClient::default();
+                match client.get_backup_settings().await {
+                    Ok(mut settings) => {
+                        settings["storageType"] = serde_json::Value::String(next);
+                        if let Err(e) = client.save_backup_settings(settings).await {
+                            error.set(Some(e.to_string()));
+                            backup_storage.set(previous);
+                        }
+                    }
+                    Err(e) => {
+                        error.set(Some(e.to_string()));
+                        backup_storage.set(previous);
+                    }
+                }
+                is_saving_storage.set(false);
+            });
+        })
+    };
+
+    let is_cloud_storage = *backup_storage == "cloud";
+
     let toggle_options_panel = {
         let is_backup_options_open = is_backup_options_open.clone();
         Callback::from(move |_| is_backup_options_open.set(!*is_backup_options_open))
@@ -193,7 +245,11 @@ pub fn settings_backups() -> Html {
                                 {if has_active { "Backup in progress..." } else { "Create a new backup" }}
                             </h3>
                             <p class="font-body-sm text-body-sm text-on-surface-variant mb-6 max-w-xs">
-                                {"A pg_dump custom-format snapshot will be generated and stored in the local backup directory."}
+                                {if is_cloud_storage {
+                                    "A pg_dump custom-format snapshot will be generated locally and uploaded to your S3 storage."
+                                } else {
+                                    "A pg_dump custom-format snapshot will be generated and stored in the local backup directory."
+                                }}
                             </p>
                             <button
                                 onclick={initialize_backup}
@@ -289,13 +345,58 @@ pub fn settings_backups() -> Html {
 
                                     <div class="h-[1px] bg-outline-variant w-full"></div>
 
-                                    <div class="flex items-center justify-between opacity-60">
+                                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                         <div class="max-w-md">
-                                            <h5 class="font-body-md text-body-md font-bold mb-1">{"Store backups in S3 storage"}</h5>
-                                            <p class="font-body-sm text-body-sm text-on-surface-variant">{"S3 backup upload requires streaming multipart and is not part of the MVP. Backups are stored on local disk."}</p>
+                                            <h5 class="font-body-md text-body-md font-bold mb-1">{"Backup destination"}</h5>
+                                            <p class="font-body-sm text-body-sm text-on-surface-variant">
+                                                {"Choose where completed snapshots are stored. Cloud uploads use the S3 configuration defined in "}
+                                                <a class="text-primary font-bold hover:underline" href="/settings/storage">{"File storage"}</a>
+                                                {"."}
+                                            </p>
                                         </div>
-                                        <span class="px-2 py-0.5 bg-surface-container rounded font-label-xs text-label-xs font-bold">{"Not available"}</span>
+                                        <div class="flex items-center gap-3">
+                                            {
+                                                if *is_saving_storage {
+                                                    html! {
+                                                        <span class="material-symbols-outlined animate-spin text-on-surface-variant text-[18px]">{"sync"}</span>
+                                                    }
+                                                } else {
+                                                    html! {}
+                                                }
+                                            }
+                                            <div class="relative">
+                                                <select
+                                                    value={(*backup_storage).clone()}
+                                                    onchange={change_backup_storage}
+                                                    disabled={*is_saving_storage}
+                                                    class="bg-surface border border-outline-variant px-4 py-2.5 font-body-sm text-body-sm text-on-surface focus:ring-2 focus:ring-primary focus:border-primary transition-all rounded cursor-pointer appearance-none pr-10 disabled:opacity-60"
+                                                >
+                                                    <option value="local" selected={!is_cloud_storage}>{"Local disk"}</option>
+                                                    <option value="cloud" selected={is_cloud_storage}>{"Cloud (S3)"}</option>
+                                                </select>
+                                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-on-surface-variant">
+                                                    <span class="material-symbols-outlined text-sm">{"unfold_more"}</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
+
+                                    {
+                                        if is_cloud_storage {
+                                            html! {
+                                                <div class="flex gap-3 p-4 bg-surface-container-highest border-l-4 border-primary text-on-surface-variant font-body-sm text-body-sm rounded-r-md">
+                                                    <span class="material-symbols-outlined text-primary shrink-0">{"info"}</span>
+                                                    <div>
+                                                        {"Backups will be uploaded to the S3 bucket configured in "}
+                                                        <a class="text-primary font-bold hover:underline" href="/settings/storage">{"File storage"}</a>
+                                                        {". The local copy is kept on disk until the retention policy prunes it."}
+                                                    </div>
+                                                </div>
+                                            }
+                                        } else {
+                                            html! {}
+                                        }
+                                    }
                                 </div>
                             }
                         } else {
@@ -327,6 +428,7 @@ pub fn settings_backups() -> Html {
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Created"}</th>
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Size"}</th>
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Type"}</th>
+                                    <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Storage"}</th>
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider">{"Status"}</th>
                                     <th class="px-cell_padding_h py-cell_padding_v font-label-xs text-label-xs uppercase text-outline tracking-wider text-right">{"Actions"}</th>
                                 </tr>
@@ -336,7 +438,7 @@ pub fn settings_backups() -> Html {
                                     if *loading && backups.is_empty() {
                                         html! {
                                             <tr>
-                                                <td class="px-cell_padding_h py-12 text-center" colspan="6">
+                                                <td class="px-cell_padding_h py-12 text-center" colspan="7">
                                                     <span class="material-symbols-outlined animate-spin text-outline text-[32px]">{"sync"}</span>
                                                 </td>
                                             </tr>
@@ -344,7 +446,7 @@ pub fn settings_backups() -> Html {
                                     } else if backups.is_empty() {
                                         html! {
                                             <tr>
-                                                <td class="px-cell_padding_h py-12 text-center" colspan="6">
+                                                <td class="px-cell_padding_h py-12 text-center" colspan="7">
                                                     <div class="opacity-40 flex flex-col items-center">
                                                         <span class="material-symbols-outlined text-[48px] mb-2 text-outline">{"history"}</span>
                                                         <p class="font-body-sm text-body-sm italic">{"No backup records to display"}</p>
@@ -398,6 +500,11 @@ pub fn settings_backups() -> Html {
                                                             <td class="px-cell_padding_h py-3 font-body-sm text-body-sm">
                                                                 <span class="px-2 py-0.5 bg-primary-container/10 text-primary rounded font-label-xs text-label-xs font-bold">
                                                                     {display_trigger(&backup.triggered_by)}
+                                                                </span>
+                                                            </td>
+                                                            <td class="px-cell_padding_h py-3 font-body-sm text-body-sm">
+                                                                <span class={classes!("px-2", "py-0.5", "rounded", "font-label-xs", "text-label-xs", "font-bold", storage_class(&backup.storage_backend))}>
+                                                                    {display_storage(&backup.storage_backend)}
                                                                 </span>
                                                             </td>
                                                             <td class="px-cell_padding_h py-3 font-body-sm text-body-sm">
@@ -472,6 +579,20 @@ fn display_trigger(value: &str) -> &str {
         "scheduled" => "Automated",
         "cli" => "CLI",
         other => other,
+    }
+}
+
+fn display_storage(value: &str) -> &'static str {
+    match value {
+        "s3" | "cloud" => "Cloud",
+        _ => "Local",
+    }
+}
+
+fn storage_class(value: &str) -> &'static str {
+    match value {
+        "s3" | "cloud" => "bg-blue-100 text-blue-800",
+        _ => "bg-surface-container text-on-surface-variant",
     }
 }
 
