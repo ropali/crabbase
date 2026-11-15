@@ -15,6 +15,18 @@ pub struct SidebarProps {
     pub on_settings_select: Option<Callback<String>>,
 }
 
+fn sidebar_header(icon: &'static str, title: &'static str, subtitle: &'static str) -> Html {
+    html! {
+        <div class="px-2 mb-4">
+            <div class="flex items-center gap-2.5 mb-1">
+                <span class="material-symbols-outlined text-[22px] text-primary" style="font-variation-settings: 'FILL' 1;">{icon}</span>
+                <span class="font-brand text-[17px] leading-6 font-bold uppercase tracking-[0.02em] text-primary">{title}</span>
+            </div>
+            <p class="font-body-sm text-body-sm text-on-surface-variant opacity-70">{subtitle}</p>
+        </div>
+    }
+}
+
 #[function_component(Sidebar)]
 pub fn sidebar(props: &SidebarProps) -> Html {
     let system_expanded = use_state(|| false);
@@ -52,14 +64,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 if is_settings_mode {
                     html! {
                         <>
-                            /* Settings Sidebar Header (consistent with Collections header) */
-                            <div class="px-2 mb-4">
-                              <div class="flex items-center gap-3 mb-1">
-                                <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">{"settings"}</span>
-                                <span class="font-headline-md text-primary">{"Settings"}</span>
-                              </div>
-                              <p class="font-body-sm text-body-sm text-on-surface-variant opacity-70">{"Engine configuration"}</p>
-                            </div>
+                            { sidebar_header("settings", "Settings", "Engine configuration") }
 
                             /* Settings Navigation Options */
                             <nav class="flex flex-col gap-1 overflow-y-auto overflow-x-hidden flex-1 custom-scrollbar">
@@ -163,14 +168,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 } else if is_logs_mode {
                     html! {
                         <>
-                            /* Logs Sidebar Header (consistent with Collections header) */
-                            <div class="px-2 mb-4">
-                              <div class="flex items-center gap-3 mb-1">
-                                <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">{"receipt_long"}</span>
-                                <span class="font-headline-md text-primary">{"Logs"}</span>
-                              </div>
-                              <p class="font-body-sm text-body-sm text-on-surface-variant opacity-70">{"System activity & audit"}</p>
-                            </div>
+                            { sidebar_header("receipt_long", "Logs", "System activity & audit") }
 
                             /* Search input (consistent with Collections search bar) */
                             <div class="relative mb-4">
@@ -201,14 +199,7 @@ pub fn sidebar(props: &SidebarProps) -> Html {
                 } else {
                     html! {
                         <>
-                            /* Collections Sidebar Header */
-                            <div class="px-2 mb-4">
-                              <div class="flex items-center gap-3 mb-1">
-                                <span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">{"database"}</span>
-                                <span class="font-headline-md text-primary">{"Collections"}</span>
-                              </div>
-                              <p class="font-body-sm text-body-sm text-on-surface-variant opacity-70">{"Manage schema"}</p>
-                            </div>
+                            { sidebar_header("database", "Collections", "Manage schema") }
 
                             /* Search collections input */
                             <div class="relative mb-4">

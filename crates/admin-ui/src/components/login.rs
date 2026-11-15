@@ -283,7 +283,7 @@ pub fn login(props: &LoginProps) -> Html {
                                 <img src="/logo.png" alt="Crabbase Logo" class="w-20 h-20 object-contain drop-shadow-sm select-none" />
                             </div>
                             <div>
-                                <h1 class="font-headline-lg text-headline-lg text-primary tracking-tight mb-1">{"Crabbase"}</h1>
+                                <h1 class="text-brand-lg text-primary mb-1">{"CRABBASE"}</h1>
                                 <p class="font-body-sm text-body-sm text-on-surface-variant max-w-[280px] mx-auto">
                                     {subtitle}
                                 </p>

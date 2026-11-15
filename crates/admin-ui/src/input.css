@@ -78,9 +78,10 @@
     --outline-variant: #e2bfb8;
 
     /* Typography */
-    --font-family-body: "Inter", sans-serif;
-    --font-family-headline: "Hanken Grotesk", sans-serif;
-    --font-family-code: "JetBrains Mono", monospace;
+    --font-family-body: "Manrope", sans-serif;
+    --font-family-headline: "Fraunces", serif;
+    --font-family-brand: "Space Grotesk", sans-serif;
+    --font-family-code: "IBM Plex Mono", monospace;
 
     /* Font Sizes */
     --text-body-md: 14px;
@@ -186,6 +187,7 @@ body {
     line-height: var(--line-height-headline-lg);
     font-weight: 700;
     font-family: var(--font-family-headline);
+    letter-spacing: -0.01em;
 }
 
 .text-headline-md {
@@ -193,6 +195,24 @@ body {
     line-height: var(--line-height-headline-md);
     font-weight: 600;
     font-family: var(--font-family-headline);
+    letter-spacing: -0.01em;
+}
+
+/* Brand Wordmark */
+.text-brand-md {
+    font-size: var(--text-headline-md);
+    line-height: var(--line-height-headline-md);
+    font-weight: 700;
+    font-family: var(--font-family-brand);
+    letter-spacing: 0.02em;
+}
+
+.text-brand-lg {
+    font-size: var(--text-headline-lg);
+    line-height: var(--line-height-headline-lg);
+    font-weight: 700;
+    font-family: var(--font-family-brand);
+    letter-spacing: 0.02em;
 }
 
 /* Code Text */

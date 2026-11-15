@@ -51,7 +51,7 @@ pub fn titlebar(props: &TitlebarProps) -> Html {
               /* Crabbase logo */
               <div class="flex items-center gap-2.5 cursor-pointer select-none" onclick={click_nav("collections")}>
                 <img src="/logo.png" alt="Crabbase Logo" class="h-12 w-12 object-contain rounded" />
-                <div class="font-headline-md text-headline-md font-bold text-on-primary dark:text-on-primary-container tracking-tight">
+                <div class="text-brand-md text-on-primary dark:text-on-primary-container">
                   {"CRABBASE"}
                 </div>
               </div>
