@@ -29,6 +29,14 @@ fn app_main(props: &AppMainProps) -> Html {
     let collections_refresh_trigger = use_state(|| 0usize);
     let notification = use_state(|| None::<NotificationMessage>);
 
+    {
+        let notification = notification.clone();
+        use_effect_with(route.clone(), move |_| {
+            notification.set(None);
+            || ()
+        });
+    }
+
     let active_view = match &route {
         Route::SettingsMail => "settings_mail",
         Route::SettingsStorage => "settings_storage",

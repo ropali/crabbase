@@ -1,4 +1,8 @@
+use gloo_timers::callback::Timeout;
 use yew::prelude::*;
+
+const SUCCESS_DURATION_MS: u32 = 4000;
+const ERROR_DURATION_MS: u32 = 7000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum NotificationKind {
@@ -27,37 +31,73 @@ pub fn notification_toast(props: &NotificationToastProps) -> Html {
         on_dismiss.emit(());
     });
 
+    let auto_dismiss = props.notification.as_ref().map(|note| {
+        let delay = match note.kind {
+            NotificationKind::Success => SUCCESS_DURATION_MS,
+            NotificationKind::Error => ERROR_DURATION_MS,
+        };
+        (note.id, delay)
+    });
+
+    {
+        let on_dismiss = props.on_dismiss.clone();
+        use_effect_with(auto_dismiss, move |auto_dismiss| {
+            let timeout = (*auto_dismiss).map(|(_, delay)| {
+                let on_dismiss = on_dismiss.clone();
+                Timeout::new(delay, move || on_dismiss.emit(()))
+            });
+            move || drop(timeout)
+        });
+    }
+
     if let Some(ref note) = props.notification {
-        let (container_cls, icon_wrap_cls, icon_name) = match note.kind {
+        let (accent_cls, icon_wrap_cls, icon_name, duration_ms) = match note.kind {
             NotificationKind::Success => (
-                // Explicit green — unaffected by the red primary theme
-                "fixed top-6 right-6 z-[9999] max-w-md w-full p-4 bg-[#1a3a2a] text-[#d4f0e0] border border-[#2d6b47]/60 rounded-xl shadow-2xl flex items-start gap-3",
-                "p-2 rounded-lg bg-[#2d6b47]/30 text-[#4ade80] flex items-center justify-center shrink-0",
+                "bg-[#4b7a5a]",
+                "bg-[#e9f1ea] text-[#3f6b4f]",
                 "check_circle",
+                SUCCESS_DURATION_MS,
             ),
             NotificationKind::Error => (
-                "fixed top-6 right-6 z-[9999] max-w-md w-full p-4 bg-error-container text-on-error-container border border-error/30 rounded-xl shadow-2xl flex items-start gap-3",
-                "p-2 rounded-lg bg-error/10 text-error flex items-center justify-center shrink-0",
+                "bg-error",
+                "bg-error-container text-on-error-container",
                 "error",
+                ERROR_DURATION_MS,
             ),
         };
 
         html! {
-            <div class={container_cls}>
-                <div class={icon_wrap_cls}>
-                    <span class="material-symbols-outlined text-[22px]">{icon_name}</span>
+            <div
+                key={note.id.to_string()}
+                role="status"
+                aria-live="polite"
+                class="fixed left-4 right-4 top-4 z-[9999] overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-[0_8px_24px_rgba(38,24,22,0.14)] animate-fade-in sm:left-auto sm:right-6 sm:top-6 sm:w-full sm:max-w-sm"
+            >
+                <div class="h-1 w-full bg-surface-container-high">
+                    <div
+                        class={classes!("notification-progress", "h-full", accent_cls)}
+                        style={format!("animation-duration: {duration_ms}ms")}
+                    ></div>
                 </div>
-                <div class="flex-grow min-w-0 pr-2">
-                    <h4 class="font-body-md text-body-md font-bold">{ &note.title }</h4>
-                    <p class="font-body-sm text-body-sm opacity-80 mt-0.5 break-words">{ &note.message }</p>
+                <div class="flex items-start gap-3 p-4">
+                    <div class={classes!(
+                        "flex", "h-9", "w-9", "shrink-0", "items-center", "justify-center",
+                        "rounded-lg", icon_wrap_cls
+                    )}>
+                        <span class="material-symbols-outlined text-[20px]">{icon_name}</span>
+                    </div>
+                    <div class="min-w-0 flex-grow">
+                        <h4 class="font-body-md text-body-md font-bold text-on-surface">{ &note.title }</h4>
+                        <p class="mt-0.5 break-words font-body-sm text-body-sm text-on-surface-variant">{ &note.message }</p>
+                    </div>
+                    <button
+                        onclick={handle_close}
+                        class="shrink-0 cursor-pointer rounded-md p-1 text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+                        title="Dismiss"
+                    >
+                        <span class="material-symbols-outlined text-[18px]">{"close"}</span>
+                    </button>
                 </div>
-                <button
-                    onclick={handle_close}
-                    class="opacity-60 hover:opacity-100 p-1 rounded-md transition-opacity shrink-0 cursor-pointer"
-                    title="Dismiss"
-                >
-                    <span class="material-symbols-outlined text-[20px]">{"close"}</span>
-                </button>
             </div>
         }
     } else {

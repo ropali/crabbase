@@ -33,7 +33,6 @@ pub fn settings_storage(props: &SettingsStorageProps) -> Html {
 
     let is_loading = use_state(|| true);
     let is_saving = use_state(|| false);
-    let success_msg = use_state(|| Option::<String>::None);
     let error_msg = use_state(|| Option::<String>::None);
 
     let initial_state = use_state(|| StorageState::default());
@@ -191,7 +190,6 @@ pub fn settings_storage(props: &SettingsStorageProps) -> Html {
         let secret = secret.clone();
         let force_path_style = force_path_style.clone();
         let is_saving = is_saving.clone();
-        let success_msg = success_msg.clone();
         let error_msg = error_msg.clone();
         let initial_state = initial_state.clone();
         let on_save_cb = props.on_save.clone();
@@ -215,10 +213,8 @@ pub fn settings_storage(props: &SettingsStorageProps) -> Html {
 
             is_saving.set(true);
             error_msg.set(None);
-            success_msg.set(None);
 
             let is_saving = is_saving.clone();
-            let success_msg = success_msg.clone();
             let error_msg = error_msg.clone();
             let initial_state = initial_state.clone();
             let on_save_cb = on_save_cb.clone();
@@ -250,7 +246,6 @@ pub fn settings_storage(props: &SettingsStorageProps) -> Html {
                 let client = ApiClient::default();
                 match client.save_storage_settings(body).await {
                     Ok(_) => {
-                        success_msg.set(Some("Storage settings saved successfully!".to_string()));
                         initial_state.set(StorageState {
                             storage_type: payload_st,
                             local_path: payload_lp,
@@ -284,7 +279,6 @@ pub fn settings_storage(props: &SettingsStorageProps) -> Html {
         let secret = secret.clone();
         let force_path_style = force_path_style.clone();
         let initial_state = initial_state.clone();
-        let success_msg = success_msg.clone();
         let error_msg = error_msg.clone();
 
         Callback::from(move |_| {
@@ -296,7 +290,6 @@ pub fn settings_storage(props: &SettingsStorageProps) -> Html {
             access_key.set(initial_state.access_key.clone());
             secret.set(initial_state.secret.clone());
             force_path_style.set(initial_state.force_path_style);
-            success_msg.set(None);
             error_msg.set(None);
         })
     };
@@ -315,28 +308,6 @@ pub fn settings_storage(props: &SettingsStorageProps) -> Html {
                     </nav>
                     <h1 class="font-headline-lg text-headline-lg text-on-surface">{"Storage Management"}</h1>
                 </div>
-
-                /* Success Alert */
-                {
-                    if let Some(msg) = (*success_msg).as_ref() {
-                        html! {
-                            <div class="p-4 bg-primary-container/10 border border-primary-container/30 text-primary rounded-lg flex items-center justify-between transition-all">
-                                <div class="flex items-center gap-2">
-                                    <span class="material-symbols-outlined">{"check_circle"}</span>
-                                    <span class="font-body-sm text-body-sm font-bold">{msg}</span>
-                                </div>
-                                <button onclick={
-                                    let success_msg = success_msg.clone();
-                                    move |_| success_msg.set(None)
-                                } class="text-primary hover:opacity-80">
-                                    <span class="material-symbols-outlined text-sm">{"close"}</span>
-                                </button>
-                            </div>
-                        }
-                    } else {
-                        html! {}
-                    }
-                }
 
                 /* Error Alert */
                 {

@@ -803,6 +803,22 @@ body {
     animation: slideInFromRight 0.3s ease-out;
 }
 
+@keyframes notificationProgress {
+    from {
+        transform: scaleX(1);
+    }
+    to {
+        transform: scaleX(0);
+    }
+}
+
+.notification-progress {
+    transform-origin: left center;
+    animation-name: notificationProgress;
+    animation-timing-function: linear;
+    animation-fill-mode: forwards;
+}
+
 .bg-blur {
     backdrop-filter: blur(4px);
 }

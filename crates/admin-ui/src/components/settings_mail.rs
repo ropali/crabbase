@@ -62,7 +62,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
     // ── Shared ───────────────────────────────────────────────────────────────
     let is_loading = use_state(|| true);
     let error_msg = use_state(|| Option::<String>::None);
-    let success_msg = use_state(|| Option::<String>::None);
 
     // ── Load both settings on mount ───────────────────────────────────────────
     {
@@ -159,22 +158,18 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
     let switch_to_smtp = {
         let tab = active_tab.clone();
         let error_msg = error_msg.clone();
-        let success_msg = success_msg.clone();
         Callback::from(move |_: MouseEvent| {
             tab.set(ActiveTab::Smtp);
             error_msg.set(None);
-            success_msg.set(None);
         })
     };
 
     let switch_to_templates = {
         let tab = active_tab.clone();
         let error_msg = error_msg.clone();
-        let success_msg = success_msg.clone();
         Callback::from(move |_: MouseEvent| {
             tab.set(ActiveTab::Templates);
             error_msg.set(None);
-            success_msg.set(None);
         })
     };
 
@@ -198,7 +193,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
         let smtp_password = smtp_password.clone();
         let is_smtp_saving = is_smtp_saving.clone();
         let error_msg = error_msg.clone();
-        let success_msg = success_msg.clone();
         let on_save = props.on_save.clone();
 
         Callback::from(move |_| {
@@ -210,12 +204,10 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
             let smtp_password = (*smtp_password).clone();
             let is_smtp_saving = is_smtp_saving.clone();
             let error_msg = error_msg.clone();
-            let success_msg = success_msg.clone();
             let on_save = on_save.clone();
 
             is_smtp_saving.set(true);
             error_msg.set(None);
-            success_msg.set(None);
 
             wasm_bindgen_futures::spawn_local(async move {
                 let port: u16 = smtp_port.parse().unwrap_or(587);
@@ -230,7 +222,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                 let client = ApiClient::default();
                 match client.save_mail_settings(body).await {
                     Ok(_) => {
-                        success_msg.set(Some("SMTP settings saved successfully.".to_string()));
                         if let Some(ref cb) = on_save {
                             cb.emit(());
                         }
@@ -252,7 +243,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
         let smtp_username = smtp_username.clone();
         let smtp_password = smtp_password.clone();
         let error_msg = error_msg.clone();
-        let success_msg = success_msg.clone();
         Callback::from(move |_| {
             sender_name.set(String::new());
             sender_address.set(String::new());
@@ -261,7 +251,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
             smtp_username.set(String::new());
             smtp_password.set(String::new());
             error_msg.set(None);
-            success_msg.set(None);
         })
     };
 
@@ -272,18 +261,17 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
         let tmpl_user_registration = tmpl_user_registration.clone();
         let is_tmpl_saving = is_tmpl_saving.clone();
         let error_msg = error_msg.clone();
-        let success_msg = success_msg.clone();
+        let on_save = props.on_save.clone();
 
         Callback::from(move |_| {
             let pr = (*tmpl_password_reset).clone();
             let ur = (*tmpl_user_registration).clone();
             let is_tmpl_saving = is_tmpl_saving.clone();
             let error_msg = error_msg.clone();
-            let success_msg = success_msg.clone();
+            let on_save = on_save.clone();
 
             is_tmpl_saving.set(true);
             error_msg.set(None);
-            success_msg.set(None);
 
             wasm_bindgen_futures::spawn_local(async move {
                 let body = serde_json::json!({
@@ -305,7 +293,9 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                 let client = ApiClient::default();
                 match client.save_email_templates(body).await {
                     Ok(_) => {
-                        success_msg.set(Some("Email templates saved successfully.".to_string()));
+                        if let Some(ref cb) = on_save {
+                            cb.emit(());
+                        }
                     }
                     Err(e) => {
                         error_msg.set(Some(format!("Failed to save templates: {}", e)));
@@ -375,7 +365,7 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                     </button>
                 </div>
 
-                // ── Banners ───────────────────────────────────────────────────
+                // ── Error banner ──────────────────────────────────────────────
                 {
                     if let Some(ref msg) = *error_msg {
                         html! {
@@ -388,21 +378,6 @@ pub fn settings_mail(props: &SettingsMailProps) -> Html {
                                     let error_msg = error_msg.clone();
                                     move |_| error_msg.set(None)
                                 } class="text-error hover:opacity-80">
-                                    <span class="material-symbols-outlined text-sm">{"close"}</span>
-                                </button>
-                            </div>
-                        }
-                    } else if let Some(ref msg) = *success_msg {
-                        html! {
-                            <div class="mb-6 p-4 bg-tertiary-container/10 border border-tertiary-container/30 text-tertiary rounded-lg flex items-center justify-between">
-                                <div class="flex items-center gap-2">
-                                    <span class="material-symbols-outlined">{"check_circle"}</span>
-                                    <span class="font-body-sm text-body-sm font-bold">{msg.clone()}</span>
-                                </div>
-                                <button onclick={
-                                    let success_msg = success_msg.clone();
-                                    move |_| success_msg.set(None)
-                                } class="text-tertiary hover:opacity-80">
                                     <span class="material-symbols-outlined text-sm">{"close"}</span>
                                 </button>
                             </div>
