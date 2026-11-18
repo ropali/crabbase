@@ -303,22 +303,30 @@ Implemented and working:
 
 - Collections (create/update/delete/truncate, live schema migration, indexes)
 - Records CRUD with pagination, client `?filter` dynamic query evaluation, batch relation expansion (`?expand`), and `list_rule` / `view_rule` / `create_rule` / `delete_rule` enforcement
-- Auth collections, JWT login/refresh/logout, password reset with emailed OTP
+- Auth collections, JWT login/refresh/logout with refresh-token rotation and reuse detection, password reset with emailed OTP
 - Superusers, settings APIs, email templates, admin dashboard (with real-time records filter search)
 - File uploads/storage with per-column constraints, local disk or S3-compatible backends, cleanup on record update/delete, and protected downloads via file tokens
+- Durable background jobs and crons: a Postgres-backed `_jobs` queue (leases, retries with exponential backoff) fed by `_crons` schedules, running in-process with `serve`/`admin` or in a dedicated `crabbase worker`; built-in handlers for `backup.create`, `backups.prune`, `logs.cleanup`, `otp.cleanup`, and `db.vacuum`
+- Backups via `pg_dump`: manual or scheduled runs, catalog/list/download/delete, retention pruning (keeps the newest successful snapshot), and local or S3-compatible ("cloud") storage; managed from Settings → Backups / Settings → Crons or the `/api/backups`, `/api/crons`, and `/api/jobs` endpoints
 - Swagger UI / OpenAPI (debug builds only)
 
-Not yet (placeholders exist in the codebase):
+Not yet implemented or incomplete:
 
-- **Realtime** — no websockets/SSE subscriptions.
-- **Hooks** — no background triggers.
-- **Dedicated registration & email-verification endpoints** — public signup works by setting `create_rule = ""` on an auth collection and POSTing a record; `allowPublicUserRegistration` exists but is not enforced, and there is no verification flow.
-- **Logs API** — the dashboard's logs page shows sample data; the `_logs` table exists but is not read or written by the API.
-- **Backups & cron settings** — the dashboard pages are UI placeholders with no backend.
-- `update_rule` expressions are not applied to rows yet: a null rule blocks non-admins, while an empty string allows everyone. `list_rule`, `view_rule`, `create_rule`, and `delete_rule` are enforced.
+- **Realtime** — no websockets/SSE subscriptions; `crates/realtime` is a stub.
+- **Hooks** — no lifecycle or background event hooks; `crates/hooks` is a stub.
+- **Dedicated registration & email-verification endpoints** — public signup works by setting `create_rule = ""` on an auth collection and POSTing a record; `allowPublicUserRegistration` exists but is not enforced, and there is no verification flow. Unverified users cannot log in, `verified` is not write-protected for non-admin callers, and an admin must review/verify accounts manually.
+- **Logs API** — the dashboard's logs page is still sample data; the `_logs` table exists but the API neither reads nor writes it (only the `logs.cleanup` job touches it, and security-event logging is a stub).
+- **`update_rule` expressions** — not applied to rows yet: a null rule blocks non-admins, while an empty string allows everyone. `list_rule`, `view_rule`, `create_rule`, and `delete_rule` are enforced.
+- **Backup restore** — deliberately manual and out-of-band (see [Backups & cron jobs](docs/backups-and-jobs.md)); there is no in-place restore from the dashboard or API.
+- **Backup deployment requirements** — backups are enabled by default and require `pg_dump` (postgresql-client matching the server major version); startup preflight refuses to run when it is missing or too old. Snapshots are compressed but not encrypted by Crabbase, so protect the backup directory/bucket.
+- **Cloud backup lifecycle** — uploads record the storage backend as `s3`, but download and prune compare against `cloud`, so cloud downloads fall back to the local artifact and remote objects are not deleted by retention. Keep the backup directory on a shared volume and prune the bucket separately until this is aligned.
+- **Job queue UI** — `/api/jobs` exposes list/detail only; there is no dashboard page to inspect the queue and no retry/cancel endpoint (only "run now" for crons).
+- **OpenAPI coverage** — Swagger UI works in debug builds, but the checked-in `openapi.json` does not yet include the backups, crons, jobs, or related settings endpoints.
+- **Rate limiting** — no built-in throttling or login lockout; put public auth endpoints behind a reverse proxy/WAF when exposing them.
 
 Security notes while the project evolves:
 
 - Rotate the seeded `_superusers` token secret (migration `00001` seeds a hardcoded value).
 - CORS is fully permissive in the current API server — tighten before exposing publicly.
 - Change the seeded superuser password immediately after first boot (in the dashboard or via the API — editing `[[initial_users]]` later does not update an existing account).
+- Treat downloaded backups as sensitive: they contain the full database, including password hashes and settings secrets.
