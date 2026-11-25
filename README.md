@@ -251,6 +251,7 @@ docker compose down
 | [Authentication](docs/authentication.md) | Auth collections, login/refresh/logout, password reset, superusers |
 | [Files & uploads](docs/files-and-uploads.md) | File columns, multipart uploads, attaching files to records, protected downloads/file tokens, storage backends |
 | [Settings & email](docs/settings-email.md) | App/mail/storage settings, SMTP setup, email templates |
+| [Database logging](docs/logging.md) | Persisting audit events to Postgres, log database vs schema, log migrations |
 | **Interactive API docs** | Debug builds → `GET /api/docs` (Swagger UI), spec at `/api/openapi.json` (excluded from release builds) |
 
 ## Using Crabbase as your backend

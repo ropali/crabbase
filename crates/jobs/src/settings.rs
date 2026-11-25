@@ -67,6 +67,16 @@ pub struct DatabaseParts {
     pub user: String,
     pub password: String,
     pub database: String,
+    /// Where the audit log schema lives. `None` when database logging is off.
+    /// Kept as a full URL + schema so moving logs to their own database is a
+    /// config change, not a code change.
+    pub logs: Option<LogsDatabase>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LogsDatabase {
+    pub url: String,
+    pub schema: String,
 }
 
 pub async fn load_backup_settings(db: &PgPool) -> Result<BackupSettings, RepositoryError> {

@@ -4,6 +4,20 @@ pub fn quote_ident(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
+/// True when `identifier` is a plain Postgres identifier (`[A-Za-z_][A-Za-z0-9_]*`,
+/// at most 63 bytes). Config values that end up interpolated into DDL — schema
+/// names today — are checked against this before use.
+pub fn is_valid_ident(identifier: &str) -> bool {
+    let mut chars = identifier.chars();
+
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+
+    identifier.len() <= 63 && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
 pub fn random_str(length: Option<usize>) -> String {
     let len = length.unwrap_or(32);
 
@@ -88,6 +102,30 @@ mod tests {
     #[test]
     fn test_quote_ident_underscore_and_numbers() {
         assert_eq!(quote_ident("_my_col_1"), "\"_my_col_1\"");
+    }
+
+    // ── is_valid_ident ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_is_valid_ident_accepts_plain_names() {
+        assert!(is_valid_ident("crabbase"));
+        assert!(is_valid_ident("_logs"));
+        assert!(is_valid_ident("log_schema_1"));
+    }
+
+    #[test]
+    fn test_is_valid_ident_rejects_specials() {
+        assert!(!is_valid_ident(""));
+        assert!(!is_valid_ident("1schema"));
+        assert!(!is_valid_ident("my-schema"));
+        assert!(!is_valid_ident("my schema"));
+        assert!(!is_valid_ident("my.schema"));
+        assert!(!is_valid_ident("quote\"d"));
+    }
+
+    #[test]
+    fn test_is_valid_ident_rejects_overlong_names() {
+        assert!(!is_valid_ident(&"a".repeat(64)));
     }
 
     // ── random_str ────────────────────────────────────────────────────────────

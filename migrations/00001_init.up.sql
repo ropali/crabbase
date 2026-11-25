@@ -23,19 +23,6 @@ CREATE TABLE IF NOT EXISTS _collections (
 
 CREATE INDEX IF NOT EXISTS idx__collections_type ON _collections (type);
 
--- _logs: Application audit logs
-CREATE TABLE IF NOT EXISTS _logs (
-    id      TEXT PRIMARY KEY NOT NULL,
-    level   INTEGER NOT NULL DEFAULT 0,
-    message TEXT NOT NULL DEFAULT '',
-    data    TEXT NOT NULL DEFAULT '{}',  -- JSON object
-    created TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_logs_level ON _logs (level);
-CREATE INDEX IF NOT EXISTS idx_logs_message ON _logs (message);
-CREATE INDEX IF NOT EXISTS idx_logs_created_hour ON _logs (date_trunc('hour', created AT TIME ZONE 'UTC'));
-
 -- ============================================================
 -- Auth Tables
 -- ============================================================

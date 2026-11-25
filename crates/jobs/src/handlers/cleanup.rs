@@ -21,11 +21,35 @@ impl JobHandler for LogsCleanupHandler {
             .unwrap_or(30)
             .max(1);
 
-        let result = sqlx::query("DELETE FROM _logs WHERE created < now() - $1 * interval '1 day'")
-            .bind(older_than_days)
-            .execute(&ctx.pool)
-            .await
+        // Logging can live in another schema or another database entirely, so
+        // this deliberately opens the log connection instead of borrowing the
+        // application pool.
+        let Some(logs) = ctx.database.logs.as_ref() else {
+            return Ok(json!({
+                "olderThanDays": older_than_days,
+                "deleted": 0,
+                "skipped": "database logging is disabled",
+            }));
+        };
+
+        let pool = crabbase_db::connection::pool(&logs.url, &logs.schema)
             .map_err(|e| JobError::Retryable(e.to_string()))?;
+
+        let table = format!(
+            "{}.{}",
+            crabbase_core::utils::string_utils::quote_ident(&logs.schema),
+            crabbase_core::utils::string_utils::quote_ident("_logs"),
+        );
+
+        let result = sqlx::query(&format!(
+            "DELETE FROM {table} WHERE created < now() - $1 * interval '1 day'"
+        ))
+        .bind(older_than_days)
+        .execute(&pool)
+        .await
+        .map_err(|e| JobError::Retryable(e.to_string()))?;
+
+        pool.close().await;
 
         Ok(json!({
             "olderThanDays": older_than_days,

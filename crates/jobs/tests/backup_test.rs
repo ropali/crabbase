@@ -92,6 +92,7 @@ async fn backup_handler_writes_file_and_catalog_row() {
             user: "postgres".to_string(),
             password: "postgres".to_string(),
             database: "crabbase".to_string(),
+            logs: None,
         },
     };
 
