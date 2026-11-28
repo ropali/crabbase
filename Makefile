@@ -1,6 +1,10 @@
 DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/crabbase
+# Audit logs may live in their own database/schema (see [logging.database] in
+# crabbase.toml). Override with logs_db=... / logs_schema=... if needed.
+LOGS_DATABASE_URL ?= postgres://postgres:postgres@localhost:5432/cb_logs
+LOGS_SCHEMA ?= logs
 
-.PHONY: validate run release build test test-unit test-db test-integration test-matrix test-raw test-raw-unit test-raw-integration cargo-test watch serve admin db-drop db-reset drop-tables
+.PHONY: validate run release build test test-unit test-db test-integration test-matrix test-raw test-raw-unit test-raw-integration cargo-test watch serve admin db-drop db-reset drop-tables logs-clear logs-truncate
 
 validate:
 	cargo check
@@ -154,3 +158,18 @@ db-drop:
 # Aliases for db-drop
 db-reset: db-drop
 drop-tables: db-drop
+
+# Delete every row from the audit log table, keeping the table and its indexes.
+# Usage:
+#   make logs-clear
+#   make logs-clear logs_db=postgres://user:pass@host:5432/cb_logs
+#   make logs-clear logs_schema=logs
+logs-clear:
+	@psql "$(if $(logs_db),$(logs_db),$(LOGS_DATABASE_URL))" \
+		-v ON_ERROR_STOP=1 \
+		-c "SELECT count(*) AS rows_before FROM \"$(if $(logs_schema),$(logs_schema),$(LOGS_SCHEMA))\"._logs;" \
+		-c "TRUNCATE TABLE \"$(if $(logs_schema),$(logs_schema),$(LOGS_SCHEMA))\"._logs;" \
+		-c "SELECT count(*) AS rows_after FROM \"$(if $(logs_schema),$(logs_schema),$(LOGS_SCHEMA))\"._logs;"
+
+# Alias for logs-clear
+logs-truncate: logs-clear

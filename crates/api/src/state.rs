@@ -7,13 +7,16 @@ use sqlx::{Pool, Postgres};
 
 use crabbase_db::repositories::{
     auth::UserRepository, collections::CollectionRepository, files::FilesRepository,
-    records::RecordsRepository, settings::SettingsRepository,
+    logs::LogsRepository, records::RecordsRepository, settings::SettingsRepository,
 };
 use crabbase_jobs::{BackupRepository, BackupService, CronRepository, JobRepository};
 
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub db: Pool<Postgres>,
+    /// Read pool for the audit log target. `None` when `[logging.database]` is
+    /// disabled; the logs API then reports `enabled: false` instead of failing.
+    pub logs: Option<Pool<Postgres>>,
 }
 
 impl AppState {
@@ -68,6 +71,12 @@ impl AppState {
 
     pub fn backups_repo(&self) -> BackupRepository {
         BackupRepository::new(self.db.clone())
+    }
+
+    /// `None` when database logging is switched off or the log target could
+    /// not be reached at startup.
+    pub fn logs_repo(&self) -> Option<LogsRepository> {
+        self.logs.clone().map(LogsRepository::new)
     }
 
     pub fn backup_service(&self) -> BackupService {

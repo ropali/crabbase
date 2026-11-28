@@ -495,6 +495,7 @@ async fn test_files_api_download_public_delete_admin_only() {
 
     let state = crabbase_api::state::AppState {
         db: app.db.pool.clone(),
+        logs: None,
     };
     let upload_result = state
         .file_service()

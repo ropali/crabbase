@@ -17,6 +17,7 @@ pub use repository::{
 };
 pub use runtime::{JobRuntime, preflight, start};
 pub use settings::{
-    BackupSettings, DatabaseParts, JobsSettings, load_backup_settings, load_jobs_settings,
+    BackupSettings, DatabaseParts, JobsSettings, LogsDatabase, load_backup_settings,
+    load_jobs_settings,
 };
 pub use worker::Worker;

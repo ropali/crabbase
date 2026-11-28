@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, Query, State},
+    extract::{Extension, Path, Query, State},
     middleware::from_fn_with_state,
     routing::{get, post},
 };
@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use crate::{
     middleware::auth::{extract_auth_context, require_admin},
+    middleware::log::RequestLog,
     routes::records,
     state::AppState,
 };
@@ -76,9 +77,21 @@ async fn get_one(
     }
 }
 
-async fn delete(Path(name): Path<String>, state: State<AppState>) -> Result<Json<Value>, APIError> {
+async fn delete(
+    Path(name): Path<String>,
+    state: State<AppState>,
+    log: Option<Extension<RequestLog>>,
+) -> Result<Json<Value>, APIError> {
+    // Best effort: a count failure must not block deleting the collection.
+    let rows = state.collection_repo().count_rows(&name).await.unwrap_or(0);
+
     match state.collection_repo().delete(name).await {
-        Ok(_) => Ok(Json(json!({"detail": "collection deleted successfully."}))),
+        Ok(_) => {
+            if let Some(Extension(log)) = log {
+                log.add_data(json!({ "rows": rows }));
+            }
+            Ok(Json(json!({"detail": "collection deleted successfully."})))
+        }
         Err(err) => Err(err.into()),
     }
 }
@@ -97,9 +110,17 @@ async fn update(
 async fn truncate(
     Path(name): Path<String>,
     state: State<AppState>,
+    log: Option<Extension<RequestLog>>,
 ) -> Result<Json<Value>, APIError> {
+    let rows = state.collection_repo().count_rows(&name).await.unwrap_or(0);
+
     match state.collection_repo().truncate(name).await {
-        Ok(_) => Ok(Json(json!({"detail": "collection truncated successfully"}))),
+        Ok(_) => {
+            if let Some(Extension(log)) = log {
+                log.add_data(json!({ "rows": rows }));
+            }
+            Ok(Json(json!({"detail": "collection truncated successfully"})))
+        }
         Err(err) => Err(err.into()),
     }
 }

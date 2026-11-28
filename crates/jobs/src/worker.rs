@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     handler::{JobContext, JobError},
@@ -111,11 +111,28 @@ impl Worker {
                 .await
                 .map(|_| ()),
             Err(JobError::Cancelled) => {
+                info!(
+                    target: "crabbase_jobs::worker",
+                    action = "job.cancelled",
+                    job_id = %job.id,
+                    kind = %job.kind,
+                    outcome = "failure",
+                    "job cancelled"
+                );
                 self.repo
                     .fail(&job, &self.worker_id, "cancelled by shutdown", true)
                     .await
             }
             Err(err) => {
+                warn!(
+                    target: "crabbase_jobs::worker",
+                    action = "job.failed",
+                    job_id = %job.id,
+                    kind = %job.kind,
+                    error = %err,
+                    outcome = "failure",
+                    "job failed"
+                );
                 self.repo
                     .fail(&job, &self.worker_id, &err.to_string(), err.is_retryable())
                     .await

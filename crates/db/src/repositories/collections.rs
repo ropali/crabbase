@@ -417,6 +417,17 @@ impl CollectionRepository {
         sqlx::query(&sql).execute(&self.db).await?;
         Ok(true)
     }
+
+    /// Best-effort row count for destructive audit rows. Both tables and views
+    /// support `count(*)`; a missing or broken object returns an error.
+    pub async fn count_rows(&self, name: &str) -> Result<u64, RepositoryError> {
+        validate_identifier(name)?;
+        let quoted_table = quote_ident(name);
+        let count: i64 = sqlx::query_scalar(&format!("SELECT count(*) FROM {}", quoted_table))
+            .fetch_one(&self.db)
+            .await?;
+        Ok(count.max(0) as u64)
+    }
 }
 
 fn validate_identifier(identifier: &str) -> Result<(), RepositoryError> {

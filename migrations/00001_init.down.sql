@@ -3,6 +3,5 @@ DROP TABLE IF EXISTS _external_auths;
 DROP TABLE IF EXISTS _otps;
 DROP TABLE IF EXISTS _mfas;
 DROP TABLE IF EXISTS _superusers;
-DROP TABLE IF EXISTS _logs;
 DROP TABLE IF EXISTS _collections;
 DROP TABLE IF EXISTS _migrations;

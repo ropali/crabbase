@@ -64,6 +64,16 @@ impl JobHandler for BackupCreateHandler {
                         .map_err(|e| JobError::Retryable(e.to_string()))?
                     {
                         if existing.status == "completed" {
+                            tracing::info!(
+                                target: "crabbase_jobs::backup",
+                                action = "backup.created",
+                                target_collection = "backups",
+                                target_id = %existing.id,
+                                filename = %existing.filename,
+                                size_bytes = %existing.size_bytes.unwrap_or(0),
+                                outcome = "success",
+                                "backup already completed"
+                            );
                             return Ok(completed_result(&existing));
                         }
                     }
@@ -81,6 +91,34 @@ impl JobHandler for BackupCreateHandler {
         if let Err(err) = &result {
             // Best effort: keep the catalog truthful even when the job will retry.
             let _ = repo.mark_failed(backup.id, &err.to_string()).await;
+        }
+
+        match &result {
+            Ok(value) => {
+                let size = value.get("sizeBytes").and_then(Value::as_i64).unwrap_or(0);
+                tracing::info!(
+                    target: "crabbase_jobs::backup",
+                    action = "backup.created",
+                    target_collection = "backups",
+                    target_id = %backup.id,
+                    filename = %backup.filename,
+                    size_bytes = %size,
+                    outcome = "success",
+                    "backup created"
+                );
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "crabbase_jobs::backup",
+                    action = "backup.failed",
+                    target_collection = "backups",
+                    target_id = %backup.id,
+                    filename = %backup.filename,
+                    error = %err,
+                    outcome = "failure",
+                    "backup failed"
+                );
+            }
         }
 
         result
@@ -309,6 +347,16 @@ impl JobHandler for BackupPruneHandler {
         }
 
         let filenames: Vec<&String> = removed.iter().map(|(filename, _)| filename).collect();
+
+        tracing::info!(
+            target: "crabbase_jobs::backup",
+            action = "backup.pruned",
+            target_collection = "backups",
+            removed = %removed.len(),
+            keep_days = %keep_days,
+            outcome = "success",
+            "backups pruned"
+        );
 
         Ok(json!({
             "keepDays": keep_days,

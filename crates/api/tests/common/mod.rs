@@ -93,6 +93,7 @@ impl TestApp {
         let db = TestDb::new(schema_prefix).await;
         let state = AppState {
             db: db.pool.clone(),
+            logs: None,
         };
         let router = get_app_routes(state);
         Self { router, db }

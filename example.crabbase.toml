@@ -15,6 +15,42 @@ port = 8989
 host = "0.0.0.0"
 port = 9898
 
+# Database audit logger (writes tracing events to the `_logs` table in the
+# background). Opt-in: disabled unless `enabled = true`.
+# Only events at `min_level` and above are persisted; console/file logging
+# keeps its own filters via RUST_LOG.
+#
+# Recommended: a dedicated database. Create it yourself once —
+#     CREATE DATABASE cb_logs;
+# Crabbase creates the schema below and its tables at startup; it never
+# creates the database.
+#
+# Sharing the application database also works: keep `database` as above and
+# pick a separate `schema` (recommended when sharing). Using the application
+# schema itself is allowed too, but log migrations then run as idempotent DDL
+# without their own history table.
+[logging.database]
+enabled              = false
+
+host = "localhost"
+port = 5432
+user = "postgres"
+password = "postgres"
+database = "cb_logs"   # create this database first (separate logging DB)
+schema   = "logs"      # created automatically, migrated by migrations-logs/
+
+batch_size           = 100
+flush_interval_ms    = 250
+queue_capacity       = 8192
+pool_max_connections = 2
+insert_timeout_ms    = 2000
+# Skips the fsync-before-commit barrier (2.8x faster writes). Only loses rows
+# if the OS itself dies; set true for compliance-bound deployments.
+synchronous_commit   = false
+# "warn" stores failed/denied requests only; "info" also stores every
+# successful request (full access log).
+min_level            = "warn"
+
 [[initial_users]]
 email = "admin@crabbase.local"
 name = "admin"
