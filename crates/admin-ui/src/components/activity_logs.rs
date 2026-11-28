@@ -11,8 +11,8 @@ use crate::models::log::{LogEntry, LogStatsResponse};
 const PAGE_SIZES: [i64; 3] = [50, 100, 250];
 const LIVE_REFRESH_MS: u32 = 5_000;
 const SEARCH_DEBOUNCE_MS: u32 = 300;
-/// Columns rendered per row: expander, severity, event, actor, target, result,
-/// duration, client, timestamp. The expanded detail row spans all of them.
+/// Columns rendered per row: expander, timestamp, severity, event, result,
+/// actor, target, duration, client. The expanded detail row spans all of them.
 const COLUMN_COUNT: usize = 9;
 
 /// `1H` (UI label) -> `1h` (API parameter).
@@ -319,9 +319,9 @@ fn severity_class(severity: &str) -> &'static str {
 
 fn outcome_class(outcome: &str) -> &'static str {
     match outcome {
-        "denied" => "bg-error-container text-on-error-container border-error/30",
-        "failure" => "bg-yellow-100 text-yellow-700 border-yellow-200",
-        _ => "bg-surface-container text-on-surface-variant border-outline-variant",
+        "denied" => "bg-yellow-100 text-yellow-700 border-yellow-200",
+        "failure" => "bg-error-container text-on-error-container border-error/30",
+        _ => "bg-green-100 text-green-700 border-green-200",
     }
 }
 
@@ -331,7 +331,7 @@ fn status_class(status: i32) -> &'static str {
     } else if status >= 400 {
         "bg-yellow-100 text-yellow-700 border-yellow-200"
     } else {
-        "bg-surface-container text-on-surface-variant border-outline-variant"
+        "bg-green-100 text-green-700 border-green-200"
     }
 }
 
@@ -1085,9 +1085,9 @@ pub fn activity_logs() -> Html {
                                     <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Timestamp"}</th>
                                     <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Severity"}</th>
                                     <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Event"}</th>
+                                    <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Result"}</th>
                                     <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Actor"}</th>
                                     <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Target"}</th>
-                                    <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Result"}</th>
                                     <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Duration"}</th>
                                     <th class="py-cell_padding_v px-cell_padding_h font-label-xs text-label-xs text-on-surface-variant uppercase tracking-wider font-bold">{"Client"}</th>
                                 </tr>
@@ -1203,23 +1203,6 @@ pub fn activity_logs() -> Html {
                                                                 </div>
                                                             </td>
                                                             <td class="py-cell_padding_v px-cell_padding_h">
-                                                                <div class="flex flex-col gap-0.5">
-                                                                    <span class="font-code-md text-code-md text-on-background">
-                                                                        {item.actor_id.clone().filter(|v| !v.is_empty()).unwrap_or_else(|| "anonymous".to_string())}
-                                                                    </span>
-                                                                    {
-                                                                        if let Some(collection) = item.actor_collection.as_ref().filter(|v| !v.is_empty()) {
-                                                                            html! { <span class="font-code-md text-[10px] text-on-surface-variant">{collection.clone()}</span> }
-                                                                        } else {
-                                                                            html! {}
-                                                                        }
-                                                                    }
-                                                                </div>
-                                                            </td>
-                                                            <td class="py-cell_padding_v px-cell_padding_h">
-                                                                <span class="font-code-md text-code-md text-on-surface-variant">{target}</span>
-                                                            </td>
-                                                            <td class="py-cell_padding_v px-cell_padding_h">
                                                                 <div class="flex gap-1.5 flex-wrap">
                                                                     {
                                                                         if let Some(status) = item.status_code {
@@ -1236,6 +1219,23 @@ pub fn activity_logs() -> Html {
                                                                         {item.outcome.clone()}
                                                                     </span>
                                                                 </div>
+                                                            </td>
+                                                            <td class="py-cell_padding_v px-cell_padding_h">
+                                                                <div class="flex flex-col gap-0.5">
+                                                                    <span class="font-code-md text-code-md text-on-background">
+                                                                        {item.actor_id.clone().filter(|v| !v.is_empty()).unwrap_or_else(|| "anonymous".to_string())}
+                                                                    </span>
+                                                                    {
+                                                                        if let Some(collection) = item.actor_collection.as_ref().filter(|v| !v.is_empty()) {
+                                                                            html! { <span class="font-code-md text-[10px] text-on-surface-variant">{collection.clone()}</span> }
+                                                                        } else {
+                                                                            html! {}
+                                                                        }
+                                                                    }
+                                                                </div>
+                                                            </td>
+                                                            <td class="py-cell_padding_v px-cell_padding_h">
+                                                                <span class="font-code-md text-code-md text-on-surface-variant">{target}</span>
                                                             </td>
                                                             <td class="py-cell_padding_v px-cell_padding_h whitespace-nowrap">
                                                                 <span class="px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant text-[10px] font-medium border border-outline-variant">
