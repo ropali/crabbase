@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use tracing::info;
 
 use crate::{
     handler::{JobContext, JobError, JobHandler},
@@ -49,11 +50,21 @@ impl JobHandler for LogsCleanupHandler {
         .await
         .map_err(|e| JobError::Retryable(e.to_string()))?;
 
+        let deleted = result.rows_affected();
         pool.close().await;
+
+        info!(
+            target: "crabbase_jobs::cleanup",
+            action = "logs.cleanup",
+            older_than_days = %older_than_days,
+            deleted = %deleted,
+            outcome = "success",
+            "audit log retention"
+        );
 
         Ok(json!({
             "olderThanDays": older_than_days,
-            "deleted": result.rows_affected(),
+            "deleted": deleted,
         }))
     }
 }
@@ -74,7 +85,16 @@ impl JobHandler for OtpCleanupHandler {
         .await
         .map_err(|e| JobError::Retryable(e.to_string()))?;
 
-        Ok(json!({ "deleted": result.rows_affected() }))
+        let deleted = result.rows_affected();
+        info!(
+            target: "crabbase_jobs::cleanup",
+            action = "otp.cleanup",
+            deleted = %deleted,
+            outcome = "success",
+            "expired OTPs deleted"
+        );
+
+        Ok(json!({ "deleted": deleted }))
     }
 }
 
@@ -97,6 +117,13 @@ impl JobHandler for DbVacuumHandler {
             .execute(&ctx.pool)
             .await
             .map_err(|e| JobError::Retryable(e.to_string()))?;
+
+        info!(
+            target: "crabbase_jobs::cleanup",
+            action = "db.vacuum",
+            outcome = "success",
+            "database vacuumed"
+        );
 
         Ok(json!({ "status": "vacuumed" }))
     }

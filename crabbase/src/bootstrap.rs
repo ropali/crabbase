@@ -258,6 +258,16 @@ async fn setup_superuser(
                     .bind(true)
                     .execute(db_pool)
                     .await?;
+
+        tracing::info!(
+            target: "crabbase::bootstrap",
+            action = "auth.superuser_created",
+            target_collection = "_superusers",
+            target_id = %id,
+            email = %user.email,
+            outcome = "success",
+            "initial superuser created"
+        );
     }
 
     Ok(())

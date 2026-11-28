@@ -145,25 +145,6 @@ impl AuthRepository {
         Ok(())
     }
 
-    // Log security breach into _logs table
-    pub async fn log_security_event(
-        &self,
-        _message: &str,
-        _data: serde_json::Value,
-    ) -> Result<(), RepositoryError> {
-        // let id = format!("log_{}", uuid::Uuid::new_v4().simple());
-        // let sql = "INSERT INTO _logs (id, level, message, data) VALUES ($1, 2, $2, $3)";
-        // sqlx::query(sql)
-        //     .bind(id)
-        //     .bind(message)
-        //     .bind(data.to_string())
-        //     .execute(&self.db)
-        //     .await?;
-        // Ok(())
-        //
-        todo!()
-    }
-
     // Optimized batch cleanup of expired tokens (Chunked to prevent table lock)
     pub async fn purge_expired_refresh_tokens(&self) -> Result<u64, RepositoryError> {
         let sql = r#"

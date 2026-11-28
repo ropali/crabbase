@@ -15,6 +15,9 @@ use tracing::Level;
 #[derive(Clone, Default)]
 pub struct RequestLog {
     actor: Arc<Mutex<Option<Actor>>>,
+    /// Extra audit fields a handler wants on the request row (row counts,
+    /// changed setting keys, …). Merged into `_logs.data` by the middleware.
+    data: Arc<Mutex<serde_json::Map<String, serde_json::Value>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -38,11 +41,40 @@ impl RequestLog {
     fn actor(&self) -> Option<Actor> {
         self.actor.lock().ok().and_then(|slot| slot.clone())
     }
+
+    /// Attach extra fields to the audit row this request will produce.
+    ///
+    /// Values land inside `_logs.data` (and are redacted there), so callers
+    /// must never put secrets or raw credentials in them.
+    pub fn add_data(&self, data: serde_json::Value) {
+        if let serde_json::Value::Object(extra) = data {
+            if let Ok(mut slot) = self.data.lock() {
+                slot.extend(extra);
+            }
+        }
+    }
+
+    fn data(&self) -> serde_json::Value {
+        serde_json::Value::Object(
+            self.data
+                .lock()
+                .map(|slot| slot.clone())
+                .unwrap_or_default(),
+        )
+    }
 }
 
 pub fn record_actor(extensions: &mut Extensions, actor_id: &str, actor_collection: &str) {
     if let Some(log) = extensions.get::<RequestLog>() {
         log.set_actor(actor_id, actor_collection);
+    }
+}
+
+/// Attach a machine-readable reason to a 401/403 request row (for example
+/// `invalid_token`, `unknown_user`, `not_superuser`).
+pub fn record_denial(extensions: &mut Extensions, reason: &str) {
+    if let Some(log) = extensions.get::<RequestLog>() {
+        log.add_data(serde_json::json!({ "denyReason": reason }));
     }
 }
 
@@ -99,6 +131,8 @@ pub async fn log_requests(mut req: Request, next: Next) -> Response {
     let elapsed = started.elapsed();
     let actor = log.actor();
     let action = action_for(&method, route.as_deref().unwrap_or(&path));
+    // Serialized so `PgLayer` can merge it into the row's `data` JSON.
+    let audit_data = serde_json::to_string(&log.data()).unwrap_or_else(|_| "{}".to_string());
 
     let outcome = match status {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => "denied",
@@ -125,6 +159,7 @@ pub async fn log_requests(mut req: Request, next: Next) -> Response {
                 target_collection = %target_collection.as_deref().unwrap_or(""),
                 target_id = %target_id.as_deref().unwrap_or(""),
                 route = %route.as_deref().unwrap_or(""),
+                data = %audit_data,
                 outcome = outcome,
                 "http request"
             )
@@ -187,6 +222,25 @@ fn action_for(method: &Method, route: &str) -> String {
         }
         _ => "request",
     };
+
+    // Endpoints whose verb is not the HTTP method, or whose resource alone is
+    // too coarse for filtering.
+    match (resource, last_static.copied()) {
+        ("backup", Some("download")) => return "backup.download".to_string(),
+        ("cron", Some("run")) => return "cron.run".to_string(),
+        ("file", Some("token")) => return "file.token".to_string(),
+        _ => {}
+    }
+
+    if segments.first() == Some(&"settings") {
+        let group = segments.get(1).copied().unwrap_or("settings");
+        let verb = if *method == Method::POST {
+            "update"
+        } else {
+            "view"
+        };
+        return format!("setting.{group}.{verb}");
+    }
 
     format!("{resource}.{verb}")
 }
@@ -272,6 +326,20 @@ mod tests {
             action_for(&Method::POST, "/api/auth/{name}/login"),
             "auth.login"
         );
+        assert_eq!(
+            action_for(&Method::POST, "/api/settings/mail"),
+            "setting.mail.update"
+        );
+        assert_eq!(
+            action_for(&Method::GET, "/api/settings/email-templates"),
+            "setting.email-templates.view"
+        );
+        assert_eq!(
+            action_for(&Method::GET, "/api/backups/{id}/download"),
+            "backup.download"
+        );
+        assert_eq!(action_for(&Method::POST, "/api/crons/{id}/run"), "cron.run");
+        assert_eq!(action_for(&Method::POST, "/api/files/token"), "file.token");
     }
 
     #[test]
@@ -296,5 +364,16 @@ mod tests {
 
         assert_eq!(param_value(&params, "name").as_deref(), Some("demo"));
         assert_eq!(param_value(&params, "file_id").as_deref(), Some("2026"));
+    }
+
+    #[test]
+    fn request_log_data_merges_handler_fields() {
+        let log = RequestLog::default();
+        log.add_data(serde_json::json!({ "rows": 3 }));
+        log.add_data(serde_json::json!({ "changedKeys": ["mail"] }));
+
+        let data = log.data();
+        assert_eq!(data["rows"], 3);
+        assert_eq!(data["changedKeys"][0], "mail");
     }
 }

@@ -11,7 +11,7 @@ use crabbase_core::{errors::APIError, models::Collection, rules::compiler::SqlCo
 use crabbase_db::repositories::auth::AuthUser;
 use sqlx::{Column as _, Row as _};
 
-use crate::state::AppState;
+use crate::{middleware::log::record_denial, state::AppState};
 
 pub struct AuthenticatedUser(pub AuthUser);
 
@@ -27,17 +27,30 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let auth_header = parts
+        let auth_header = match parts
             .headers
             .get("Authorization")
             .and_then(|v| v.to_str().ok())
-            .ok_or(APIError::Unauthorized)?;
+        {
+            Some(header) => header,
+            None => {
+                record_denial(&mut parts.extensions, "missing_token");
+                return Err(APIError::Unauthorized);
+            }
+        };
 
-        let token = auth_header
-            .strip_prefix("Bearer ")
-            .ok_or(APIError::Unauthorized)?;
+        let token = match auth_header.strip_prefix("Bearer ") {
+            Some(token) => token,
+            None => {
+                record_denial(&mut parts.extensions, "malformed_header");
+                return Err(APIError::Unauthorized);
+            }
+        };
 
-        let claims = extract_unverified_claims(token).map_err(|_| APIError::Unauthorized)?;
+        let claims = extract_unverified_claims(token).map_err(|_| {
+            record_denial(&mut parts.extensions, "invalid_claims");
+            APIError::Unauthorized
+        })?;
 
         parts.extensions.insert(claims.clone());
 
@@ -45,7 +58,10 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             .collection_repo()
             .get_by_id(&claims.collection_id)
             .await
-            .map_err(|_| APIError::Unauthorized)?;
+            .map_err(|_| {
+                record_denial(&mut parts.extensions, "unknown_collection");
+                APIError::Unauthorized
+            })?;
 
         let col_token = collection
             .options
@@ -66,12 +82,28 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
             .get_user_by_id(&collection.name, &claims.id)
             .await?;
 
-        let user = user_opt.ok_or(APIError::Unauthorized)?;
+        let user = match user_opt {
+            Some(user) => user,
+            None => {
+                record_denial(&mut parts.extensions, "unknown_user");
+                return Err(APIError::Unauthorized);
+            }
+        };
 
-        let claims = verify_token(token, &format!("{col_token}-{}", user.token_key))
-            .map_err(|_| APIError::Unauthorized)?;
+        let claims =
+            verify_token(token, &format!("{col_token}-{}", user.token_key)).map_err(|_| {
+                record_denial(&mut parts.extensions, "invalid_token");
+                APIError::Unauthorized
+            })?;
 
-        let user = state.auth_service().verify_session(&claims).await?;
+        let user = state
+            .auth_service()
+            .verify_session(&claims)
+            .await
+            .map_err(|err| {
+                record_denial(&mut parts.extensions, "invalid_session");
+                err
+            })?;
 
         // Identity is only recorded once the token has been verified, so the
         // audit row can never carry a spoofed, unverified actor.
@@ -162,6 +194,7 @@ pub async fn require_admin(
         .ok_or(APIError::Unauthorized)?;
 
     if !claims.collection_name.eq_ignore_ascii_case("_superusers") {
+        record_denial(request.extensions_mut(), "not_superuser");
         return Err(APIError::Forbidden);
     }
 
@@ -193,7 +226,10 @@ pub async fn extract_auth_context(
         None => return Ok(next.run(req).await),
     };
 
-    let claims = extract_unverified_claims(&token).map_err(|_| APIError::Unauthorized)?;
+    let claims = extract_unverified_claims(&token).map_err(|_| {
+        record_denial(req.extensions_mut(), "invalid_claims");
+        APIError::Unauthorized
+    })?;
 
     // `?token=` may carry a file token on /api/files/... routes. It is not a
     // request auth token; the file handler resolves it against the file's
@@ -207,7 +243,10 @@ pub async fn extract_auth_context(
         .collection_repo()
         .get_by_id(&claims.collection_id)
         .await
-        .map_err(|_| APIError::Unauthorized)?;
+        .map_err(|_| {
+            record_denial(req.extensions_mut(), "unknown_collection");
+            APIError::Unauthorized
+        })?;
 
     let col_token = collection
         .options
@@ -225,12 +264,28 @@ pub async fn extract_auth_context(
         .get_user_by_id(&collection.name, &claims.id)
         .await?;
 
-    let user = user_opt.ok_or(APIError::Unauthorized)?;
+    let user = match user_opt {
+        Some(user) => user,
+        None => {
+            record_denial(req.extensions_mut(), "unknown_user");
+            return Err(APIError::Unauthorized);
+        }
+    };
 
-    let claims = verify_token(&token, &format!("{col_token}-{}", user.token_key))
-        .map_err(|_| APIError::Unauthorized)?;
+    let claims =
+        verify_token(&token, &format!("{col_token}-{}", user.token_key)).map_err(|_| {
+            record_denial(req.extensions_mut(), "invalid_token");
+            APIError::Unauthorized
+        })?;
 
-    let user = state.auth_service().verify_session(&claims).await?;
+    let user = state
+        .auth_service()
+        .verify_session(&claims)
+        .await
+        .map_err(|err| {
+            record_denial(req.extensions_mut(), "invalid_session");
+            err
+        })?;
 
     crate::middleware::log::record_actor(req.extensions_mut(), &user.id, &collection.name);
 

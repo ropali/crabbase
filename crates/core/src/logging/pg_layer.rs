@@ -32,6 +32,15 @@ fn optional(s: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
+/// A `data = %json_string` field arrives debug-quoted (`"{\"rows\":3}"`).
+/// Parse the outer JSON string first, then the object it contains.
+fn parse_json_field(raw: &str) -> Option<Value> {
+    match serde_json::from_str::<Value>(raw).ok()? {
+        Value::String(text) => serde_json::from_str(&text).ok(),
+        other => Some(other),
+    }
+}
+
 #[derive(Default)]
 pub struct FieldVisitor {
     message: Option<String>,
@@ -80,6 +89,13 @@ impl tracing::field::Visit for FieldVisitor {
             "ip_address" => self.ip_address = optional(v),
             "user_agent" => self.user_agent = optional(v),
             "request_id" => self.request_id = optional(v),
+            "data" => {
+                if let Some(Value::Object(map)) = parse_json_field(&v) {
+                    if let Some(target) = self.data.as_object_mut() {
+                        target.extend(map);
+                    }
+                }
+            }
             "outcome" => {
                 self.outcome = match clean_quotes(v).as_str() {
                     "denied" => Some(Outcome::Denied),
@@ -197,5 +213,15 @@ mod tests {
     fn clean_quotes_strips_both_sides() {
         assert_eq!(clean_quotes("\"abc\"".to_string()), "abc");
         assert_eq!(clean_quotes("42".to_string()), "42");
+    }
+
+    #[test]
+    fn parses_escaped_json_data_field() {
+        // What `record_debug` produces for `data = %"{\"rows\":3}"`.
+        let quoted = "\"{\\\"rows\\\":3}\"";
+        assert_eq!(parse_json_field(quoted).unwrap()["rows"], 3);
+
+        // A raw object (non-string field) also works.
+        assert_eq!(parse_json_field("{\"rows\":3}").unwrap()["rows"], 3);
     }
 }

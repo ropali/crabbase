@@ -14,12 +14,14 @@ use crabbase_core::{
 };
 use crabbase_db::repositories::files::FileRecord;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 use crate::{
     middleware::auth::{
         AuthenticatedUser, RequestContext, extract_auth_context, file_token_signing_key,
         require_admin, resolve_file_token,
     },
+    middleware::log::RequestLog,
     state::AppState,
 };
 
@@ -189,7 +191,26 @@ pub(crate) fn content_disposition(kind: &str, filename: &str) -> String {
 pub async fn delete_file_handler(
     State(state): State<AppState>,
     Path(path): Path<String>,
+    log: Option<Extension<RequestLog>>,
 ) -> Result<StatusCode, APIError> {
+    let file = state
+        .file_service()
+        .get_record_by_id_or_key(&path)
+        .await
+        .ok()
+        .flatten();
+
     state.file_service().delete(&path).await?;
+
+    if let Some(Extension(log)) = log {
+        let mut data = json!({ "key": path });
+        if let Some(file) = file {
+            data["filename"] = json!(file.original_name);
+            data["sizeBytes"] = json!(file.size_bytes);
+            data["collection"] = json!(file.collection_name);
+        }
+        log.add_data(data);
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }

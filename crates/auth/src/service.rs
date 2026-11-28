@@ -17,7 +17,7 @@ use lettre::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::task;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthTokens {
@@ -116,6 +116,15 @@ impl AuthService {
         let col = match self.user_repo.get_collection_by_name(collection).await? {
             Some(id) => id,
             None => {
+                warn!(
+                    target: "crabbase_auth::security",
+                    action = "auth.login_failed",
+                    target_collection = %collection,
+                    email = %email,
+                    reason = "unknown_collection",
+                    outcome = "denied",
+                    "login failed"
+                );
                 return Err(APIError::NotFound {
                     resource: collection.to_string(),
                 });
@@ -124,18 +133,52 @@ impl AuthService {
 
         let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
 
-        let user = user_opt.ok_or(APIError::NotFound {
-            resource: email.to_string(),
-        })?;
+        let user = match user_opt {
+            Some(user) => user,
+            None => {
+                warn!(
+                    target: "crabbase_auth::security",
+                    action = "auth.login_failed",
+                    target_collection = %collection,
+                    email = %email,
+                    reason = "unknown_user",
+                    outcome = "denied",
+                    "login failed"
+                );
+                return Err(APIError::NotFound {
+                    resource: email.to_string(),
+                });
+            }
+        };
 
         let is_valid =
             verify_password(password, &user.password).map_err(|_| APIError::Unauthorized)?;
 
         if !is_valid {
+            warn!(
+                target: "crabbase_auth::security",
+                action = "auth.login_failed",
+                target_collection = %collection,
+                target_id = %user.id,
+                email = %email,
+                reason = "invalid_password",
+                outcome = "denied",
+                "login failed"
+            );
             return Err(APIError::Unauthorized);
         }
 
         if !user.verified {
+            warn!(
+                target: "crabbase_auth::security",
+                action = "auth.login_failed",
+                target_collection = %collection,
+                target_id = %user.id,
+                email = %email,
+                reason = "unverified",
+                outcome = "denied",
+                "login failed"
+            );
             return Err(APIError::Forbidden);
         }
 
@@ -339,7 +382,16 @@ impl AuthService {
         // If the token was already used or revoked, reuse is detected -> revoke entire token family
         if existing_token.used || existing_token.revoked {
             self.auth_repo.revoke_token_family(family_id).await?;
-            tracing::warn!(user_id = %user.id, family_id = %family_id, "Refresh token reuse detected. Revoking family session.");
+            warn!(
+                target: "crabbase_auth::security",
+                action = "auth.refresh_reuse",
+                actor_id = %user.id,
+                actor_collection = %collection,
+                target_collection = %collection,
+                family_id = %family_id,
+                outcome = "denied",
+                "Refresh token reuse detected; revoking family session"
+            );
         }
 
         Err(APIError::Unauthorized)
@@ -379,13 +431,38 @@ impl AuthService {
             })?;
 
         let key = format!("{}-{}", col_token, user.token_key);
-        let claims = verify_token(refresh_token, &key).map_err(|_| APIError::Unauthorized)?;
+        let claims = verify_token(refresh_token, &key).map_err(|_| {
+            warn!(
+                target: "crabbase_auth::security",
+                action = "auth.logout_failed",
+                target_collection = %collection,
+                target_id = %user.id,
+                email = %email,
+                reason = "invalid_token",
+                outcome = "denied",
+                "logout failed"
+            );
+            APIError::Unauthorized
+        })?;
 
+        let family_id = claims.family_id.clone().unwrap_or_default();
         if let Some(family_id_str) = claims.family_id {
-            if let Ok(family_id) = uuid::Uuid::parse_str(&family_id_str) {
-                self.auth_repo.revoke_token_family(family_id).await?;
+            if let Ok(family_uuid) = uuid::Uuid::parse_str(&family_id_str) {
+                self.auth_repo.revoke_token_family(family_uuid).await?;
             }
         }
+
+        info!(
+            target: "crabbase_auth::security",
+            action = "auth.logout",
+            actor_id = %user.id,
+            actor_collection = %collection,
+            target_collection = %collection,
+            target_id = %user.id,
+            family_id = %family_id,
+            outcome = "success",
+            "logout"
+        );
 
         Ok(())
     }
@@ -400,14 +477,28 @@ impl AuthService {
 
         if user_opt.is_none() {
             info!(
-                "Password reset triggered for non-existent user with email {}",
-                email
+                target: "crabbase_auth::security",
+                action = "auth.password_reset_requested",
+                target_collection = %collection,
+                email = %email,
+                reason = "unknown_user",
+                outcome = "success",
+                "password reset requested"
             );
             // Do not say user exist or not to prevent guessing the user email
             return Ok(());
         }
 
         let user = user_opt.unwrap();
+        info!(
+            target: "crabbase_auth::security",
+            action = "auth.password_reset_requested",
+            target_collection = %collection,
+            target_id = %user.id,
+            email = %email,
+            outcome = "success",
+            "password reset requested"
+        );
 
         let app_settings = self
             .settings_repo
@@ -499,7 +590,13 @@ impl AuthService {
             };
 
             if let Err(e) = mailer.send(&email_msg) {
-                tracing::error!("Failed to send email: {}", e);
+                tracing::error!(
+                    target: "crabbase_auth::security",
+                    action = "auth.email_failed",
+                    error = %e,
+                    outcome = "failure",
+                    "Failed to send email"
+                );
             }
         });
 
@@ -516,9 +613,14 @@ impl AuthService {
         let user_opt = self.user_repo.get_user_by_email(collection, email).await?;
 
         if user_opt.is_none() {
-            info!(
-                "Password reset attempted for non-existent user with email {}",
-                email
+            warn!(
+                target: "crabbase_auth::security",
+                action = "auth.password_reset_failed",
+                target_collection = %collection,
+                email = %email,
+                reason = "unknown_user",
+                outcome = "failure",
+                "password reset failed"
             );
             // Do not say user exist or not to prevent guessing the user email
             return Ok(());
@@ -528,16 +630,45 @@ impl AuthService {
 
         let otp_record = self.otp_repo.get_otp(otp, &user).await?;
 
-        let record = otp_record.ok_or_else(|| APIError::Validation {
-            message: "Invalid OTP".to_string(),
-            details: serde_json::Value::String("OTP maybe incorrent or expired".to_string()),
-        })?;
+        let record = match otp_record {
+            Some(record) => record,
+            None => {
+                warn!(
+                    target: "crabbase_auth::security",
+                    action = "auth.password_reset_failed",
+                    target_collection = %collection,
+                    target_id = %user.id,
+                    email = %email,
+                    reason = "invalid_otp",
+                    outcome = "denied",
+                    "password reset failed"
+                );
+                return Err(APIError::Validation {
+                    message: "Invalid OTP".to_string(),
+                    details: serde_json::Value::String(
+                        "OTP maybe incorrent or expired".to_string(),
+                    ),
+                });
+            }
+        };
 
         self.user_repo
             .update_password(&record.collection_ref, &email, &new_pwd)
             .await?;
 
         self.otp_repo.delete(record.id).await?;
+
+        info!(
+            target: "crabbase_auth::security",
+            action = "auth.password_reset",
+            actor_id = %user.id,
+            actor_collection = %collection,
+            target_collection = %collection,
+            target_id = %user.id,
+            email = %email,
+            outcome = "success",
+            "password reset"
+        );
 
         Ok(())
     }

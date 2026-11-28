@@ -209,6 +209,12 @@ Events that do not come from a request (jobs, workers, bootstrap) are recorded
 too, at or above `min_level`; they have no actor, target or status and their
 `action` falls back to the emitting module's target.
 
+Handlers can add fields to their own request row with
+`RequestLog::add_data(json!({...}))` (for example `rows` on a collection
+truncate, `changedKeys` on a settings update, `denyReason` on a 401/403, or
+file metadata on delete). The middleware merges those into `data`, where the
+normal redaction rules apply.
+
 Empty values are stored as `NULL`, not `''`, so `actor_id IS NULL` reliably
 means "unauthenticated".
 
