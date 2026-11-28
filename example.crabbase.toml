@@ -47,6 +47,8 @@ insert_timeout_ms    = 2000
 # Skips the fsync-before-commit barrier (2.8x faster writes). Only loses rows
 # if the OS itself dies; set true for compliance-bound deployments.
 synchronous_commit   = false
+# "warn" stores failed/denied requests only; "info" also stores every
+# successful request (full access log).
 min_level            = "warn"
 
 [[initial_users]]

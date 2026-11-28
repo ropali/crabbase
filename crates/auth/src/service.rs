@@ -93,12 +93,26 @@ impl AuthService {
         }
     }
 
+    /// Same as [`Self::authenticate`], but also returns the authenticated
+    /// user's id so the caller can attribute its audit log row.
     pub async fn authenticate(
         &self,
         collection: &str,
         email: &str,
         password: &str,
     ) -> Result<AuthTokens, APIError> {
+        Ok(self
+            .authenticate_with_id(collection, email, password)
+            .await?
+            .1)
+    }
+
+    pub async fn authenticate_with_id(
+        &self,
+        collection: &str,
+        email: &str,
+        password: &str,
+    ) -> Result<(String, AuthTokens), APIError> {
         let col = match self.user_repo.get_collection_by_name(collection).await? {
             Some(id) => id,
             None => {
@@ -202,7 +216,7 @@ impl AuthService {
             refresh_token: refresh_token,
         };
 
-        Ok(tokens)
+        Ok((user.id, tokens))
     }
 
     pub async fn refresh_token(

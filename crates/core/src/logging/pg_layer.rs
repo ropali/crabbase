@@ -4,7 +4,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 use tokio::sync::mpsc;
-use tracing::{Event, Subscriber, metadata::Level};
+use tracing::{Event, Subscriber, level_filters::LevelFilter, metadata::Level};
 use tracing_subscriber::{
     layer::{Context, Layer},
     registry::LookupSpan,
@@ -17,6 +17,19 @@ use super::trace_ctx::TraceCtx;
 /// `record_debug` for a `&str` field yields `"\"the value\""`. Strip the quotes.
 fn clean_quotes(s: String) -> String {
     s.trim_matches('"').to_string()
+}
+
+/// Like [`clean_quotes`], but an empty value means "the field was not set".
+///
+/// The request middleware always emits every column because `tracing`'s
+/// `Value` trait is sealed — a field cannot be omitted at the call site — and
+/// uses `""` for the optional ones (`actor_id`, `ip_address`, …). Mapping the
+/// empty string back to `None` keeps those columns `NULL`, so `IS NULL`
+/// filters work and the `(actor_id, created DESC)` index is not dominated by
+/// one giant `''` group.
+fn optional(s: String) -> Option<String> {
+    let value = clean_quotes(s);
+    (!value.is_empty()).then_some(value)
 }
 
 #[derive(Default)]
@@ -56,17 +69,17 @@ impl tracing::field::Visit for FieldVisitor {
         match field.name() {
             "message" => self.message = Some(clean_quotes(v)),
             "action" => self.action = Some(clean_quotes(v)),
-            "actor_id" => self.actor_id = Some(clean_quotes(v)),
-            "actor_collection" => self.actor_collection = Some(clean_quotes(v)),
-            "target_collection" => self.target_collection = Some(clean_quotes(v)),
-            "target_id" => self.target_id = Some(clean_quotes(v)),
-            "method" => self.method = Some(clean_quotes(v)),
-            "path" => self.path = Some(clean_quotes(v)),
+            "actor_id" => self.actor_id = optional(v),
+            "actor_collection" => self.actor_collection = optional(v),
+            "target_collection" => self.target_collection = optional(v),
+            "target_id" => self.target_id = optional(v),
+            "method" => self.method = optional(v),
+            "path" => self.path = optional(v),
             "status_code" => self.status_code = v.parse().ok(),
             "duration_ms" => self.duration_ms = v.parse().ok(),
-            "ip_address" => self.ip_address = Some(clean_quotes(v)),
-            "user_agent" => self.user_agent = Some(clean_quotes(v)),
-            "request_id" => self.request_id = Some(clean_quotes(v)),
+            "ip_address" => self.ip_address = optional(v),
+            "user_agent" => self.user_agent = optional(v),
+            "request_id" => self.request_id = optional(v),
             "outcome" => {
                 self.outcome = match clean_quotes(v).as_str() {
                     "denied" => Some(Outcome::Denied),
@@ -80,7 +93,7 @@ impl tracing::field::Visit for FieldVisitor {
                 self.data
                     .as_object_mut()
                     .expect("data initialised as object")
-                    .insert(other.to_string(), Value::String(v));
+                    .insert(other.to_string(), Value::String(clean_quotes(v)));
             }
         }
     }
@@ -110,6 +123,17 @@ impl<S> Layer<S> for PgLayer
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
 {
+    /// Declare the database layer's own verbosity to the registry.
+    ///
+    /// Without this the global max-level is whatever the console/file
+    /// `EnvFilter`s say, and `tracing` drops events *before* dispatching them
+    /// to any layer. `RUST_LOG=warn` with `min_level = "info"` would then
+    /// silently persist nothing, even though `on_event` never got the chance
+    /// to accept the event.
+    fn max_level_hint(&self) -> Option<LevelFilter> {
+        Some(LevelFilter::from_level(self.filter))
+    }
+
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let meta = event.metadata();
 
@@ -150,5 +174,28 @@ where
         if self.tx.try_send(ev).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optional_maps_empty_debug_strings_to_none() {
+        // `record_debug` renders `""` as the two-character string `""`.
+        assert_eq!(optional("\"\"".to_string()), None);
+        assert_eq!(
+            optional("\"user-1\"".to_string()).as_deref(),
+            Some("user-1")
+        );
+        // Non-string values never carry quotes and must survive untouched.
+        assert_eq!(optional("42".to_string()).as_deref(), Some("42"));
+    }
+
+    #[test]
+    fn clean_quotes_strips_both_sides() {
+        assert_eq!(clean_quotes("\"abc\"".to_string()), "abc");
+        assert_eq!(clean_quotes("42".to_string()), "42");
     }
 }

@@ -51,6 +51,8 @@ queue_capacity       = 8192
 pool_max_connections = 2
 insert_timeout_ms    = 2000
 synchronous_commit   = false
+# Only events at this level and above are persisted. "warn" keeps failures
+# and denials; "info" also stores every successful request (full access log).
 min_level            = "warn"
 ```
 
@@ -73,6 +75,88 @@ of the config.
 The `logs.cleanup` job uses this same connection (not the application pool), so
 retention keeps working when the logs live in another schema or database.
 
+## Best practices
+
+### Storage and access
+
+- **Use a dedicated database** (`cb_logs`), or at minimum a dedicated schema and
+  role. The log writer must never be able to touch application tables, and
+  retention/backups should not compete with user traffic.
+- Create the database out of band. Crabbase creates the `logs` schema and
+  `_logs` at startup, and the log migrations run on every boot (they use
+  `CREATE TABLE IF NOT EXISTS`, which Postgres still permission-checks). The
+  connection role therefore needs `CREATE` on the schema, plus `CONNECT`,
+  `USAGE`, and `SELECT`/`INSERT`/`DELETE` on `_logs` for reading, writing and
+  `logs.cleanup`. If the schema is pre-created, `CREATE` on the database is not
+  needed; schema-level `CREATE` still is. Keep the role confined to the log
+  database/schema.
+- Keep the log database in UTC. Timestamps are stored as `timestamptz` and the
+  stats buckets are aggregated in UTC; the dashboard converts to local time for
+  display.
+- Store the password as `$LOG_DB_PASSWORD` (or similar) rather than in plain
+  text; every credential field supports the `$VAR` prefix.
+- Keep the log target on a local or private network. Logging is out of band,
+  but every batch is still a round trip and each batch has a hard insert
+  timeout.
+- Treat `_logs` as sensitive: it stores actor ids, IP addresses, user agents,
+  paths and route templates. Sensitive keys inside `data` are redacted
+  (`password`, `token`, `secret`, `otp`, `authorization`, `api_key`), but the
+  rest of the row is still personal data. Restrict direct database access and
+  rely on the admin API (superuser token) for reading.
+- Decide retention and backups explicitly. A dedicated log database is not
+  covered by an application-database backup; either back it up separately or
+  accept losing history on a rebuild.
+
+### Verbosity
+
+- `min_level = "warn"` is a good default: it keeps failed/denied requests and
+  all warning/error events without storing routine reads. Note that successful
+  requests, successful logins and successful writes are `INFO` and therefore
+  *not* in the audit trail at this level.
+- `min_level = "info"` gives the full access log (one row per API request plus
+  informational job/auth events). This is the right setting when the Logs page
+  is used as an audit trail, but size the storage and retention for it.
+- Avoid `debug`/`trace` in production. They add internal events (for example
+  file-storage repair messages) and can multiply volume.
+- `RUST_LOG` and `RUST_LOG_FILE` do not affect the database. Raising them is
+  safe when you want quieter console/file output without losing DB rows.
+- The Logs page is itself an API client. With `min_level = "info"`, page
+  refreshes (including the 5-second live poll) show up as `logs.list` rows, so
+  expect a small constant background and account for it in retention.
+
+### Durability and throughput
+
+- `synchronous_commit = false` is the right trade-off for an audit log: rows
+  are WAL-written, but a power/OS failure can lose the last flush. Set it to
+  `true` only when the trail must survive an OS crash, and measure the write
+  cost first.
+- The defaults (batch 100, flush 250 ms, queue 8,192) suit normal traffic.
+  Raise `queue_capacity` for bursty workloads; keep `batch_size` modest so a
+  single insert stays fast.
+- Keep `insert_timeout_ms` short (2 s). A slow log database must never stall
+  the writer; the bounded queue absorbs short outages and drops beyond that.
+- Keep `pool_max_connections` small (2). The writer owns a dedicated pool, so
+  it cannot starve application queries.
+
+### Operations
+
+- Keep the `logs.cleanup` cron enabled (created by default as
+  `0 3 * * *` with `{"olderThanDays": 30}`) and set the window to your
+  retention policy. Deleting rows does not return disk to the OS immediately;
+  watch table size and autovacuum.
+- Watch the console/file logs for `audit log batch insert failed` and
+  `audit log batch insert timed out`. When the log database is unreachable the
+  application keeps serving and events are dropped by design.
+- The writer's `written` / `dropped` / `errors` counters are emitted at shutdown
+  at `debug` level; temporarily set `RUST_LOG=debug` during a rollout if you
+  need to confirm that nothing was dropped.
+- Shut down gracefully. The writer drains its queue and flushes on shutdown;
+  give the process a termination window (for example Kubernetes
+  `terminationGracePeriodSeconds`) or the tail of the audit trail is lost.
+- Verify the target from the startup banner (`Log target: cb_logs/logs ✓`) and
+  with `SELECT count(*)`, and test config changes in staging before pointing
+  production logs at a new server.
+
 ## Migrations
 
 Log DDL lives in `migrations-logs/`, separate from `migrations/`:
@@ -90,6 +174,72 @@ cannot coexist. In that layout the log migrations are executed directly as
 idempotent DDL (every statement uses `IF NOT EXISTS`) and the app's migration
 history stays untouched. Keep future log migrations idempotent if you use that
 layout — or, better, move the logs to their own schema.
+
+## What gets recorded
+
+Every request to the `/api` surface emits exactly one event after the handler
+returns, but it is only persisted if it passes `min_level`:
+
+| Response | Event level | Stored at default `warn`? |
+|---|---|---|
+| `2xx` / `3xx` | `INFO` | no |
+| `4xx` | `WARN` | yes |
+| `5xx` | `ERROR` | yes |
+| `OPTIONS` | — | never emitted (CORS preflight) |
+
+So with the default `min_level = "warn"` the table holds failed and denied
+requests only. Set `min_level = "info"` when successful requests must be
+audited.
+
+Each stored request row carries:
+
+| Column | Source |
+|---|---|
+| `severity`, `level` | response status: `5xx → ERROR`, `4xx → WARN`, else `INFO` |
+| `action` | `<resource>.<verb>` derived from the matched route template, e.g. `record.create`, `collection.truncate`, `auth.login` |
+| `method`, `path` | the original URL as the client sent it |
+| `status_code`, `duration_ms` | response status and wall-clock handler time |
+| `actor_id`, `actor_collection` | filled by the auth middleware only after the token is verified; the login handler attributes its own row |
+| `target_collection`, `target_id` | the `{name}` / `{id}` path parameters of the route, when present |
+| `ip_address` | `X-Forwarded-For`, then `X-Real-IP`, then the socket address |
+| `outcome` | `success`, `denied` (401/403) or `failure` |
+| `data` | the route template (`route`) and any extra event fields, redacted |
+
+Events that do not come from a request (jobs, workers, bootstrap) are recorded
+too, at or above `min_level`; they have no actor, target or status and their
+`action` falls back to the emitting module's target.
+
+Empty values are stored as `NULL`, not `''`, so `actor_id IS NULL` reliably
+means "unauthenticated".
+
+`min_level` is independent of `RUST_LOG`: the database layer declares its own
+max-level hint, so raising `RUST_LOG` to `warn` for quieter console output does
+not silently stop `INFO` rows from being persisted.
+
+## Reading the logs
+
+The dashboard's **Logs** page reads `GET /api/logs` (admin token required):
+
+```
+GET /api/logs?page=1&per_page=50&range=24h&level=Error&search=record&superusers=true
+GET /api/logs/stats?range=24h
+```
+
+`range` accepts `5m`, `15m`, `30m`, `1h`, `2h`, `6h`, `24h`, `7d`, `30d`
+(and `all`), matching the buttons on the Logs page.
+
+`stats` returns the counters (`total`, `errors`, `warnings`, `avgDurationMs`)
+plus the chart series. The series is **zero-filled**: one bucket per minute for
+`5m`–`6h`, per hour for `24h`/`7d`, and per day for `30d`/`all`, covering the
+whole window. A quiet interval is a bucket with `count: 0`, not a missing
+bucket, so bar slots line up with real time. `all` is capped to the last 30 days
+so the chart cannot scan the entire table.
+
+Both are served from the *log* pool, so they keep working when `_logs` lives in
+another database. When `[logging.database]` is disabled they answer
+`{ "enabled": false }` and the page shows a configuration hint instead of an
+error. Every stored field is visible: expand a row to see the full record,
+including the raw `data` payload.
 
 ## Verifying
 

@@ -73,6 +73,10 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 
         let user = state.auth_service().verify_session(&claims).await?;
 
+        // Identity is only recorded once the token has been verified, so the
+        // audit row can never carry a spoofed, unverified actor.
+        crate::middleware::log::record_actor(&mut parts.extensions, &user.id, &collection.name);
+
         // Dynamically fetch all fields of the authenticated record from its table
         let escaped_table = crabbase_core::utils::string_utils::quote_ident(&collection.name);
         let sql = format!("SELECT * FROM {} WHERE id = $1", escaped_table);
@@ -227,6 +231,8 @@ pub async fn extract_auth_context(
         .map_err(|_| APIError::Unauthorized)?;
 
     let user = state.auth_service().verify_session(&claims).await?;
+
+    crate::middleware::log::record_actor(req.extensions_mut(), &user.id, &collection.name);
 
     // Dynamically fetch all fields of the authenticated record from its table
     let escaped_table = crabbase_core::utils::string_utils::quote_ident(&collection.name);

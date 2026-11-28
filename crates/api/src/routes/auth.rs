@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Extension, Path, State},
     routing::{get, post},
 };
 use crabbase_auth::service::AuthTokens;
@@ -8,7 +8,7 @@ pub(crate) use crabbase_core::errors::APIError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{middleware::auth::AuthenticatedUser, state::AppState};
+use crate::{middleware::auth::AuthenticatedUser, middleware::log::RequestLog, state::AppState};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -76,12 +76,19 @@ pub fn get_routes(state: AppState) -> Router<AppState> {
 async fn login(
     Path(collection): Path<String>,
     state: State<AppState>,
+    log: Option<Extension<RequestLog>>,
     Json(body): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, APIError> {
-    let tokens = state
+    let (user_id, tokens) = state
         .auth_service()
-        .authenticate(&collection, &body.email, &body.password)
+        .authenticate_with_id(&collection, &body.email, &body.password)
         .await?;
+
+    // A login is the one authenticated action that has no token yet, so the
+    // request middleware cannot know the actor without help from this handler.
+    if let Some(Extension(log)) = log {
+        log.set_actor(&user_id, &collection);
+    }
 
     Ok(Json(LoginResponse { tokens }))
 }

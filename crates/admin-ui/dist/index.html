@@ -14,29 +14,26 @@
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
-            href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,100..900&family=Manrope:wght@200..800&family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap"
             rel="stylesheet"
         />
         <link
-            href="https://fonts.googleapis.com/css2?family=Eb+Garamond:ital,wght@0,400..800;1,400..800&amp;family=Manrope:wght@200..800&amp;family=JetBrains+Mono:wght@400;500&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
-            rel="stylesheet"
-        />
-        <link
-            href="https://fonts.googleapis.com/css2?family=Google+Sans+Code:ital,wght,MONO@0,300..800,1;1,300..800,1&display=swap"
+            href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
             rel="stylesheet"
         />
 
         <!-- Trunk Tailwind Compiler Integration -->
-        <link rel="stylesheet" href="/input-7b31463f96973587.css" integrity="sha384-e4tX1FaU48JVkbOOQXtOqlFi2gy8euGEzKwZHHZVLz45NoiRjiQ2nz4UoMNwpCz1"/>
+        <link rel="stylesheet" href="/input-23ab40df28046916.css" integrity="sha384-CklZQXffbcWeWuT4KSGAwKgzL9zwiaOruDkgId7XGzACKME8Zl6BXlLPrFsqMdD+"/>
 
         <style>
             body {
-                font-family:
-                    "Google Sans Code",
-                    "Inter",
+                font-family: var(
+                    --font-family-body,
+                    "Manrope",
                     -apple-system,
                     BlinkMacSystemFont,
-                    sans-serif;
+                    sans-serif
+                );
                 font-optical-sizing: auto;
             }
             h1,
@@ -44,21 +41,20 @@
             h3,
             h4,
             .font-heading {
-                font-family: "Google Sans Code", "Outfit", sans-serif;
+                font-family: var(--font-family-headline, "Fraunces", serif);
             }
             code,
             pre {
-                font-family: "Google Sans Code", monospace;
-                font-variation-settings: "MONO" 1;
+                font-family: var(--font-family-code, "IBM Plex Mono", monospace);
             }
         </style>
-    <link rel="modulepreload" href="/crabbase_admin_ui-fd431d5d7b27a307.js" crossorigin="anonymous" integrity="sha384-nLQNb6EgSDSECNkrvL4FPeDIWtRCfBO3hA8M7RBJXIAFRgHSA63i+AVGKFATP6iP"><link rel="preload" href="/crabbase_admin_ui-fd431d5d7b27a307_bg.wasm" crossorigin="anonymous" integrity="sha384-GqoXXT6VZHdnewSDqQ9B+fTw0TpwAcFnCI3kJVoSpMoamLsMLRLpwNa5I+lu+tjh" as="fetch" type="application/wasm"></head>
+    <link rel="modulepreload" href="/crabbase_admin_ui-507b6783b14227e.js" crossorigin="anonymous" integrity="sha384-GDYKxOgZuhgL11ia2/9dwhH1zT/itJ8iwAxBVHjehag4/V+eBf0EXOHr8VwvyiWf"><link rel="preload" href="/crabbase_admin_ui-507b6783b14227e_bg.wasm" crossorigin="anonymous" integrity="sha384-bB3YShy+nnyji+cYr2tB4P779wloNbhqw5gAgY3bry4l7RmOMv6apaMq+u0rVeH8" as="fetch" type="application/wasm"></head>
     <body class="text-on-surface flex flex-col h-screen overflow-hidden">
         <!-- The compiled Rust WASM binary will bind here -->
     
 <script type="module">
-import init, * as bindings from '/crabbase_admin_ui-fd431d5d7b27a307.js';
-const wasm = await init({ module_or_path: '/crabbase_admin_ui-fd431d5d7b27a307_bg.wasm' });
+import init, * as bindings from '/crabbase_admin_ui-507b6783b14227e.js';
+const wasm = await init({ module_or_path: '/crabbase_admin_ui-507b6783b14227e_bg.wasm' });
 
 
 window.wasmBindings = bindings;

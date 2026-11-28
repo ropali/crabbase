@@ -121,6 +121,7 @@ pub struct LoggingDatabaseSection {
     pub host: String,
     pub port: u16,
     pub user: String,
+    #[serde(deserialize_with = "deserialize_env_or_value")]
     pub password: String,
     pub database: String,
     /// Schema holding `_logs` and its own `_sqlx_migrations` table. Works the

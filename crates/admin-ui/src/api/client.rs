@@ -206,6 +206,19 @@ impl ApiClient {
                 status, text
             )));
         }
+
+        // A 200 carrying HTML is the SPA fallback answering for an API route,
+        // i.e. the server is older than this bundle. Say so here instead of
+        // letting `.json()` fail with "expected value at line 1 column 1".
+        let content_type = response.headers().get("content-type").unwrap_or_default();
+        if content_type.contains("text/html") {
+            return Err(gloo_net::Error::GlooError(format!(
+                "{} returned HTML instead of JSON. The server is probably running an \
+                 older build than the admin UI.",
+                response.url()
+            )));
+        }
+
         Ok(response)
     }
 
@@ -719,6 +732,47 @@ impl ApiClient {
     pub async fn run_cron(&self, id: &str) -> Result<serde_json::Value, gloo_net::Error> {
         let res = self
             .request("POST", &format!("/crons/{id}/run"))
+            .send()
+            .await?;
+        Self::check_response(res).await?.json().await
+    }
+
+    // ========================================================
+    // Activity logs
+    // ========================================================
+
+    pub async fn list_logs(
+        &self,
+        page: i64,
+        per_page: i64,
+        level: &str,
+        range: &str,
+        search: &str,
+        superusers: bool,
+    ) -> Result<crate::models::log::LogListResponse, gloo_net::Error> {
+        let mut url =
+            format!("/logs?page={page}&per_page={per_page}&range={range}&superusers={superusers}");
+
+        let query = search.trim();
+        if !query.is_empty() {
+            let encoded: String = js_sys::encode_uri_component(query).into();
+            url.push_str(&format!("&search={encoded}"));
+        }
+
+        if !level.eq_ignore_ascii_case("all") {
+            url.push_str(&format!("&level={level}"));
+        }
+
+        let res = self.request("GET", &url).send().await?;
+        Self::check_response(res).await?.json().await
+    }
+
+    pub async fn get_log_stats(
+        &self,
+        range: &str,
+    ) -> Result<crate::models::log::LogStatsResponse, gloo_net::Error> {
+        let res = self
+            .request("GET", &format!("/logs/stats?range={range}"))
             .send()
             .await?;
         Self::check_response(res).await?.json().await

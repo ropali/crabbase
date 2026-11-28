@@ -5,7 +5,7 @@ use std::{
 };
 
 use axum::{
-    extract::{ConnectInfo, MatchedPath, Request},
+    extract::{ConnectInfo, MatchedPath, OriginalUri, Request},
     http::{Extensions, Method, StatusCode, header},
     middleware::Next,
     response::Response,
@@ -24,7 +24,9 @@ struct Actor {
 }
 
 impl RequestLog {
-    fn set_actor(&self, id: &str, collection: &str) {
+    /// Public within the crate so the login handler can attribute the row it
+    /// produces; everything else goes through [`record_actor`].
+    pub(crate) fn set_actor(&self, id: &str, collection: &str) {
         if let Ok(mut slot) = self.actor.lock() {
             *slot = Some(Actor {
                 id: id.into(),
@@ -51,11 +53,36 @@ pub async fn log_requests(mut req: Request, next: Next) -> Response {
 
     let started = Instant::now();
     let method = req.method().clone();
-    let path = req.uri().path().to_string();
+
+    // Inside a `nest` the request URI has the prefix stripped, while
+    // `MatchedPath` keeps it. `OriginalUri` is the path the client actually
+    // asked for, so it is both the truthful `path` column and the only thing
+    // that lines up segment-for-segment with the route template.
+    let path = req
+        .extensions()
+        .get::<OriginalUri>()
+        .map(|uri| uri.0.path().to_string())
+        .unwrap_or_else(|| req.uri().path().to_string());
+
+    // Skip the /logs API path
+    if path.contains("/api/logs") {
+        return next.run(req).await;
+    }
+
+    // The route template (`/api/collections/{name}/records/{id}`), not the
+    // concrete URL: low cardinality, safe to group by, no ids or slugs.
     let route = req
         .extensions()
         .get::<MatchedPath>()
         .map(|matched| matched.as_str().to_string());
+
+    let params = route
+        .as_deref()
+        .map(|template| path_params(template, &path))
+        .unwrap_or_default();
+
+    let target_collection = param_value(&params, "name");
+    let target_id = param_value(&params, "id");
     let ip_address = client_ip(&req);
     let user_agent = req
         .headers()
@@ -95,6 +122,8 @@ pub async fn log_requests(mut req: Request, next: Next) -> Response {
                 user_agent = %user_agent.as_deref().unwrap_or(""),
                 actor_id = %actor.as_ref().map(|a| a.id.as_str()).unwrap_or(""),
                 actor_collection = %actor.as_ref().map(|a| a.collection.as_str()).unwrap_or(""),
+                target_collection = %target_collection.as_deref().unwrap_or(""),
+                target_id = %target_id.as_deref().unwrap_or(""),
                 route = %route.as_deref().unwrap_or(""),
                 outcome = outcome,
                 "http request"
@@ -162,6 +191,38 @@ fn action_for(method: &Method, route: &str) -> String {
     format!("{resource}.{verb}")
 }
 
+/// Pairs the `{param}` segments of a matched route template with the concrete
+/// segments of the requested path.
+///
+/// `/api/collections/{name}/records/{id}` against
+/// `/api/collections/demo/records/abc` yields `[("name","demo"), ("id","abc")]`.
+/// A trailing `{*rest}` capture is matched against the first remaining
+/// segment only; it is always the last capture in axum, so nothing after it
+/// can be misaligned.
+fn path_params(template: &str, path: &str) -> Vec<(String, String)> {
+    template
+        .split('/')
+        .zip(path.split('/'))
+        .filter_map(|(segment, value)| {
+            let name = segment.strip_prefix('{')?.strip_suffix('}')?;
+            let name = name.strip_prefix('*').unwrap_or(name);
+            (!name.is_empty() && !value.is_empty()).then(|| (name.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+fn param_value(params: &[(String, String)], key: &str) -> Option<String> {
+    params
+        .iter()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| value.clone())
+}
+
+/// Client address for the audit trail.
+///
+/// Proxy headers win because in the common deployment (container behind nginx,
+/// Caddy, or a cloud load balancer) the socket address is the proxy itself.
+/// Only trust these if the edge strips client-supplied values.
 fn client_ip(req: &Request) -> Option<String> {
     if let Some(forwarded) = req
         .headers()
@@ -187,4 +248,53 @@ fn client_ip(req: &Request) -> Option<String> {
     req.extensions()
         .get::<ConnectInfo<SocketAddr>>()
         .map(|ConnectInfo(addr)| addr.ip().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn route_template_drives_the_action() {
+        assert_eq!(
+            action_for(&Method::POST, "/api/collections/{name}/records"),
+            "record.create"
+        );
+        assert_eq!(
+            action_for(&Method::GET, "/api/collections/{name}/records/{id}"),
+            "record.view"
+        );
+        assert_eq!(
+            action_for(&Method::POST, "/api/collections/{name}/truncate"),
+            "collection.truncate"
+        );
+        assert_eq!(
+            action_for(&Method::POST, "/api/auth/{name}/login"),
+            "auth.login"
+        );
+    }
+
+    #[test]
+    fn path_params_align_template_with_request() {
+        let params = path_params(
+            "/api/collections/{name}/records/{id}",
+            "/api/collections/demo/records/abc",
+        );
+
+        assert_eq!(param_value(&params, "name").as_deref(), Some("demo"));
+        assert_eq!(param_value(&params, "id").as_deref(), Some("abc"));
+
+        assert!(path_params("/api/logs", "/api/logs").is_empty());
+    }
+
+    #[test]
+    fn wildcard_params_use_the_first_segment() {
+        let params = path_params(
+            "/api/collections/{name}/files/{*file_id}",
+            "/api/collections/demo/files/2026/11/a.png",
+        );
+
+        assert_eq!(param_value(&params, "name").as_deref(), Some("demo"));
+        assert_eq!(param_value(&params, "file_id").as_deref(), Some("2026"));
+    }
 }

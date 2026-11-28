@@ -309,6 +309,7 @@ Implemented and working:
 - File uploads/storage with per-column constraints, local disk or S3-compatible backends, cleanup on record update/delete, and protected downloads via file tokens
 - Durable background jobs and crons: a Postgres-backed `_jobs` queue (leases, retries with exponential backoff) fed by `_crons` schedules, running in-process with `serve`/`admin` or in a dedicated `crabbase worker`; built-in handlers for `backup.create`, `backups.prune`, `logs.cleanup`, `otp.cleanup`, and `db.vacuum`
 - Backups via `pg_dump`: manual or scheduled runs, catalog/list/download/delete, retention pruning (keeps the newest successful snapshot), and local or S3-compatible ("cloud") storage; managed from Settings → Backups / Settings → Crons or the `/api/backups`, `/api/crons`, and `/api/jobs` endpoints
+- Audit logging: one event per HTTP request in `_logs` (severity, action, actor, target, status, duration, IP, user agent, free-form `data`) plus internal events at or above `min_level` — the default `warn` keeps failed/denied requests, `info` also captures successful ones — written by a background batcher into a separate database/schema if configured, and browsable in the dashboard's Logs page or through `GET /api/logs` and `GET /api/logs/stats`
 - Swagger UI / OpenAPI (debug builds only)
 
 Not yet implemented or incomplete:
@@ -316,7 +317,8 @@ Not yet implemented or incomplete:
 - **Realtime** — no websockets/SSE subscriptions; `crates/realtime` is a stub.
 - **Hooks** — no lifecycle or background event hooks; `crates/hooks` is a stub.
 - **Dedicated registration & email-verification endpoints** — public signup works by setting `create_rule = ""` on an auth collection and POSTing a record; `allowPublicUserRegistration` exists but is not enforced, and there is no verification flow. Unverified users cannot log in, `verified` is not write-protected for non-admin callers, and an admin must review/verify accounts manually.
-- **Logs API** — the dashboard's logs page is still sample data; the `_logs` table exists but the API neither reads nor writes it (only the `logs.cleanup` job touches it, and security-event logging is a stub).
+- **Log trace context** — `trace_id` / `span_id` / `request_id` are carried on `AuditEvent` but not persisted: the columns in `migrations-logs/00001` are still commented out and nothing populates them. Correlating several events to one trace is not possible yet.
+- **Security-event logging** — `AuthRepository::log_security_event` is still a `todo!()` stub; token-reuse detection is visible only through the regular `WARN` event it emits.
 - **`update_rule` expressions** — not applied to rows yet: a null rule blocks non-admins, while an empty string allows everyone. `list_rule`, `view_rule`, `create_rule`, and `delete_rule` are enforced.
 - **Backup restore** — deliberately manual and out-of-band (see [Backups & cron jobs](docs/backups-and-jobs.md)); there is no in-place restore from the dashboard or API.
 - **Backup deployment requirements** — backups are enabled by default and require `pg_dump` (postgresql-client matching the server major version); startup preflight refuses to run when it is missing or too old. Snapshots are compressed but not encrypted by Crabbase, so protect the backup directory/bucket.
